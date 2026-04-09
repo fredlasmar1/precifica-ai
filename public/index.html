@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PrecificaAI — Avaliação Imobiliária</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #0f1923;
+      color: #e8eaed;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 480px;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      background: #1a2530;
+      box-shadow: 0 0 60px rgba(0,0,0,0.5);
+    }
+
+    /* Header */
+    .header {
+      background: #1e3a2f;
+      padding: 16px 20px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      border-bottom: 1px solid #2a4a3a;
+    }
+
+    .avatar {
+      width: 42px;
+      height: 42px;
+      background: linear-gradient(135deg, #25d366, #128c7e);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      flex-shrink: 0;
+    }
+
+    .header-info h1 {
+      font-size: 15px;
+      font-weight: 600;
+      color: #e8eaed;
+    }
+
+    .header-info span {
+      font-size: 12px;
+      color: #25d366;
+    }
+
+    .btn-reset {
+      margin-left: auto;
+      background: transparent;
+      border: 1px solid #2a4a3a;
+      color: #8a9bb0;
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-size: 12px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .btn-reset:hover { background: #2a4a3a; color: #e8eaed; }
+
+    /* Messages */
+    .messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      background: #111b21;
+    }
+
+    .messages::-webkit-scrollbar { width: 4px; }
+    .messages::-webkit-scrollbar-track { background: transparent; }
+    .messages::-webkit-scrollbar-thumb { background: #2a4a3a; border-radius: 4px; }
+
+    .msg {
+      max-width: 85%;
+      padding: 10px 14px;
+      border-radius: 12px;
+      font-size: 14px;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-break: break-word;
+      animation: fadeIn 0.2s ease;
+    }
+
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+
+    .msg.user {
+      background: #005c4b;
+      color: #e8eaed;
+      align-self: flex-end;
+      border-bottom-right-radius: 4px;
+    }
+
+    .msg.agent {
+      background: #202c33;
+      color: #e8eaed;
+      align-self: flex-start;
+      border-bottom-left-radius: 4px;
+    }
+
+    .msg.laudo {
+      background: #1a2e20;
+      border: 1px solid #25d366;
+      color: #e8eaed;
+      align-self: flex-start;
+      border-bottom-left-radius: 4px;
+      max-width: 95%;
+    }
+
+    .msg strong, .msg b { color: #25d366; }
+
+    /* Typing indicator */
+    .typing {
+      display: none;
+      align-self: flex-start;
+      background: #202c33;
+      padding: 12px 16px;
+      border-radius: 12px;
+      border-bottom-left-radius: 4px;
+    }
+
+    .typing.visible { display: flex; gap: 4px; align-items: center; }
+
+    .typing span {
+      width: 7px; height: 7px;
+      background: #8a9bb0;
+      border-radius: 50%;
+      animation: bounce 1.2s infinite;
+    }
+
+    .typing span:nth-child(2) { animation-delay: 0.2s; }
+    .typing span:nth-child(3) { animation-delay: 0.4s; }
+
+    @keyframes bounce {
+      0%, 60%, 100% { transform: translateY(0); }
+      30% { transform: translateY(-6px); }
+    }
+
+    /* Input */
+    .input-area {
+      padding: 12px 16px;
+      background: #202c33;
+      display: flex;
+      gap: 10px;
+      align-items: flex-end;
+      border-top: 1px solid #2a3942;
+    }
+
+    textarea {
+      flex: 1;
+      background: #2a3942;
+      border: none;
+      border-radius: 10px;
+      color: #e8eaed;
+      font-size: 14px;
+      padding: 10px 14px;
+      resize: none;
+      outline: none;
+      font-family: inherit;
+      max-height: 120px;
+      min-height: 42px;
+      line-height: 1.4;
+    }
+
+    textarea::placeholder { color: #8a9bb0; }
+
+    .btn-send {
+      width: 42px;
+      height: 42px;
+      background: #25d366;
+      border: none;
+      border-radius: 50%;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      transition: background 0.2s;
+    }
+
+    .btn-send:hover { background: #1da851; }
+    .btn-send:disabled { background: #2a4a3a; cursor: not-allowed; }
+
+    .btn-send svg { width: 18px; height: 18px; fill: white; }
+
+    /* Config banner */
+    .config-banner {
+      background: #2d1f00;
+      border: 1px solid #5a3e00;
+      color: #f0c060;
+      font-size: 12px;
+      padding: 10px 16px;
+      text-align: center;
+      display: none;
+    }
+
+    .config-banner.visible { display: block; }
+  </style>
+</head>
+<body>
+  <div class="container">
+
+    <div class="header">
+      <div class="avatar">🏠</div>
+      <div class="header-info">
+        <h1>PrecificaAI</h1>
+        <span>● Online — Goiás</span>
+      </div>
+      <button class="btn-reset" onclick="resetSession()">Nova avaliação</button>
+    </div>
+
+    <div class="config-banner" id="configBanner">
+      ⚠️ Configure a OPENAI_API_KEY no arquivo .env para ativar o agente
+    </div>
+
+    <div class="messages" id="messages">
+      <!-- Mensagens aparecerão aqui -->
+    </div>
+
+    <div class="typing" id="typing">
+      <span></span><span></span><span></span>
+    </div>
+
+    <div class="input-area">
+      <textarea
+        id="input"
+        placeholder="Digite sua mensagem..."
+        rows="1"
+        onkeydown="handleKey(event)"
+        oninput="autoResize(this)"
+      ></textarea>
+      <button class="btn-send" id="sendBtn" onclick="sendMessage()">
+        <svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+      </button>
+    </div>
+
+  </div>
+
+  <script>
+    const sessionId = 'web_' + Math.random().toString(36).substring(2, 10);
+    let sending = false;
+
+    // Mensagem de boas-vindas
+    window.onload = () => {
+      addMessage('agent', 'Olá! Sou o *PrecificaAI* 🏠\n\nVou te ajudar a precificar imóveis em Goiás com base em dados reais de mercado.\n\nQual tipo de imóvel você quer avaliar?\n(casa, apartamento, terreno ou comercial)');
+    };
+
+    function addMessage(type, text) {
+      const msgs = document.getElementById('messages');
+      const div = document.createElement('div');
+      div.className = `msg ${type}`;
+      div.innerHTML = formatText(text);
+      msgs.appendChild(div);
+      msgs.scrollTop = msgs.scrollHeight;
+    }
+
+    // Formata *negrito* e emojis
+    function formatText(text) {
+      return text
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/\*(.*?)\*/g, '<strong>$1</strong>')
+        .replace(/_(.*?)_/g, '<em>$1</em>');
+    }
+
+    function showTyping() {
+      const t = document.getElementById('typing');
+      t.classList.add('visible');
+      document.getElementById('messages').scrollTop = 99999;
+    }
+
+    function hideTyping() {
+      document.getElementById('typing').classList.remove('visible');
+    }
+
+    async function sendMessage() {
+      if (sending) return;
+      const input = document.getElementById('input');
+      const text = input.value.trim();
+      if (!text) return;
+
+      input.value = '';
+      autoResize(input);
+      addMessage('user', text);
+      sending = true;
+      document.getElementById('sendBtn').disabled = true;
+      showTyping();
+
+      try {
+        const res = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sessionId, message: text })
+        });
+
+        const data = await res.json();
+        hideTyping();
+
+        if (data.error) {
+          addMessage('agent', '❌ ' + data.error);
+          return;
+        }
+
+        const type = data.type === 'laudo' ? 'laudo' : 'agent';
+        addMessage(type, data.response);
+
+        if (data.followUp) {
+          setTimeout(() => addMessage('laudo', data.followUp), 800);
+        }
+
+      } catch (err) {
+        hideTyping();
+        addMessage('agent', '❌ Erro de conexão. Verifique se o servidor está rodando.');
+      } finally {
+        sending = false;
+        document.getElementById('sendBtn').disabled = false;
+        input.focus();
+      }
+    }
+
+    async function resetSession() {
+      await fetch(`/api/chat/${sessionId}`, { method: 'DELETE' });
+      document.getElementById('messages').innerHTML = '';
+      addMessage('agent', '🔄 Nova avaliação iniciada!\n\nQual tipo de imóvel você quer avaliar?\n(casa, apartamento, terreno ou comercial)');
+    }
+
+    function handleKey(e) {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendMessage();
+      }
+    }
+
+    function autoResize(el) {
+      el.style.height = 'auto';
+      el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+    }
+  </script>
+</body>
+</html>
