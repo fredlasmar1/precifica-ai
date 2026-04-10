@@ -41,10 +41,26 @@ async function buscarComparativos(dados) {
  *  2) Fallback: parse do HTML com múltiplos seletores
  */
 async function buscarZAP(dados) {
-  const url = montarUrlZAP(dados);
+  const targetUrl = montarUrlZAP(dados);
 
-  const response = await axios.get(url, {
-    timeout: HTTP_TIMEOUT_MS,
+  // Se tiver SCRAPER_API_KEY configurado, roteia via ScraperAPI para
+  // contornar o bloqueio Cloudflare. ScraperAPI usa IPs residenciais
+  // rotativos. Sem a chave, faz requisição direta (que vai falhar em
+  // ambientes cloud, mas o fallback de estimativa cobre o caso).
+  const scraperKey = process.env.SCRAPER_API_KEY;
+  const useProxy = !!scraperKey;
+
+  const requestUrl = useProxy
+    ? `http://api.scraperapi.com/?api_key=${scraperKey}&url=${encodeURIComponent(targetUrl)}&country_code=br&render=false`
+    : targetUrl;
+
+  if (useProxy) {
+    console.log('[ZAP] Usando ScraperAPI');
+  }
+
+  const response = await axios.get(requestUrl, {
+    // ScraperAPI pode levar ~30s. Direto: 12s é suficiente.
+    timeout: useProxy ? 45000 : HTTP_TIMEOUT_MS,
     maxRedirects: 3,
     validateStatus: (s) => s >= 200 && s < 400,
     headers: {

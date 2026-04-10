@@ -1,6 +1,7 @@
 const { getFipeZapIndex } = require('./fipezap');
 const { buscarComparativos } = require('./portais');
 const { analisarLocalizacao, formatarSecaoLocalizacao } = require('./googleplaces');
+const { getMultiplicadorBairro } = require('./bairros');
 
 /**
  * Motor de precificação — combina FipeZAP + comparativos + ajustes
@@ -42,6 +43,13 @@ async function calcularPreco(dadosImovel) {
     );
   }
 
+  // Multiplicador de bairro: ajusta o baseline da cidade para o bairro específico.
+  // Setor Bueno em Goiânia vale muito mais que Vila Brasília, mesmo na mesma cidade.
+  const bairroInfo = getMultiplicadorBairro(cidade, bairro);
+  if (bairroInfo.conhecido) {
+    precoM2Base = Math.round(precoM2Base * bairroInfo.mult);
+  }
+
   // Ajustes por características do imóvel
   const ajustes = calcularAjustes(dadosImovel);
 
@@ -81,6 +89,9 @@ async function calcularPreco(dadosImovel) {
     ajustesAplicados: ajustes.descricao,
     fipezapData: fipezap.atualizado,
     variacao3meses: fipezap.variacao3meses,
+    bairroPerfil: bairroInfo.perfil,
+    bairroConhecido: bairroInfo.conhecido,
+    bairroMultiplicador: bairroInfo.mult,
 
     // Google Places
     localizacao,
