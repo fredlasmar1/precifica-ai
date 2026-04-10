@@ -64,8 +64,11 @@ async function processarMensagem(phone, texto) {
     
     try {
       const dadosImovel = await extractPropertyData(history);
-      
-      if (!dadosImovel) throw new Error('Não foi possível extrair dados do imóvel');
+
+      if (!dadosImovel) {
+        await sendMessage(phone, '⚠️ Não consegui organizar os dados do imóvel. Pode me passar de novo o resumo? (tipo, finalidade, cidade, bairro, metragem, quartos, vagas e estado de conservação)');
+        return;
+      }
 
       const resultado = await calcularPreco(dadosImovel);
       const laudo = gerarLaudo(dadosImovel, resultado);
@@ -78,8 +81,8 @@ async function processarMensagem(phone, texto) {
       await sendMessage(phone, '💡 Quer avaliar outro imóvel? Digite *nova avaliação* para recomeçar.');
 
     } catch (err) {
-      console.error('[Precificação] Erro:', err.message);
-      await sendMessage(phone, '❌ Ocorreu um erro ao consultar o mercado. Tente novamente em alguns instantes.');
+      console.error('[Precificação] Erro:', err);
+      await sendMessage(phone, '❌ Tive um problema técnico ao consultar o mercado. Tente novamente em instantes — se persistir, digite *reiniciar*.');
     }
     return;
   }

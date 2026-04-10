@@ -32,7 +32,11 @@ router.post('/chat', async (req, res) => {
     if (jaColetouDados) {
       // Extrai e precifica
       const dadosImovel = await extractPropertyData(history);
-      if (!dadosImovel) throw new Error('Não foi possível extrair dados');
+      if (!dadosImovel) {
+        const msg = '⚠️ Não consegui organizar os dados da conversa. Pode me passar o resumo do imóvel novamente? (tipo, finalidade, cidade, bairro, metragem, quartos, vagas e estado de conservação)';
+        addMessage(sessionId, 'assistant', msg);
+        return res.json({ response: msg, type: 'text' });
+      }
 
       const resultado = await calcularPreco(dadosImovel);
       const laudo = gerarLaudo(dadosImovel, resultado);
@@ -67,8 +71,11 @@ router.post('/chat', async (req, res) => {
     return res.json({ response: resposta, type: 'text' });
 
   } catch (err) {
-    console.error('[Chat API] Erro:', err.message);
-    return res.status(500).json({ error: 'Erro ao processar mensagem: ' + err.message });
+    console.error('[Chat API] Erro:', err);
+    const userMsg =
+      '⚠️ Tive um problema técnico ao processar sua mensagem. ' +
+      'Tente novamente em instantes ou digite *reiniciar* para começar uma nova avaliação.';
+    return res.status(500).json({ error: userMsg, debug: err.message });
   }
 });
 

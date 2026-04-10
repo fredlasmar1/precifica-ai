@@ -9,12 +9,28 @@ const { analisarLocalizacao, formatarSecaoLocalizacao } = require('./googleplace
 async function calcularPreco(dadosImovel) {
   const { tipo, finalidade, cidade, bairro, metragem, quartos, vagas, diferenciais, conservacao } = dadosImovel;
 
-  // Busca paralela para performance — todas as fontes ao mesmo tempo
-  const [fipezap, comparativos, localizacao] = await Promise.all([
+  // Busca paralela com isolamento de falhas:
+  // se UMA fonte cair, as outras continuam e o laudo ainda é gerado.
+  // Cada fonte já tem fallback interno; isso é defesa em profundidade.
+  const [fipezapRes, comparativosRes, localizacaoRes] = await Promise.allSettled([
     getFipeZapIndex(cidade, finalidade),
     buscarComparativos(dadosImovel),
     analisarLocalizacao(cidade, bairro)
   ]);
+
+  const fipezap = fipezapRes.status === 'fulfilled' && fipezapRes.value
+    ? fipezapRes.value
+    : fipezapEmergencia(finalidade);
+
+  const comparativos = comparativosRes.status === 'fulfilled' && comparativosRes.value
+    ? comparativosRes.value
+    : { fonte: null, totalEncontrados: 0, precoMedioM2: null };
+
+  const localizacao = localizacaoRes.status === 'fulfilled' ? localizacaoRes.value : null;
+
+  if (fipezapRes.status === 'rejected') console.warn('[Precificador] FipeZAP rejeitado:', fipezapRes.reason?.message);
+  if (comparativosRes.status === 'rejected') console.warn('[Precificador] Comparativos rejeitados:', comparativosRes.reason?.message);
+  if (localizacaoRes.status === 'rejected') console.warn('[Precificador] Localização rejeitada:', localizacaoRes.reason?.message);
 
   // Preço base pelo FipeZAP
   let precoM2Base = fipezap.precoMedioM2;
@@ -70,6 +86,22 @@ async function calcularPreco(dadosImovel) {
     localizacao,
     scoreLocalizacao: localizacao?.score || null,
     descLocalizacao
+  };
+}
+
+/**
+ * Último recurso: se até o fallback do FipeZAP falhar (erro interno),
+ * usa um valor de mercado conservador para Goiás para que o laudo
+ * NUNCA quebre por falta de baseline.
+ */
+function fipezapEmergencia(finalidade) {
+  return {
+    cidade: '',
+    precoMedioM2: finalidade === 'aluguel' ? 18 : 3200,
+    variacao3meses: null,
+    fonte: 'Referência conservadora Goiás',
+    atualizado: new Date().toLocaleDateString('pt-BR'),
+    isFallback: true
   };
 }
 
