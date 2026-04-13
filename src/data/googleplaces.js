@@ -25,19 +25,68 @@ async function analisarLocalizacao(cidade, bairro, endereco) {
 
   try {
     // 1. Geocodifica o endereço para obter lat/lng
-    // Com rua: ponto preciso. Sem rua: centro do bairro (menos preciso).
+    // Forçamos region=br e bounds no estado de Goiás para não cair
+    // em homônimos (ex: "Jundiaí" → Jundiaí-SP em vez de bairro em Anápolis)
     console.log(`[Places] Geocodificando: ${enderecoCompleto}`);
     const geocode = await client.geocode({
       params: {
         address: enderecoCompleto,
         key: apiKey,
-        language: 'pt-BR'
+        language: 'pt-BR',
+        region: 'br',
+        // Bounds do estado de Goiás — prioriza resultados dentro desse retângulo
+        bounds: {
+          southwest: { lat: -19.5, lng: -53.3 },
+          northeast: { lat: -12.4, lng: -45.9 }
+        }
       }
     });
 
     if (!geocode.data.results.length) return null;
 
     const location = geocode.data.results[0].geometry.location;
+    const enderecoResolvido = geocode.data.results[0].formatted_address || '';
+
+    // Validação: verifica se caiu dentro de Goiás (lat -12 a -20, lng -53 a -45)
+    // Se caiu fora, é homônimo (ex: Jundiaí-SP) — rejeita
+    if (location.lat < -20 || location.lat > -12 || location.lng < -53.5 || location.lng > -45.5) {
+      console.warn(`[Places] Geocode fora de Goiás! Caiu em: ${enderecoResolvido} (${location.lat}, ${location.lng})`);
+      return null;
+    }
+
+    // Verifica se o endereço resolvido contém a cidade esperada
+    const cidadeNorm = cidade.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    if (!enderecoResolvido.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').includes(cidadeNorm)) {
+      console.warn(`[Places] Geocode caiu na cidade errada! Esperava "${cidade}", recebeu: ${enderecoResolvido}`);
+      // Tenta de novo forçando a cidade no endereço
+      const retry = await client.geocode({
+        params: {
+          address: `${bairro}, ${cidade}, GO, Brasil`,
+          key: apiKey,
+          language: 'pt-BR',
+          region: 'br',
+          bounds: {
+            southwest: { lat: -19.5, lng: -53.3 },
+            northeast: { lat: -12.4, lng: -45.9 }
+          }
+        }
+      });
+      if (retry.data.results.length) {
+        const retryLoc = retry.data.results[0].geometry.location;
+        const retryAddr = retry.data.results[0].formatted_address || '';
+        if (retryAddr.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').includes(cidadeNorm)) {
+          console.log(`[Places] Retry OK: ${retryAddr}`);
+          Object.assign(location, retryLoc);
+        } else {
+          console.warn(`[Places] Retry também falhou: ${retryAddr}. Abortando.`);
+          return null;
+        }
+      } else {
+        return null;
+      }
+    }
+
+    console.log(`[Places] Localizado: ${enderecoResolvido} (${location.lat}, ${location.lng})`);
 
     // 2. Busca categorias em paralelo (raio de 1km)
     const categorias = [
