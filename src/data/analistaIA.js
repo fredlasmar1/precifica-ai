@@ -45,26 +45,45 @@ async function estimarPrecoComIA(dadosImovel) {
 
   const finalidadeLabel = finalidade === 'aluguel' ? 'para ALUGAR' : 'à VENDA';
 
+  // Descrição precisa do que buscar por tipo
+  const isTerreno = tipo === 'terreno';
+  const isCasa = tipo === 'casa';
+  const isApto = tipo === 'apartamento';
+
+  let descricaoTipo;
+  if (isTerreno) {
+    descricaoTipo = `LOTES ou TERRENOS vazios (SEM construção) ${finalidadeLabel}. NÃO inclua casas, apartamentos ou qualquer imóvel construído. Apenas terrenos/lotes vazios para construir.`;
+  } else if (isCasa) {
+    descricaoTipo = `CASAS ${conservacao === 'novo' ? 'NOVAS' : 'de REVENDA (usadas)'} ${finalidadeLabel}. NÃO inclua terrenos, apartamentos ou lotes. Apenas casas construídas.`;
+  } else if (isApto) {
+    descricaoTipo = `APARTAMENTOS ${conservacao === 'novo' ? 'NOVOS ou na planta' : 'de REVENDA (usados)'} ${finalidadeLabel}. NÃO inclua casas, terrenos ou lotes.`;
+  } else {
+    descricaoTipo = `${tipo}s ${finalidadeLabel}`;
+  }
+
   const prompt = `Preciso que você pesquise anúncios REAIS de imóveis para fazer uma análise comparativa de mercado.
 
 IMÓVEL QUE ESTOU AVALIANDO:
 - Tipo: ${tipo}
 - Finalidade: ${finalidade}
-- Bairro: ${bairro}, ${cidade} - GO
+- Bairro: ${bairro}, ${cidade} - GO (estado de Goiás, Brasil)
 - Metragem: ${metragem}m²
-- Quartos: ${quartos} | Vagas: ${vagas}
+${!isTerreno ? `- Quartos: ${quartos} | Vagas: ${vagas}` : '- É um terreno/lote vazio, sem construção'}
 - Estado: ${conservacao}
 - Diferenciais: ${difsTexto}
 
-FILTROS OBRIGATÓRIOS DA PESQUISA (comparação justa — maçã com maçã):
-1. Busque SOMENTE ${tipo}s ${finalidadeLabel} — não misture tipos diferentes
-2. Busque SOMENTE no bairro ${bairro} em ${cidade}-GO (ou bairro vizinho de perfil idêntico se não achar)
-3. Busque SOMENTE imóveis com área entre ${metMin}m² e ${metMax}m² (similar ao avaliado)
-4. Busque SOMENTE imóveis ${estadoFiltro} — não misture novos com usados
-5. Busque entre 5 e 10 anúncios que atendam TODOS os filtros acima
-6. Para cada anúncio, calcule o preço por m² (preço ÷ área)
+O QUE BUSCAR:
+${descricaoTipo}
 
-SITES PARA CONSULTAR: ZAP Imóveis, OLX, VivaReal, Imovelweb, Chaves na Mão, 62imóveis, QuintoAndar, Properati
+FILTROS OBRIGATÓRIOS (comparação justa — maçã com maçã):
+1. Busque SOMENTE no bairro ${bairro} em ${cidade}-GO (ou bairro vizinho de perfil idêntico se não achar suficientes)
+2. Busque SOMENTE imóveis com área entre ${metMin}m² e ${metMax}m² (similar ao avaliado)
+${!isTerreno ? `3. Busque SOMENTE imóveis ${estadoFiltro} — não misture novos com usados` : '3. SOMENTE terrenos/lotes VAZIOS — se um anúncio menciona casa, sobrado ou construção, IGNORE'}
+4. A cidade é ${cidade} no estado de GOIÁS (GO) — não confunda com cidades homônimas em outros estados
+5. Busque entre 5 e 10 anúncios que atendam TODOS os filtros acima
+6. Para cada anúncio, calcule o preço por m² (preço total ÷ área do ${isTerreno ? 'terreno' : 'imóvel'})
+
+SITES PARA CONSULTAR: OLX, ZAP Imóveis, VivaReal, Imovelweb, Chaves na Mão, 62imóveis, QuintoAndar
 
 RETORNE SOMENTE um JSON válido neste formato:
 {
