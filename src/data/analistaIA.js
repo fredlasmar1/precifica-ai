@@ -47,7 +47,11 @@ async function estimarPrecoComIA(dadosImovel) {
   const finalidadeLabel = finalidade === 'aluguel' ? 'para ALUGAR' : 'à VENDA';
 
   // Busca contexto local da cidade (pesquisado na internet, cacheado 7 dias)
-  const contextoLocal = await getConhecimentoLocal(cidade);
+  // Limita a 3000 chars para não estourar o prompt e cortar a resposta JSON
+  let contextoLocal = await getConhecimentoLocal(cidade);
+  if (contextoLocal.length > 3000) {
+    contextoLocal = contextoLocal.slice(0, 3000) + '\n[...contexto resumido por limite de tamanho]';
+  }
 
   // Descrição precisa do que buscar por tipo
   const isTerreno = tipo === 'terreno';
@@ -117,9 +121,9 @@ RETORNE SOMENTE um JSON válido neste formato:
         { role: 'user', content: prompt }
       ],
       temperature: 0.1,
-      max_tokens: 800
+      max_tokens: 2000
     }, {
-      timeout: 30000,
+      timeout: 60000,
       headers: {
         'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json'
@@ -129,8 +133,21 @@ RETORNE SOMENTE um JSON válido neste formato:
     const content = response.data.choices[0].message.content;
 
     // Perplexity pode retornar JSON dentro de code block
-    const jsonStr = content.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
-    const resultado = JSON.parse(jsonStr);
+    let jsonStr = content.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
+
+    // Tenta parsear; se falhar (JSON truncado), tenta reparar
+    let resultado;
+    try {
+      resultado = JSON.parse(jsonStr);
+    } catch (parseErr) {
+      console.warn('[Perplexity] JSON incompleto, tentando reparar...');
+      resultado = repararJSON(jsonStr);
+      if (!resultado) {
+        console.error('[Perplexity] Não foi possível reparar o JSON:', parseErr.message);
+        console.error('[Perplexity] Conteúdo recebido:', content.slice(0, 500));
+        return null;
+      }
+    }
 
     // Validação de sanidade
     if (!resultado.precoMedioM2 || resultado.precoMedioM2 <= 0) {
@@ -167,6 +184,54 @@ RETORNE SOMENTE um JSON válido neste formato:
 
   } catch (err) {
     console.error('[Perplexity] Erro:', err.response?.data || err.message);
+    return null;
+  }
+}
+
+/**
+ * Tenta reparar JSON truncado (quando max_tokens corta no meio).
+ * Estratégia: fecha arrays/objetos abertos e tenta parsear.
+ */
+function repararJSON(str) {
+  try {
+    // Remove trailing incompleto (string cortada, vírgula pendente)
+    let s = str.replace(/,\s*$/, '').replace(/,\s*\]/, ']').replace(/,\s*\}/, '}');
+
+    // Conta chaves/colchetes abertos e fecha os que faltam
+    let opens = 0, opensArr = 0;
+    for (const c of s) {
+      if (c === '{') opens++;
+      else if (c === '}') opens--;
+      else if (c === '[') opensArr++;
+      else if (c === ']') opensArr--;
+    }
+
+    // Se tem string aberta, fecha
+    const lastQuote = s.lastIndexOf('"');
+    const quoteCount = (s.match(/"/g) || []).length;
+    if (quoteCount % 2 !== 0) {
+      s = s.slice(0, lastQuote + 1);
+      // Reconta
+      opens = 0; opensArr = 0;
+      for (const c of s) {
+        if (c === '{') opens++;
+        else if (c === '}') opens--;
+        else if (c === '[') opensArr++;
+        else if (c === ']') opensArr--;
+      }
+    }
+
+    // Remove vírgula pendente de novo após corte
+    s = s.replace(/,\s*$/, '');
+
+    // Fecha o que falta
+    while (opensArr > 0) { s += ']'; opensArr--; }
+    while (opens > 0) { s += '}'; opens--; }
+
+    const parsed = JSON.parse(s);
+    console.log('[Perplexity] JSON reparado com sucesso');
+    return parsed;
+  } catch {
     return null;
   }
 }
