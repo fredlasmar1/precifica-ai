@@ -60,12 +60,21 @@ async function calcularPreco(dadosImovel) {
     }
   }
 
-  // Prioridade 3: último recurso estático
+  // Se nenhuma fonte retornou dados, NÃO inventar um preço.
+  // Melhor informar que não conseguiu do que dar um número errado.
   if (!precoM2Base) {
-    console.warn('[Precificador] Todas as fontes falharam, usando referência estática');
-    precoM2Base = finalidade === 'aluguel' ? 18 : 3200;
-    fontePrincipal = 'Referência base Goiás';
-    usouDadosReais = false;
+    console.error('[Precificador] TODAS as fontes falharam — sem dados para precificar');
+    return {
+      erro: true,
+      mensagem: '⚠️ Não foi possível obter dados de mercado para este imóvel neste momento. Os portais e a pesquisa online não retornaram resultados. Tente novamente em alguns minutos ou com um endereço/bairro diferente.',
+      precoMinimo: 0, precoRecomendado: 0, precoMaximo: 0,
+      precoM2Mercado: 0, precoM2Imovel: 0,
+      comparativosEncontrados: 0, fontesConsultadas: [],
+      tempoEstimadoDias: '-', indiceLiquidez: '-',
+      ajustesAplicados: [], variacao3meses: null,
+      analiseIA: null, localizacao, scoreLocalizacao: localizacao?.score || null,
+      descLocalizacao: null
+    };
   }
 
   const precoM2Mercado = precoM2Base;

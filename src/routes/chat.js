@@ -39,6 +39,10 @@ router.post('/chat', async (req, res) => {
       }
 
       const resultado = await calcularPreco(dadosImovel);
+      if (resultado.erro) {
+        addMessage(sessionId, 'assistant', resultado.mensagem);
+        return res.json({ response: resultado.mensagem, type: 'text' });
+      }
       const laudo = gerarLaudo(dadosImovel, resultado);
 
       addMessage(sessionId, 'assistant', laudo);
@@ -55,6 +59,10 @@ router.post('/chat', async (req, res) => {
       const dadosImovel = await extractPropertyData(historicoAtual);
       if (dadosImovel) {
         const resultado = await calcularPreco(dadosImovel);
+        if (resultado.erro) {
+          addMessage(sessionId, 'assistant', resultado.mensagem);
+          return res.json({ response: resposta, followUp: resultado.mensagem, type: 'text' });
+        }
         const laudo = gerarLaudo(dadosImovel, resultado);
         addMessage(sessionId, 'assistant', laudo);
 

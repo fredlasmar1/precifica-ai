@@ -64,6 +64,10 @@ async function processarMensagem(chatId, sessionId, texto) {
       }
 
       const resultado = await calcularPreco(dadosImovel);
+      if (resultado.erro) {
+        await enviar(chatId, resultado.mensagem);
+        return;
+      }
       const laudo = gerarLaudo(dadosImovel, resultado);
 
       addMessage(sessionId, 'assistant', laudo);
@@ -93,11 +97,15 @@ async function processarMensagem(chatId, sessionId, texto) {
       if (dadosImovel) {
         await enviar(chatId, '⏳ Consultando mercado imobiliário...');
         const resultado = await calcularPreco(dadosImovel);
-        const laudo = gerarLaudo(dadosImovel, resultado);
-        addMessage(sessionId, 'assistant', laudo);
-        await enviar(chatId, laudo);
-        await new Promise(r => setTimeout(r, 1000));
-        await enviar(chatId, '💡 Quer avaliar outro imóvel? Digite /novo para recomeçar.');
+        if (resultado.erro) {
+          await enviar(chatId, resultado.mensagem);
+        } else {
+          const laudo = gerarLaudo(dadosImovel, resultado);
+          addMessage(sessionId, 'assistant', laudo);
+          await enviar(chatId, laudo);
+          await new Promise(r => setTimeout(r, 1000));
+          await enviar(chatId, '💡 Quer avaliar outro imóvel? Digite /novo para recomeçar.');
+        }
       }
     }
   } catch (err) {

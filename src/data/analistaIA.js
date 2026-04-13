@@ -183,9 +183,66 @@ RETORNE SOMENTE um JSON válido neste formato:
     return analise;
 
   } catch (err) {
-    console.error('[Perplexity] Erro:', err.response?.data || err.message);
-    return null;
+    console.error('[Perplexity] Erro na tentativa principal:', err.response?.data || err.message);
   }
+
+  // ─── RETRY: tentativa simplificada (sem contexto local) ─────────
+  try {
+    console.log('[Perplexity] Retry com prompt simplificado...');
+
+    const promptSimples = `Pesquise anúncios REAIS de ${isTerreno ? 'terrenos/lotes vazios (SEM construção)' : tipo + 's'} ${finalidadeLabel} no bairro ${bairro}, ${cidade}-GO (estado de Goiás, Brasil).
+
+Área entre ${metMin}m² e ${metMax}m². Busque em OLX, ZAP, VivaReal, 62imóveis, Chaves na Mão.
+
+${isTerreno ? 'SOMENTE lotes vazios, NÃO inclua casas ou imóveis construídos.' : ''}
+
+Retorne SOMENTE JSON: {"comparativos":[{"area":N,"preco":N,"precoM2":N,"fonte":"site","detalhe":"desc"}],"precoMedioM2":N,"faixaMinM2":N,"faixaMaxM2":N,"anunciosAnalisados":N,"confianca":"alta|media|baixa","raciocinio":"resumo"}`;
+
+    const retryResp = await axios.post('https://api.perplexity.ai/chat/completions', {
+      model: 'sonar',
+      messages: [
+        { role: 'system', content: 'Pesquisador imobiliário. Retorne SOMENTE JSON válido, curto e direto.' },
+        { role: 'user', content: promptSimples }
+      ],
+      temperature: 0.1,
+      max_tokens: 1500
+    }, {
+      timeout: 60000,
+      headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' }
+    });
+
+    const retryContent = retryResp.data.choices[0].message.content;
+    let retryJson = retryContent.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
+
+    let retryResult;
+    try {
+      retryResult = JSON.parse(retryJson);
+    } catch {
+      retryResult = repararJSON(retryJson);
+    }
+
+    if (retryResult && retryResult.precoMedioM2 > 0) {
+      const citations = retryResp.data.citations || [];
+      const analise = {
+        precoMedioM2: Math.round(retryResult.precoMedioM2),
+        faixaMinM2: Math.round(retryResult.faixaMinM2 || retryResult.precoMedioM2 * 0.85),
+        faixaMaxM2: Math.round(retryResult.faixaMaxM2 || retryResult.precoMedioM2 * 1.15),
+        anunciosAnalisados: retryResult.anunciosAnalisados || 0,
+        comparativos: retryResult.comparativos || [],
+        confianca: retryResult.confianca || 'media',
+        raciocinio: retryResult.raciocinio || '',
+        fonte: 'Pesquisa de mercado (Perplexity)',
+        citacoes: citations.slice(0, 5)
+      };
+      console.log(`[Perplexity] Retry OK: R$ ${analise.precoMedioM2}/m²`);
+      cache.set(cacheKey, analise);
+      return analise;
+    }
+  } catch (retryErr) {
+    console.error('[Perplexity] Retry também falhou:', retryErr.message);
+  }
+
+  return null;
 }
 
 /**
