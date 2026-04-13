@@ -122,7 +122,7 @@ async function processarMensagem(phone, texto) {
  * Gera o laudo formatado para WhatsApp
  */
 function gerarLaudo(dados, resultado) {
-  const { tipo, finalidade, cidade, bairro, metragem, quartos, vagas } = dados;
+  const { tipo, finalidade, cidade, bairro, endereco, metragem, quartos, vagas } = dados;
   const {
     precoMinimo, precoRecomendado, precoMaximo,
     precoM2Mercado, precoM2Imovel,
@@ -137,7 +137,7 @@ function gerarLaudo(dados, resultado) {
   let laudo = `📊 *LAUDO DE PRECIFICAÇÃO*\n`;
   laudo += `━━━━━━━━━━━━━━━━━━━━━\n`;
   laudo += `🏠 ${tipoLabel} • ${finalidadeLabel}\n`;
-  laudo += `📍 ${bairro}, ${cidade} - GO\n`;
+  laudo += endereco ? `📍 ${endereco}, ${bairro} - ${cidade}/GO\n` : `📍 ${bairro}, ${cidade} - GO\n`;
   laudo += `📐 ${metragem}m² • ${quartos} quartos • ${vagas} vaga(s)\n\n`;
 
   laudo += `💰 *Faixa de Preço Sugerida:*\n`;

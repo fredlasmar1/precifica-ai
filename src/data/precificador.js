@@ -16,12 +16,12 @@ const { estimarPrecoComIA } = require('./analistaIA');
  * 4. Ajustes por características (conservação, vagas, diferenciais)
  */
 async function calcularPreco(dadosImovel) {
-  const { tipo, finalidade, cidade, bairro, metragem, quartos, vagas, diferenciais, conservacao } = dadosImovel;
+  const { tipo, finalidade, cidade, bairro, endereco, metragem, quartos, vagas, diferenciais, conservacao } = dadosImovel;
 
   // Busca paralela: portais + localização
   const [comparativosRes, localizacaoRes] = await Promise.allSettled([
     buscarComparativos(dadosImovel),
-    analisarLocalizacao(cidade, bairro)
+    analisarLocalizacao(cidade, bairro, endereco)
   ]);
 
   let comparativos = comparativosRes.status === 'fulfilled' ? comparativosRes.value : null;

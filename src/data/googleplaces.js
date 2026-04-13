@@ -8,8 +8,12 @@ const cache = new NodeCache({ stdTTL: 86400 }); // Cache de 24h
  * Analisa a infraestrutura ao redor do imóvel via Google Places
  * Retorna score de localização e lista de pontos relevantes
  */
-async function analisarLocalizacao(cidade, bairro) {
-  const cacheKey = `places_${cidade}_${bairro}`.toLowerCase().replace(/\s/g, '_');
+async function analisarLocalizacao(cidade, bairro, endereco) {
+  const enderecoCompleto = endereco
+    ? `${endereco}, ${bairro}, ${cidade}, Goiás, Brasil`
+    : `${bairro}, ${cidade}, Goiás, Brasil`;
+
+  const cacheKey = `places_${enderecoCompleto}`.toLowerCase().replace(/\s/g, '_').slice(0, 200);
   const cached = cache.get(cacheKey);
   if (cached) return cached;
 
@@ -21,9 +25,11 @@ async function analisarLocalizacao(cidade, bairro) {
 
   try {
     // 1. Geocodifica o endereço para obter lat/lng
+    // Com rua: ponto preciso. Sem rua: centro do bairro (menos preciso).
+    console.log(`[Places] Geocodificando: ${enderecoCompleto}`);
     const geocode = await client.geocode({
       params: {
-        address: `${bairro}, ${cidade}, Goiás, Brasil`,
+        address: enderecoCompleto,
         key: apiKey,
         language: 'pt-BR'
       }

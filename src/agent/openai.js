@@ -43,6 +43,7 @@ Formato exato:
   "finalidade": "venda|aluguel",
   "cidade": "nome da cidade",
   "bairro": "nome do bairro",
+  "endereco": "rua e número se informado, ou null se não informado",
   "metragem": número,
   "quartos": número,
   "vagas": número,
