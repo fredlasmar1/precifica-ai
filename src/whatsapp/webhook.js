@@ -154,9 +154,11 @@ function gerarLaudo(dados, resultado) {
   laudo += `• Tempo estimado: ${tempoEstimadoDias} dias\n\n`;
 
   if (analiseIA) {
-    laudo += `🤖 *Análise de mercado (IA):*\n`;
+    laudo += `🔎 *Pesquisa de mercado online:*\n`;
     laudo += `• ${analiseIA.raciocinio}\n`;
-    laudo += `• Faixa estimada: ${analiseIA.faixaM2}\n\n`;
+    laudo += `• Faixa encontrada: ${analiseIA.faixaM2}\n`;
+    if (analiseIA.anunciosAnalisados) laudo += `• Anúncios analisados: ${analiseIA.anunciosAnalisados}\n`;
+    laudo += '\n';
   }
 
   if (localizacao) {

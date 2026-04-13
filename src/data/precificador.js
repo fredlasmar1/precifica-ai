@@ -104,11 +104,13 @@ async function calcularPreco(dadosImovel) {
     ajustesAplicados: ajustes.descricao,
     variacao3meses: null, // removido — vinha do FipeZAP que não existe mais
 
-    // Análise IA (se usada)
+    // Pesquisa de mercado Perplexity (se usada)
     analiseIA: analiseIA ? {
       raciocinio: analiseIA.raciocinio,
       confianca: analiseIA.confianca,
-      faixaM2: `R$ ${analiseIA.faixaMinM2} - R$ ${analiseIA.faixaMaxM2}/m²`
+      faixaM2: `R$ ${analiseIA.faixaMinM2} - R$ ${analiseIA.faixaMaxM2}/m²`,
+      anunciosAnalisados: analiseIA.anunciosAnalisados || 0,
+      citacoes: analiseIA.citacoes || []
     } : null,
 
     // Google Places
