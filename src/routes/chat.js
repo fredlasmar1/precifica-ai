@@ -94,8 +94,8 @@ function gerarLaudo(dados, resultado) {
     precoMinimo, precoRecomendado, precoMaximo,
     precoM2Mercado, precoM2Imovel,
     comparativosEncontrados, tempoEstimadoDias,
-    indiceLiquidez, variacao3meses, ajustesAplicados,
-    localizacao
+    indiceLiquidez, ajustesAplicados,
+    fontesConsultadas, analiseIA, localizacao
   } = resultado;
 
   const tipoLabel = tipo.charAt(0).toUpperCase() + tipo.slice(1);
@@ -111,13 +111,17 @@ function gerarLaudo(dados, resultado) {
   laudo += `• Recomendado: *${formatarReais(precoRecomendado)}*\n`;
   laudo += `• Máximo: *${formatarReais(precoMaximo)}*\n\n`;
   laudo += `📊 *Preço por m²:*\n`;
-  laudo += `• Média do mercado: ${formatarReais(precoM2Mercado)}/m²\n`;
-  laudo += `• Este imóvel: ${formatarReais(precoM2Imovel)}/m²\n\n`;
+  laudo += `• Referência de mercado: ${formatarReais(precoM2Mercado)}/m²\n`;
+  laudo += `• Este imóvel (ajustado): ${formatarReais(precoM2Imovel)}/m²\n\n`;
   laudo += `⚡ *Liquidez:*\n`;
   laudo += `• ${indiceLiquidez}\n`;
   laudo += `• Tempo estimado: ${tempoEstimadoDias} dias\n\n`;
 
-  if (variacao3meses) laudo += `📈 Mercado local: +${variacao3meses}% nos últimos 3 meses\n\n`;
+  if (analiseIA) {
+    laudo += `🤖 *Análise de mercado (IA):*\n`;
+    laudo += `• ${analiseIA.raciocinio}\n`;
+    laudo += `• Faixa estimada: ${analiseIA.faixaM2}\n\n`;
+  }
 
   if (localizacao) {
     laudo += formatarSecaoLocalizacao(localizacao);
@@ -130,9 +134,10 @@ function gerarLaudo(dados, resultado) {
     laudo += '\n';
   }
 
-  if (comparativosEncontrados > 0) laudo += `🔍 Comparativos analisados: ${comparativosEncontrados} imóveis\n\n`;
+  if (comparativosEncontrados > 0) laudo += `🔍 Comparativos analisados: ${comparativosEncontrados} imóveis\n`;
 
-  laudo += `_Avaliação gerada por PrecificaAI_\n_Dados: FipeZAP + Google Places + portais imobiliários_`;
+  laudo += `\n📋 *Fontes:* ${(fontesConsultadas || []).join(' | ')}\n`;
+  laudo += `_Avaliação gerada por PrecificaAI_`;
   return laudo;
 }
 

@@ -1,97 +1,115 @@
-const { getFipeZapIndex } = require('./fipezap');
 const { buscarComparativos } = require('./portais');
 const { analisarLocalizacao, formatarSecaoLocalizacao } = require('./googleplaces');
-const { getMultiplicadorBairro } = require('./bairros');
+const { estimarPrecoComIA } = require('./analistaIA');
 
 /**
- * Motor de precificação — combina FipeZAP + comparativos + ajustes
- * Retorna uma faixa de preço com justificativa
+ * Motor de precificação — hierarquia de fontes:
+ *
+ * 1. Comparativos REAIS de portais (OLX, VivaReal, ZAP, Imovelweb)
+ *    → média ponderada de preço/m² de imóveis similares reais à venda
+ *
+ * 2. Se nenhum portal retornar dados → GPT-4o como analista de mercado
+ *    → estima preço/m² baseado no conhecimento do mercado imobiliário
+ *
+ * 3. Google Places → analisa infraestrutura e aplica multiplicador
+ *
+ * 4. Ajustes por características (conservação, vagas, diferenciais)
  */
 async function calcularPreco(dadosImovel) {
   const { tipo, finalidade, cidade, bairro, metragem, quartos, vagas, diferenciais, conservacao } = dadosImovel;
 
-  // Busca paralela com isolamento de falhas:
-  // se UMA fonte cair, as outras continuam e o laudo ainda é gerado.
-  // Cada fonte já tem fallback interno; isso é defesa em profundidade.
-  const [fipezapRes, comparativosRes, localizacaoRes] = await Promise.allSettled([
-    getFipeZapIndex(cidade, finalidade),
+  // Busca paralela: portais + localização
+  const [comparativosRes, localizacaoRes] = await Promise.allSettled([
     buscarComparativos(dadosImovel),
     analisarLocalizacao(cidade, bairro)
   ]);
 
-  const fipezap = fipezapRes.status === 'fulfilled' && fipezapRes.value
-    ? fipezapRes.value
-    : fipezapEmergencia(finalidade);
-
-  const comparativos = comparativosRes.status === 'fulfilled' && comparativosRes.value
-    ? comparativosRes.value
-    : { fonte: null, totalEncontrados: 0, precoMedioM2: null };
-
+  let comparativos = comparativosRes.status === 'fulfilled' ? comparativosRes.value : null;
   const localizacao = localizacaoRes.status === 'fulfilled' ? localizacaoRes.value : null;
 
-  if (fipezapRes.status === 'rejected') console.warn('[Precificador] FipeZAP rejeitado:', fipezapRes.reason?.message);
   if (comparativosRes.status === 'rejected') console.warn('[Precificador] Comparativos rejeitados:', comparativosRes.reason?.message);
   if (localizacaoRes.status === 'rejected') console.warn('[Precificador] Localização rejeitada:', localizacaoRes.reason?.message);
 
-  // Preço base pelo FipeZAP
-  let precoM2Base = fipezap.precoMedioM2;
+  // ─── Determinar preço/m² base ───────────────────────────────────
 
-  // Se tiver comparativos reais, pondera 60% mercado local + 40% FipeZAP
-  if (comparativos.precoMedioM2) {
-    precoM2Base = Math.round(
-      (comparativos.precoMedioM2 * 0.6) + (fipezap.precoMedioM2 * 0.4)
-    );
+  let precoM2Base = null;
+  let fontePrincipal = null;
+  let analiseIA = null;
+
+  // Prioridade 1: dados REAIS dos portais
+  if (comparativos && comparativos.precoMedioM2) {
+    precoM2Base = comparativos.precoMedioM2;
+    fontePrincipal = comparativos.fonte;
+    console.log(`[Precificador] Usando comparativos reais: R$ ${precoM2Base}/m² (${fontePrincipal})`);
   }
 
-  // Multiplicador de bairro: ajusta o baseline da cidade para o bairro específico.
-  // Setor Bueno em Goiânia vale muito mais que Vila Brasília, mesmo na mesma cidade.
-  const bairroInfo = getMultiplicadorBairro(cidade, bairro);
-  if (bairroInfo.conhecido) {
-    precoM2Base = Math.round(precoM2Base * bairroInfo.mult);
+  // Prioridade 2: GPT-4o analista de mercado
+  if (!precoM2Base) {
+    console.log('[Precificador] Sem comparativos reais, consultando GPT-4o...');
+    analiseIA = await estimarPrecoComIA(dadosImovel);
+    if (analiseIA) {
+      precoM2Base = analiseIA.precoMedioM2;
+      fontePrincipal = analiseIA.fonte;
+      console.log(`[Precificador] GPT-4o estimou: R$ ${precoM2Base}/m² (confiança: ${analiseIA.confianca})`);
+    }
   }
 
-  // Ajustes por características do imóvel
+  // Prioridade 3: último recurso estático (para nunca quebrar)
+  if (!precoM2Base) {
+    console.warn('[Precificador] Todas as fontes falharam, usando referência estática');
+    precoM2Base = finalidade === 'aluguel' ? 18 : 3200;
+    fontePrincipal = 'Referência base Goiás';
+  }
+
+  const precoM2Mercado = precoM2Base; // Guardar para referência no laudo
+
+  // ─── Ajustes ────────────────────────────────────────────────────
+
   const ajustes = calcularAjustes(dadosImovel);
 
-  // Ajuste de localização via Google Places
+  // Localização (Google Places)
   const multLocalizacao = localizacao ? localizacao.multiplicador.fator : 1.0;
   const descLocalizacao = localizacao ? localizacao.multiplicador.descricao : null;
 
   const precoM2Ajustado = Math.round(precoM2Base * ajustes.fator * multLocalizacao);
 
-  // Faixa final
+  // ─── Faixa final ────────────────────────────────────────────────
+
   const precoRecomendado = Math.round(precoM2Ajustado * metragem);
   const precoMinimo = Math.round(precoRecomendado * 0.90);
   const precoMaximo = Math.round(precoRecomendado * 1.12);
 
-  // Tempo estimado de venda/locação (liquidez)
-  const liquidez = estimarLiquidez(dadosImovel, precoM2Ajustado, fipezap.precoMedioM2);
+  // Liquidez
+  const liquidez = estimarLiquidez(dadosImovel, precoM2Ajustado, precoM2Mercado);
+
+  // Fontes consultadas
+  const fontes = [fontePrincipal];
+  if (localizacao) fontes.push('Google Places');
+  if (analiseIA) fontes.push(`Confiança IA: ${analiseIA.confianca}`);
 
   return {
-    // Faixas de preço
     precoMinimo,
     precoRecomendado,
     precoMaximo,
 
-    // Preço por m²
-    precoM2Mercado: fipezap.precoMedioM2,
+    precoM2Mercado,
     precoM2Imovel: precoM2Ajustado,
 
-    // Comparativos
-    comparativosEncontrados: comparativos.totalEncontrados || 0,
-    fontesConsultadas: [fipezap.fonte, comparativos.fonte].filter(Boolean),
+    comparativosEncontrados: comparativos?.totalEncontrados || 0,
+    fontesConsultadas: fontes.filter(Boolean),
 
-    // Liquidez
     tempoEstimadoDias: liquidez.dias,
     indiceLiquidez: liquidez.indicador,
 
-    // Metadados
     ajustesAplicados: ajustes.descricao,
-    fipezapData: fipezap.atualizado,
-    variacao3meses: fipezap.variacao3meses,
-    bairroPerfil: bairroInfo.perfil,
-    bairroConhecido: bairroInfo.conhecido,
-    bairroMultiplicador: bairroInfo.mult,
+    variacao3meses: null, // removido — vinha do FipeZAP que não existe mais
+
+    // Análise IA (se usada)
+    analiseIA: analiseIA ? {
+      raciocinio: analiseIA.raciocinio,
+      confianca: analiseIA.confianca,
+      faixaM2: `R$ ${analiseIA.faixaMinM2} - R$ ${analiseIA.faixaMaxM2}/m²`
+    } : null,
 
     // Google Places
     localizacao,
@@ -101,26 +119,10 @@ async function calcularPreco(dadosImovel) {
 }
 
 /**
- * Último recurso: se até o fallback do FipeZAP falhar (erro interno),
- * usa um valor de mercado conservador para Goiás para que o laudo
- * NUNCA quebre por falta de baseline.
- */
-function fipezapEmergencia(finalidade) {
-  return {
-    cidade: '',
-    precoMedioM2: finalidade === 'aluguel' ? 18 : 3200,
-    variacao3meses: null,
-    fonte: 'Referência conservadora Goiás',
-    atualizado: new Date().toLocaleDateString('pt-BR'),
-    isFallback: true
-  };
-}
-
-/**
  * Calcula fator de ajuste baseado nas características do imóvel
  */
 function calcularAjustes(dados) {
-  const { tipo, conservacao, vagas, diferenciais, quartos, metragem } = dados;
+  const { tipo, conservacao, vagas, diferenciais } = dados;
   let fator = 1.0;
   const descricao = [];
 
@@ -145,7 +147,7 @@ function calcularAjustes(dados) {
   // Diferenciais premium
   const difsArray = Array.isArray(diferenciais) ? diferenciais : [];
   const difsPremium = ['piscina', 'academia', 'portaria 24h', 'gourmet', 'churrasqueira', 'área de lazer'];
-  const difsPresentesPremium = difsArray.filter(d => 
+  const difsPresentesPremium = difsArray.filter(d =>
     difsPremium.some(dp => d.toLowerCase().includes(dp.toLowerCase()))
   );
 
@@ -157,7 +159,7 @@ function calcularAjustes(dados) {
     descricao.push('+5% diferenciais');
   }
 
-  // Terreno — sem ajuste por quartos
+  // Terreno
   if (tipo === 'terreno') {
     return { fator: fator * 0.75, descricao: [...descricao, '-25% terreno (sem construção)'] };
   }
@@ -169,8 +171,8 @@ function calcularAjustes(dados) {
  * Estima o tempo de liquidez baseado no posicionamento de preço
  */
 function estimarLiquidez(dados, precoM2Imovel, precoM2Mercado) {
-  const { finalidade, tipo } = dados;
-  const ratio = precoM2Imovel / precoM2Mercado;
+  const { finalidade } = dados;
+  const ratio = precoM2Mercado > 0 ? precoM2Imovel / precoM2Mercado : 1.0;
 
   let dias, indicador;
 
