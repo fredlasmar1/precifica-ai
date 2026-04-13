@@ -109,7 +109,9 @@ async function calcularPreco(dadosImovel) {
       raciocinio: analiseIA.raciocinio,
       confianca: analiseIA.confianca,
       faixaM2: `R$ ${analiseIA.faixaMinM2} - R$ ${analiseIA.faixaMaxM2}/m²`,
+      precoMedioM2: analiseIA.precoMedioM2,
       anunciosAnalisados: analiseIA.anunciosAnalisados || 0,
+      comparativos: analiseIA.comparativos || [],
       citacoes: analiseIA.citacoes || []
     } : null,
 

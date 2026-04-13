@@ -30,30 +30,53 @@ async function estimarPrecoComIA(dadosImovel) {
 
   const difsTexto = Array.isArray(diferenciais) && diferenciais.length > 0
     ? diferenciais.join(', ')
-    : 'sem diferenciais especiais';
+    : 'nenhum diferencial especial';
 
-  const prompt = `Pesquise o preço REAL por metro quadrado de ${tipo}s para ${finalidade} no bairro ${bairro}, ${cidade}, Goiás, Brasil.
+  // Faixa de metragem: buscar imóveis com tamanho similar (±30%)
+  const metMin = Math.round(metragem * 0.7);
+  const metMax = Math.round(metragem * 1.3);
 
-Características do imóvel que estou avaliando:
-- ${metragem}m², ${quartos} quartos, ${vagas} vagas
+  const conservacaoLabel = {
+    'novo': 'NOVOS ou na planta',
+    'bom': 'em BOM ESTADO (usados/revenda)',
+    'reformar': 'que PRECISAM DE REFORMA'
+  };
+  const estadoFiltro = conservacaoLabel[conservacao] || 'em bom estado';
+
+  const finalidadeLabel = finalidade === 'aluguel' ? 'para ALUGAR' : 'à VENDA';
+
+  const prompt = `Preciso que você pesquise anúncios REAIS de imóveis para fazer uma análise comparativa de mercado.
+
+IMÓVEL QUE ESTOU AVALIANDO:
+- Tipo: ${tipo}
+- Finalidade: ${finalidade}
+- Bairro: ${bairro}, ${cidade} - GO
+- Metragem: ${metragem}m²
+- Quartos: ${quartos} | Vagas: ${vagas}
+- Estado: ${conservacao}
 - Diferenciais: ${difsTexto}
-- Conservação: ${conservacao}
 
-INSTRUÇÕES OBRIGATÓRIAS:
-1. Consulte sites de imóveis reais: ZAP Imóveis, OLX, VivaReal, Imovelweb, Chaves na Mão, QuintoAndar
-2. Busque anúncios reais de ${tipo}s ${finalidade === 'aluguel' ? 'para alugar' : 'à venda'} no bairro ${bairro} em ${cidade}-GO
-3. Calcule a MÉDIA de preço por m² dos anúncios encontrados
-4. Se não encontrar anúncios nesse bairro específico, busque em bairros similares de ${cidade}
-5. Seja preciso — use os preços DOS ANÚNCIOS, não estimativas genéricas
+FILTROS OBRIGATÓRIOS DA PESQUISA (comparação justa — maçã com maçã):
+1. Busque SOMENTE ${tipo}s ${finalidadeLabel} — não misture tipos diferentes
+2. Busque SOMENTE no bairro ${bairro} em ${cidade}-GO (ou bairro vizinho de perfil idêntico se não achar)
+3. Busque SOMENTE imóveis com área entre ${metMin}m² e ${metMax}m² (similar ao avaliado)
+4. Busque SOMENTE imóveis ${estadoFiltro} — não misture novos com usados
+5. Busque entre 5 e 10 anúncios que atendam TODOS os filtros acima
+6. Para cada anúncio, calcule o preço por m² (preço ÷ área)
 
-Retorne SOMENTE um JSON válido neste formato exato:
+SITES PARA CONSULTAR: ZAP Imóveis, OLX, VivaReal, Imovelweb, Chaves na Mão, 62imóveis, QuintoAndar, Properati
+
+RETORNE SOMENTE um JSON válido neste formato:
 {
-  "precoMedioM2": número (média de preço/m² dos anúncios encontrados),
+  "comparativos": [
+    {"area": número_m2, "preco": número_reais, "precoM2": número, "fonte": "nome do site", "detalhe": "breve descrição"}
+  ],
+  "precoMedioM2": número (média de preço/m² dos comparativos),
   "faixaMinM2": número (menor preço/m² encontrado),
   "faixaMaxM2": número (maior preço/m² encontrado),
-  "anunciosAnalisados": número (quantos anúncios você consultou),
-  "confianca": "alta" ou "media" ou "baixa",
-  "raciocinio": "explicação breve com os preços que encontrou e de onde vieram"
+  "anunciosAnalisados": número,
+  "confianca": "alta" se achou 5+ imóveis com filtros exatos, "media" se achou 3-4, "baixa" se menos,
+  "raciocinio": "resumo dos anúncios encontrados, com preços e fontes"
 }`;
 
   try {
@@ -105,6 +128,7 @@ Retorne SOMENTE um JSON válido neste formato exato:
       faixaMinM2: Math.round(resultado.faixaMinM2 || resultado.precoMedioM2 * 0.85),
       faixaMaxM2: Math.round(resultado.faixaMaxM2 || resultado.precoMedioM2 * 1.15),
       anunciosAnalisados: resultado.anunciosAnalisados || 0,
+      comparativos: resultado.comparativos || [],
       confianca: resultado.confianca || 'media',
       raciocinio: resultado.raciocinio || '',
       fonte: 'Pesquisa de mercado (Perplexity)',

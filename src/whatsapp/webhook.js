@@ -154,11 +154,19 @@ function gerarLaudo(dados, resultado) {
   laudo += `• Tempo estimado: ${tempoEstimadoDias} dias\n\n`;
 
   if (analiseIA) {
-    laudo += `🔎 *Pesquisa de mercado online:*\n`;
-    laudo += `• ${analiseIA.raciocinio}\n`;
-    laudo += `• Faixa encontrada: ${analiseIA.faixaM2}\n`;
-    if (analiseIA.anunciosAnalisados) laudo += `• Anúncios analisados: ${analiseIA.anunciosAnalisados}\n`;
-    laudo += '\n';
+    laudo += `🔎 *Comparativos de mercado:*\n`;
+    if (analiseIA.comparativos && analiseIA.comparativos.length > 0) {
+      analiseIA.comparativos.slice(0, 7).forEach((c, i) => {
+        const detalhe = c.detalhe ? ` — ${c.detalhe}` : '';
+        laudo += `  ${i + 1}. ${c.area}m² • ${formatarReais(c.preco)} (${formatarReais(c.precoM2)}/m²)${detalhe}\n`;
+      });
+      laudo += `\n• *Média: ${formatarReais(analiseIA.precoMedioM2)}/m²*\n`;
+      laudo += `• Faixa: ${analiseIA.faixaM2}\n`;
+      laudo += `• ${analiseIA.anunciosAnalisados} anúncios comparáveis encontrados\n\n`;
+    } else {
+      laudo += `• ${analiseIA.raciocinio}\n`;
+      laudo += `• Faixa encontrada: ${analiseIA.faixaM2}\n\n`;
+    }
   }
 
   if (localizacao) {
