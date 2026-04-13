@@ -1,5 +1,6 @@
 const axios = require('axios');
 const NodeCache = require('node-cache');
+const { getConhecimentoLocal } = require('./conhecimentoLocal');
 
 // Cache de 12h — mesma consulta não precisa ir à internet de novo
 const cache = new NodeCache({ stdTTL: 43200 });
@@ -84,6 +85,10 @@ ${!isTerreno ? `3. Busque SOMENTE imóveis ${estadoFiltro} — não misture novo
 6. Para cada anúncio, calcule o preço por m² (preço total ÷ área do ${isTerreno ? 'terreno' : 'imóvel'})
 
 SITES PARA CONSULTAR: OLX, ZAP Imóveis, VivaReal, Imovelweb, Chaves na Mão, 62imóveis, QuintoAndar
+
+${getConhecimentoLocal(cidade)}
+
+Use o contexto acima para VALIDAR seus resultados. Se os preços que encontrar nos sites estiverem muito acima ou abaixo das faixas de referência, desconfie — pode estar incluindo imóveis do tipo errado ou de outra cidade.
 
 RETORNE SOMENTE um JSON válido neste formato:
 {
