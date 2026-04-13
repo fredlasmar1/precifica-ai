@@ -2,6 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const path = require('path');
 const { handleWebhook } = require('./whatsapp/webhook');
+const { handleTelegram } = require('./telegram/bot');
 const chatRoutes = require('./routes/chat');
 
 const app = express();
@@ -15,6 +16,9 @@ app.use('/api', chatRoutes);
 
 // Webhook do WhatsApp (Evolution API)
 app.post('/webhook', handleWebhook);
+
+// Webhook do Telegram
+app.post('/telegram', handleTelegram);
 
 // Health check para Railway
 app.get('/health', (req, res) => {
