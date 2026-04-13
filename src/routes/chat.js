@@ -119,18 +119,30 @@ function gerarLaudo(dados, resultado) {
 
   if (analiseIA) {
     laudo += `🔎 *Comparativos de mercado:*\n`;
-    // Mostra cada imóvel comparativo encontrado
     if (analiseIA.comparativos && analiseIA.comparativos.length > 0) {
       analiseIA.comparativos.slice(0, 7).forEach((c, i) => {
-        const detalhe = c.detalhe ? ` — ${c.detalhe}` : '';
-        laudo += `  ${i + 1}. ${c.area}m² • ${formatarReais(c.preco)} (${formatarReais(c.precoM2)}/m²)${detalhe}\n`;
+        laudo += `  ${i + 1}. ${c.area}m² • ${formatarReais(c.preco)} (${formatarReais(c.precoM2)}/m²)\n`;
+        if (c.detalhe) laudo += `     ${c.detalhe}\n`;
+        if (c.fonte) laudo += `     _Fonte: ${c.fonte}_\n`;
       });
-      laudo += `\n• *Média: ${formatarReais(analiseIA.precoMedioM2)}/m²*\n`;
+      laudo += `\n📊 *Resultado da pesquisa:*\n`;
+      laudo += `• Média: *${formatarReais(analiseIA.precoMedioM2)}/m²*\n`;
       laudo += `• Faixa: ${analiseIA.faixaM2}\n`;
-      laudo += `• ${analiseIA.anunciosAnalisados} anúncios comparáveis encontrados\n\n`;
+      laudo += `• ${analiseIA.anunciosAnalisados} anúncios comparáveis\n`;
+      laudo += `• Confiança: ${analiseIA.confianca}\n`;
+      if (analiseIA.raciocinio) laudo += `• ${analiseIA.raciocinio}\n`;
+      laudo += '\n';
+      // Links dos portais consultados
+      if (analiseIA.citacoes && analiseIA.citacoes.length > 0) {
+        laudo += `🔗 *Links consultados:*\n`;
+        analiseIA.citacoes.slice(0, 3).forEach(url => {
+          laudo += `• ${url}\n`;
+        });
+        laudo += '\n';
+      }
     } else {
       laudo += `• ${analiseIA.raciocinio}\n`;
-      laudo += `• Faixa encontrada: ${analiseIA.faixaM2}\n\n`;
+      laudo += `• Faixa: ${analiseIA.faixaM2}\n\n`;
     }
   }
 
