@@ -46,6 +46,9 @@ async function estimarPrecoComIA(dadosImovel) {
 
   const finalidadeLabel = finalidade === 'aluguel' ? 'para ALUGAR' : 'à VENDA';
 
+  // Busca contexto local da cidade (pesquisado na internet, cacheado 7 dias)
+  const contextoLocal = await getConhecimentoLocal(cidade);
+
   // Descrição precisa do que buscar por tipo
   const isTerreno = tipo === 'terreno';
   const isCasa = tipo === 'casa';
@@ -86,9 +89,7 @@ ${!isTerreno ? `3. Busque SOMENTE imóveis ${estadoFiltro} — não misture novo
 
 SITES PARA CONSULTAR: OLX, ZAP Imóveis, VivaReal, Imovelweb, Chaves na Mão, 62imóveis, QuintoAndar
 
-${getConhecimentoLocal(cidade)}
-
-Use o contexto acima para VALIDAR seus resultados. Se os preços que encontrar nos sites estiverem muito acima ou abaixo das faixas de referência, desconfie — pode estar incluindo imóveis do tipo errado ou de outra cidade.
+${contextoLocal}
 
 RETORNE SOMENTE um JSON válido neste formato:
 {
