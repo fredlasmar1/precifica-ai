@@ -173,10 +173,26 @@ RETORNE SOMENTE um JSON válido neste formato:
       return null;
     }
 
-    const min = finalidade === 'aluguel' ? 5 : 500;
-    const max = finalidade === 'aluguel' ? 300 : 50000;
-    if (resultado.precoMedioM2 < min || resultado.precoMedioM2 > max) {
-      console.warn(`[Perplexity] Preço/m² fora da faixa de sanidade (${min}-${max}):`, resultado.precoMedioM2);
+    // Faixas de sanidade por tipo — terrenos podem ter m² bem abaixo de casas/aptos
+    const faixas = {
+      venda: {
+        terreno:      { min: 30,  max: 15000 },
+        casa:         { min: 500, max: 30000 },
+        apartamento:  { min: 800, max: 30000 },
+        comercial:    { min: 200, max: 30000 },
+        default:      { min: 100, max: 50000 }
+      },
+      aluguel: {
+        terreno:      { min: 1,   max: 100 },
+        casa:         { min: 5,   max: 200 },
+        apartamento:  { min: 8,   max: 200 },
+        comercial:    { min: 5,   max: 300 },
+        default:      { min: 1,   max: 300 }
+      }
+    };
+    const faixa = faixas[finalidade]?.[tipo] || faixas[finalidade]?.default || { min: 30, max: 50000 };
+    if (resultado.precoMedioM2 < faixa.min || resultado.precoMedioM2 > faixa.max) {
+      console.warn(`[Perplexity] Preço/m² fora da faixa de sanidade para ${tipo}/${finalidade} (${faixa.min}-${faixa.max}):`, resultado.precoMedioM2);
       return null;
     }
 
