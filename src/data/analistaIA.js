@@ -14,7 +14,7 @@ const CACHE_TTL = 86400; // 24h — preços não mudam no mesmo dia
  * Retorna { precoMedioM2, faixaMinM2, faixaMaxM2, confianca, analise, fontes }
  */
 async function estimarPrecoComIA(dadosImovel) {
-  const { tipo, finalidade, cidade, bairro, metragem, quartos, vagas, diferenciais, conservacao, geoInfo } = dadosImovel;
+  const { tipo, finalidade, cidade, bairro, endereco, metragem, quartos, vagas, diferenciais, conservacao, geoInfo } = dadosImovel;
 
   const apiKey = process.env.PERPLEXITY_API_KEY;
   if (!apiKey) {
