@@ -117,9 +117,36 @@ async function calcularPreco(dadosImovel) {
   let ajustesDescricao = [];
 
   if (usouDadosReais) {
-    // Preço real = preço final. Sem ajustes artificiais.
     precoM2Final = precoM2Base;
-    ajustesDescricao.push('Nenhum — preço baseado em comparativos reais de perfil similar');
+    ajustesDescricao.push('Preço baseado em comparativos reais');
+
+    // ─── Ajuste inteligente por análise da rua ─────────────────
+    // Quando os comparativos são de bairros VIZINHOS (não do bairro exato)
+    // E a análise da rua indica que o local tem valor diferente da média,
+    // aplicar um ajuste proporcional. Isso é justo porque um terreno no
+    // Centro comercial vale mais que no bairro residencial vizinho.
+    const analiseRua = geoInfo?.analiseRua;
+    const confiancaBaixa = analiseIA?.confianca === 'baixa';
+
+    if (analiseRua && confiancaBaixa) {
+      // Confiança baixa = provavelmente usou bairros vizinhos
+      if (analiseRua.impacto === 'positivo' && analiseRua.perfilRua === 'comercial forte') {
+        const ajuste = 1.20; // +20% para rua comercial forte quando dados são de vizinhos
+        precoM2Final = Math.round(precoM2Final * ajuste);
+        ajustesDescricao.push('+20% rua comercial forte (comparativos de bairros vizinhos)');
+        console.log(`[Precificador] Ajuste rua comercial forte: ${precoM2Base} → ${precoM2Final}/m²`);
+      } else if (analiseRua.impacto === 'positivo') {
+        const ajuste = 1.10; // +10% para rua com boa infraestrutura
+        precoM2Final = Math.round(precoM2Final * ajuste);
+        ajustesDescricao.push('+10% boa infraestrutura na rua (comparativos de bairros vizinhos)');
+        console.log(`[Precificador] Ajuste infraestrutura: ${precoM2Base} → ${precoM2Final}/m²`);
+      } else if (analiseRua.impacto === 'negativo') {
+        const ajuste = 0.90; // -10% para rua com fatores negativos
+        precoM2Final = Math.round(precoM2Final * ajuste);
+        ajustesDescricao.push('-10% fatores negativos na rua (comparativos de bairros vizinhos)');
+        console.log(`[Precificador] Ajuste negativo: ${precoM2Base} → ${precoM2Final}/m²`);
+      }
+    }
   } else {
     // Fallback: aplica ajustes porque o baseline é genérico
     const ajustes = calcularAjustesFallback(dadosImovel);
