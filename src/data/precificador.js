@@ -23,9 +23,16 @@ async function calcularPreco(dadosImovel) {
   const { tipo, finalidade, cidade, bairro, endereco, metragem, quartos, vagas, diferenciais, conservacao } = dadosImovel;
 
   // 1. Validar endereço via Google Maps (confirma que bairro existe na cidade)
-  const geoInfo = await validarEndereco(cidade, bairro, endereco);
-  if (geoInfo && !geoInfo.valido) {
-    console.warn(`[Precificador] Endereço inválido: ${geoInfo.motivo}`);
+  let geoInfo = null;
+  try {
+    geoInfo = await validarEndereco(cidade, bairro, endereco);
+    if (geoInfo && !geoInfo.valido) {
+      console.warn(`[Precificador] Endereço inválido: ${geoInfo.motivo}`);
+    } else if (geoInfo?.valido) {
+      console.log(`[Precificador] Endereço validado: ${geoInfo.enderecoCompleto}`);
+    }
+  } catch (geoErr) {
+    console.error('[Precificador] Erro na validação geográfica:', geoErr.message);
   }
 
   // Injeta dados geográficos no dadosImovel para a Perplexity usar
@@ -65,6 +72,7 @@ async function calcularPreco(dadosImovel) {
   if (!precoM2Base) {
     console.log('[Precificador] Sem comparativos diretos, consultando Perplexity...');
     analiseIA = await estimarPrecoComIA(dadosEnriquecidos);
+    console.log(`[Precificador] Perplexity retornou: ${analiseIA ? 'dados OK' : 'NULL (falhou)'}`);
     if (analiseIA) {
       precoM2Base = analiseIA.precoMedioM2;
       fontePrincipal = analiseIA.fonte;

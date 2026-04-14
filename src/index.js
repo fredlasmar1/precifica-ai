@@ -54,6 +54,17 @@ app.get('/debug/perplexity', async (req, res) => {
   }
 });
 
+// Debug: teste de precificação direto (sem passar pela conversa)
+const { calcularPreco } = require('./data/precificador');
+app.post('/debug/precificar', async (req, res) => {
+  try {
+    const resultado = await calcularPreco(req.body);
+    res.json(resultado);
+  } catch (err) {
+    res.json({ error: err.message, stack: err.stack?.split('\n').slice(0, 5) });
+  }
+});
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`✅ Precifica AI rodando na porta ${PORT}`);
