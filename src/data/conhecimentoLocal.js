@@ -100,7 +100,7 @@ MUITO IMPORTANTE: baseie-se em anúncios e dados REAIS que encontrar na internet
         { role: 'user', content: prompt }
       ],
       temperature: 0.1,
-      max_tokens: 4000
+      max_tokens: 2000
     }, {
       timeout: 60000,
       headers: {

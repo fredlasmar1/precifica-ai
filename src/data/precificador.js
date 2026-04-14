@@ -71,13 +71,18 @@ async function calcularPreco(dadosImovel) {
   // Prioridade 2: Perplexity pesquisa na internet
   if (!precoM2Base) {
     console.log('[Precificador] Sem comparativos diretos, consultando Perplexity...');
-    analiseIA = await estimarPrecoComIA(dadosEnriquecidos);
-    console.log(`[Precificador] Perplexity retornou: ${analiseIA ? 'dados OK' : 'NULL (falhou)'}`);
-    if (analiseIA) {
-      precoM2Base = analiseIA.precoMedioM2;
-      fontePrincipal = analiseIA.fonte;
-      usouDadosReais = true; // Perplexity também pesquisa anúncios reais
-      console.log(`[Precificador] Perplexity: R$ ${precoM2Base}/m² (confiança: ${analiseIA.confianca})`);
+    try {
+      analiseIA = await estimarPrecoComIA(dadosEnriquecidos);
+      console.log(`[Precificador] Perplexity retornou: ${analiseIA ? 'dados OK' : 'NULL (falhou)'}`);
+      if (analiseIA) {
+        precoM2Base = analiseIA.precoMedioM2;
+        fontePrincipal = analiseIA.fonte;
+        usouDadosReais = true;
+        console.log(`[Precificador] Perplexity: R$ ${precoM2Base}/m² (confiança: ${analiseIA.confianca})`);
+      }
+    } catch (pplxErr) {
+      console.error('[Precificador] EXCEÇÃO na Perplexity:', pplxErr.message);
+      console.error('[Precificador] Stack:', pplxErr.stack?.split('\n').slice(0, 3).join(' | '));
     }
   }
 
