@@ -1,6 +1,7 @@
 const { buscarComparativos } = require('./portais');
 const { analisarLocalizacao, formatarSecaoLocalizacao } = require('./googleplaces');
 const { estimarPrecoComIA } = require('./analistaIA');
+const { validarEndereco } = require('./geoValidacao');
 
 /**
  * Motor de precificação — hierarquia de fontes:
@@ -21,7 +22,19 @@ const { estimarPrecoComIA } = require('./analistaIA');
 async function calcularPreco(dadosImovel) {
   const { tipo, finalidade, cidade, bairro, endereco, metragem, quartos, vagas, diferenciais, conservacao } = dadosImovel;
 
-  // Busca paralela: portais + localização (informativa)
+  // 1. Validar endereço via Google Maps (confirma que bairro existe na cidade)
+  const geoInfo = await validarEndereco(cidade, bairro, endereco);
+  if (geoInfo && !geoInfo.valido) {
+    console.warn(`[Precificador] Endereço inválido: ${geoInfo.motivo}`);
+  }
+
+  // Injeta dados geográficos no dadosImovel para a Perplexity usar
+  const dadosEnriquecidos = {
+    ...dadosImovel,
+    geoInfo: geoInfo?.valido ? geoInfo : null
+  };
+
+  // 2. Busca paralela: portais + localização (informativa)
   const [comparativosRes, localizacaoRes] = await Promise.allSettled([
     buscarComparativos(dadosImovel),
     analisarLocalizacao(cidade, bairro, endereco)
@@ -51,7 +64,7 @@ async function calcularPreco(dadosImovel) {
   // Prioridade 2: Perplexity pesquisa na internet
   if (!precoM2Base) {
     console.log('[Precificador] Sem comparativos diretos, consultando Perplexity...');
-    analiseIA = await estimarPrecoComIA(dadosImovel);
+    analiseIA = await estimarPrecoComIA(dadosEnriquecidos);
     if (analiseIA) {
       precoM2Base = analiseIA.precoMedioM2;
       fontePrincipal = analiseIA.fonte;
@@ -146,7 +159,15 @@ async function calcularPreco(dadosImovel) {
     // Google Places — apenas informativo, não altera preço
     localizacao,
     scoreLocalizacao: localizacao?.score || null,
-    descLocalizacao: localizacao ? localizacao.multiplicador.descricao : null
+    descLocalizacao: localizacao ? localizacao.multiplicador.descricao : null,
+
+    // Dados geográficos do Google Maps
+    geoInfo: geoInfo?.valido ? {
+      enderecoValidado: geoInfo.enderecoCompleto,
+      bairrosVizinhos: geoInfo.bairrosProximos,
+      distanciaCentroKm: geoInfo.distanciaCentroKm,
+      viasProximas: geoInfo.viasProximas
+    } : null
   };
 }
 

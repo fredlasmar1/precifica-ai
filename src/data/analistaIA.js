@@ -14,7 +14,7 @@ const CACHE_TTL = 86400; // 24h — preços não mudam no mesmo dia
  * Retorna { precoMedioM2, faixaMinM2, faixaMaxM2, confianca, analise, fontes }
  */
 async function estimarPrecoComIA(dadosImovel) {
-  const { tipo, finalidade, cidade, bairro, metragem, quartos, vagas, diferenciais, conservacao } = dadosImovel;
+  const { tipo, finalidade, cidade, bairro, metragem, quartos, vagas, diferenciais, conservacao, geoInfo } = dadosImovel;
 
   const apiKey = process.env.PERPLEXITY_API_KEY;
   if (!apiKey) {
@@ -102,6 +102,14 @@ ${!isTerreno ? `3. Busque SOMENTE imóveis ${estadoFiltro} — não misture novo
 6. Para cada anúncio, calcule o preço por m² (preço total ÷ área do ${isTerreno ? 'terreno' : 'imóvel'})
 
 SITES PARA CONSULTAR: OLX, ZAP Imóveis, VivaReal, Imovelweb, Chaves na Mão, 62imóveis, QuintoAndar
+${geoInfo ? `
+DADOS GEOGRÁFICOS CONFIRMADOS PELO GOOGLE MAPS:
+- Endereço validado: ${geoInfo.enderecoCompleto}
+- Coordenadas: ${geoInfo.lat}, ${geoInfo.lng}
+- Bairros vizinhos: ${(geoInfo.bairrosProximos || []).join(', ') || 'não identificados'}
+- Distância ao centro: ${geoInfo.distanciaCentroKm != null ? geoInfo.distanciaCentroKm + ' km' : 'não calculada'}
+- Vias próximas: ${(geoInfo.viasProximas || []).join(', ') || 'não identificadas'}
+Use esses bairros vizinhos como alternativa se não encontrar anúncios suficientes no bairro principal.` : ''}
 
 ${contextoLocal}
 

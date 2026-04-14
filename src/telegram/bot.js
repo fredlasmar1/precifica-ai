@@ -159,7 +159,7 @@ function splitMessage(text, maxLen) {
 function gerarLaudo(dados, resultado) {
   const { tipo, finalidade, cidade, bairro, endereco, metragem, quartos, vagas } = dados;
   const {
-    precoMinimo, precoRecomendado, precoMaximo,
+    precoMinimo, precoRecomendado, precoMaximo, geoInfo,
     precoM2Mercado, precoM2Imovel,
     comparativosEncontrados, tempoEstimadoDias,
     indiceLiquidez, ajustesAplicados,
@@ -224,7 +224,15 @@ function gerarLaudo(dados, resultado) {
     laudo += `🔍 Comparativos diretos: ${comparativosEncontrados} imóveis\n`;
   }
 
-  laudo += `\n📋 *Fontes:* ${(fontesConsultadas || []).join(' | ')}\n`;
+  if (geoInfo) {
+    laudo += `🗺️ *Mapa (Google Maps):*\n`;
+    if (geoInfo.bairrosVizinhos?.length) laudo += `• Vizinhos: ${geoInfo.bairrosVizinhos.join(', ')}\n`;
+    if (geoInfo.distanciaCentroKm != null) laudo += `• ${geoInfo.distanciaCentroKm} km do centro\n`;
+    if (geoInfo.viasProximas?.length) laudo += `• Vias: ${geoInfo.viasProximas.join(', ')}\n`;
+    laudo += '\n';
+  }
+
+  laudo += `📋 *Fontes:* ${(fontesConsultadas || []).join(' | ')}\n`;
   laudo += `_Avaliação gerada por PrecificaAI_`;
 
   return laudo;

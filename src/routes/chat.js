@@ -99,7 +99,7 @@ router.delete('/chat/:sessionId', (req, res) => {
 function gerarLaudo(dados, resultado) {
   const { tipo, finalidade, cidade, bairro, endereco, metragem, quartos, vagas } = dados;
   const {
-    precoMinimo, precoRecomendado, precoMaximo,
+    precoMinimo, precoRecomendado, precoMaximo, geoInfo,
     precoM2Mercado, precoM2Imovel,
     comparativosEncontrados, tempoEstimadoDias,
     indiceLiquidez, ajustesAplicados,
@@ -167,7 +167,16 @@ function gerarLaudo(dados, resultado) {
 
   if (comparativosEncontrados > 0) laudo += `🔍 Comparativos analisados: ${comparativosEncontrados} imóveis\n`;
 
-  laudo += `\n📋 *Fontes:* ${(fontesConsultadas || []).join(' | ')}\n`;
+  if (geoInfo) {
+    laudo += `🗺️ *Dados geográficos (Google Maps):*\n`;
+    if (geoInfo.enderecoValidado) laudo += `• Endereço: ${geoInfo.enderecoValidado}\n`;
+    if (geoInfo.bairrosVizinhos?.length) laudo += `• Bairros vizinhos: ${geoInfo.bairrosVizinhos.join(', ')}\n`;
+    if (geoInfo.distanciaCentroKm != null) laudo += `• Distância ao centro: ${geoInfo.distanciaCentroKm} km\n`;
+    if (geoInfo.viasProximas?.length) laudo += `• Vias próximas: ${geoInfo.viasProximas.join(', ')}\n`;
+    laudo += '\n';
+  }
+
+  laudo += `📋 *Fontes:* ${(fontesConsultadas || []).join(' | ')}\n`;
   laudo += `_Avaliação gerada por PrecificaAI_`;
   return laudo;
 }
