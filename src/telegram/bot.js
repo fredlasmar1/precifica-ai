@@ -225,10 +225,19 @@ function gerarLaudo(dados, resultado) {
   }
 
   if (geoInfo) {
-    laudo += `🗺️ *Mapa (Google Maps):*\n`;
+    laudo += `🗺️ *Localização:*\n`;
     if (geoInfo.bairrosVizinhos?.length) laudo += `• Vizinhos: ${geoInfo.bairrosVizinhos.join(', ')}\n`;
     if (geoInfo.distanciaCentroKm != null) laudo += `• ${geoInfo.distanciaCentroKm} km do centro\n`;
-    if (geoInfo.viasProximas?.length) laudo += `• Vias: ${geoInfo.viasProximas.join(', ')}\n`;
+    if (geoInfo.analiseRua) {
+      laudo += `\n📍 *Análise da rua:*\n`;
+      laudo += `• Perfil: ${geoInfo.analiseRua.perfilRua}\n`;
+      laudo += `• ${geoInfo.analiseRua.descricao}\n`;
+      if (geoInfo.analiseRua.positivos?.length) {
+        geoInfo.analiseRua.positivos.slice(0, 3).forEach(f => {
+          laudo += `• ${f.tipo}: ${f.exemplos?.[0] || f.quantidade}\n`;
+        });
+      }
+    }
     laudo += '\n';
   }
 

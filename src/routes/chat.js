@@ -168,11 +168,25 @@ function gerarLaudo(dados, resultado) {
   if (comparativosEncontrados > 0) laudo += `🔍 Comparativos analisados: ${comparativosEncontrados} imóveis\n`;
 
   if (geoInfo) {
-    laudo += `🗺️ *Dados geográficos (Google Maps):*\n`;
+    laudo += `🗺️ *Localização (Google Maps):*\n`;
     if (geoInfo.enderecoValidado) laudo += `• Endereço: ${geoInfo.enderecoValidado}\n`;
     if (geoInfo.bairrosVizinhos?.length) laudo += `• Bairros vizinhos: ${geoInfo.bairrosVizinhos.join(', ')}\n`;
     if (geoInfo.distanciaCentroKm != null) laudo += `• Distância ao centro: ${geoInfo.distanciaCentroKm} km\n`;
     if (geoInfo.viasProximas?.length) laudo += `• Vias próximas: ${geoInfo.viasProximas.join(', ')}\n`;
+    if (geoInfo.analiseRua) {
+      const rua = geoInfo.analiseRua;
+      laudo += `\n📍 *Análise da rua:*\n`;
+      laudo += `• Perfil: ${rua.perfilRua}\n`;
+      laudo += `• ${rua.descricao}\n`;
+      if (rua.positivos?.length) {
+        rua.positivos.slice(0, 4).forEach(f => {
+          laudo += `• ${f.tipo}: ${f.exemplos?.join(', ') || f.quantidade + ' encontrado(s)'}\n`;
+        });
+      }
+      if (rua.negativos?.length) {
+        laudo += `• ⚠️ ${rua.negativos.map(f => f.tipo).join(', ')}\n`;
+      }
+    }
     laudo += '\n';
   }
 

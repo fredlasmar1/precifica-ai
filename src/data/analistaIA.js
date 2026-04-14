@@ -87,20 +87,22 @@ async function estimarPrecoComIA(dadosImovel) {
     // Depois multiplicamos pela metragem do terreno avaliado.
     prompt = `Preciso descobrir o PREÇO MÉDIO DO METRO QUADRADO de terrenos/lotes vazios ${finalidadeLabel} no bairro ${bairro}, ${cidade}-GO (estado de Goiás, Brasil).
 
-TERRENO QUE ESTOU AVALIANDO: ${metragem}m² no ${bairro}
+TERRENO QUE ESTOU AVALIANDO: ${metragem}m² no ${bairro}${endereco ? `, ${endereco}` : ''}
 
-METODOLOGIA:
-- Pesquise o MÁXIMO de anúncios de terrenos/lotes VAZIOS (sem construção) ${finalidadeLabel} no bairro ${bairro} em ${cidade}-GO
-- Aceite terrenos de QUALQUER tamanho (pequenos, médios e grandes) — o que importa é o preço por m² do bairro
-- Para cada anúncio encontrado, calcule: preço ÷ área = preço/m²
-- Calcule a MÉDIA de preço/m² de todos os terrenos encontrados
-- Se não achar suficientes no ${bairro}, busque em bairros vizinhos de perfil similar${geoInfo?.bairrosProximos?.length ? ` (vizinhos confirmados pelo Google Maps: ${geoInfo.bairrosProximos.join(', ')})` : ''}
+COMO PESQUISAR:
+1. Pesquise nos portais: "${bairro} ${cidade} terreno venda", "lote ${bairro} ${cidade} GO"
+2. Pesquise ESPECIFICAMENTE no bairro "${bairro}" — existem terrenos anunciados lá, procure com cuidado
+3. Aceite terrenos de QUALQUER tamanho (300m², 500m², 1000m², 2000m²) — o que importa é o preço por m² do bairro
+4. Para cada anúncio: preço ÷ área = preço/m²
+5. Calcule a MÉDIA de preço/m² de TODOS os terrenos encontrados no ${bairro}
+6. SOMENTE se não achar NENHUM no ${bairro}, aí sim busque em bairros vizinhos de perfil similar${geoInfo?.bairrosProximos?.length ? ` (vizinhos: ${geoInfo.bairrosProximos.join(', ')})` : ''}
+7. Se usar bairros vizinhos, INDIQUE CLARAMENTE quais são do ${bairro} e quais são de vizinhos
 
-REGRAS:
-1. SOMENTE terrenos/lotes VAZIOS — se um anúncio menciona casa, sobrado ou construção, IGNORE
-2. A cidade é ${cidade} no estado de GOIÁS (GO) — não confunda com homônimos
-3. Busque entre 5 e 15 anúncios de terrenos de qualquer tamanho no bairro
-4. Para cada anúncio, calcule o preço por m² (preço total ÷ área do terreno)`;
+REGRAS RÍGIDAS:
+- SOMENTE terrenos/lotes VAZIOS — se um anúncio menciona casa, sobrado, construção, IGNORE completamente
+- A cidade é ${cidade} no estado de GOIÁS (GO) — NÃO confunda com cidades de outros estados
+- Busque entre 5 e 15 anúncios
+- PRIORIZE anúncios que estejam REALMENTE no bairro ${bairro}, não em bairros distantes`;
 
   } else {
     // ─── LÓGICA PARA IMÓVEIS CONSTRUÍDOS ──────────────────────
@@ -140,6 +142,13 @@ DADOS GEOGRÁFICOS CONFIRMADOS PELO GOOGLE MAPS:
 - Distância ao centro: ${geoInfo.distanciaCentroKm != null ? geoInfo.distanciaCentroKm + ' km' : 'não calculada'}
 - Vias próximas: ${(geoInfo.viasProximas || []).join(', ') || 'não identificadas'}
 Use esses bairros vizinhos como alternativa se não encontrar anúncios suficientes no bairro principal.` : ''}
+${geoInfo?.analiseRua ? `
+ANÁLISE DA RUA (Google Maps):
+- Perfil da rua: ${geoInfo.analiseRua.perfilRua}
+- Impacto no valor: ${geoInfo.analiseRua.impacto}
+- ${geoInfo.analiseRua.descricao}
+${geoInfo.analiseRua.positivos?.length ? '- O que tem por perto: ' + geoInfo.analiseRua.positivos.map(f => `${f.tipo} (${f.quantidade})`).join(', ') : ''}
+Considere o perfil da rua ao avaliar se o preço/m² deve ser ajustado para cima ou para baixo em relação à média do bairro.` : ''}
 
 ${contextoLocal}
 

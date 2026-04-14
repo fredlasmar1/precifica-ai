@@ -179,7 +179,8 @@ async function calcularPreco(dadosImovel) {
       enderecoValidado: geoInfo.enderecoCompleto,
       bairrosVizinhos: geoInfo.bairrosProximos,
       distanciaCentroKm: geoInfo.distanciaCentroKm,
-      viasProximas: geoInfo.viasProximas
+      viasProximas: geoInfo.viasProximas,
+      analiseRua: geoInfo.analiseRua
     } : null
   };
 }
