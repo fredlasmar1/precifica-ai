@@ -1,9 +1,8 @@
 const axios = require('axios');
-const NodeCache = require('node-cache');
 const { getConhecimentoLocal } = require('./conhecimentoLocal');
+const cache = require('./cacheFile');
 
-// Cache de 12h — mesma consulta não precisa ir à internet de novo
-const cache = new NodeCache({ stdTTL: 43200 });
+const CACHE_TTL = 86400; // 24h — preços não mudam no mesmo dia
 
 /**
  * Usa Perplexity (modelo sonar) para pesquisar preços REAIS na internet.
@@ -27,7 +26,18 @@ async function estimarPrecoComIA(dadosImovel) {
     .toLowerCase().replace(/\s/g, '_');
 
   const cached = cache.get(cacheKey);
-  if (cached) return cached;
+  if (cached) {
+    console.log(`[Perplexity] Cache hit: ${cacheKey}`);
+    return cached;
+  }
+
+  // Tenta cache similar (mesmo tipo/bairro/finalidade, metragem próxima)
+  const similarPrefix = `pplx_${tipo}_${finalidade}_${cidade}_${bairro}`.toLowerCase().replace(/\s/g, '_');
+  const similar = cache.getSimilar(similarPrefix);
+  if (similar) {
+    console.log(`[Perplexity] Cache similar encontrado para ${similarPrefix}`);
+    return similar;
+  }
 
   const difsTexto = Array.isArray(diferenciais) && diferenciais.length > 0
     ? diferenciais.join(', ')
@@ -179,7 +189,7 @@ RETORNE SOMENTE um JSON válido neste formato:
 
     console.log(`[Perplexity] Resultado: R$ ${analise.precoMedioM2}/m² (${analise.confianca}) — ${analise.anunciosAnalisados} anúncios`);
 
-    cache.set(cacheKey, analise);
+    cache.set(cacheKey, analise, CACHE_TTL);
     return analise;
 
   } catch (err) {
@@ -235,7 +245,7 @@ Retorne SOMENTE JSON: {"comparativos":[{"area":N,"preco":N,"precoM2":N,"fonte":"
         citacoes: citations.slice(0, 5)
       };
       console.log(`[Perplexity] Retry OK: R$ ${analise.precoMedioM2}/m²`);
-      cache.set(cacheKey, analise);
+      cache.set(cacheKey, analise, CACHE_TTL);
       return analise;
     }
   } catch (retryErr) {

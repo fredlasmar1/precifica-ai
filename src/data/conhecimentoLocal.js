@@ -1,8 +1,7 @@
 const axios = require('axios');
-const NodeCache = require('node-cache');
+const cache = require('./cacheFile');
 
-// Cache de 7 dias — o perfil de uma cidade não muda toda semana
-const cache = new NodeCache({ stdTTL: 604800 });
+const PERFIL_TTL = 604800; // 7 dias
 
 /**
  * Pesquisa NA INTERNET o perfil imobiliário de uma cidade via Perplexity.
@@ -122,7 +121,7 @@ MUITO IMPORTANTE: baseie-se em anúncios e dados REAIS que encontrar na internet
     resultado += `\n\nUse este perfil para VALIDAR os resultados da pesquisa de preço. Se um preço encontrado estiver muito fora das faixas acima, desconfie — pode ser imóvel do tipo errado ou de outra cidade.`;
 
     console.log(`[Conhecimento] Perfil de ${cidadeNorm} obtido (${conhecimento.length} chars), cacheando por 7 dias`);
-    cache.set(cacheKey, resultado);
+    cache.set(cacheKey, resultado, PERFIL_TTL);
     return resultado;
 
   } catch (err) {
