@@ -2,47 +2,44 @@ const { buscarComparativos } = require('./portais');
 const { analisarLocalizacao, formatarSecaoLocalizacao } = require('./googleplaces');
 const { estimarPrecoComIA } = require('./analistaIA');
 const { validarEndereco } = require('./geoValidacao');
-const inteligencia = require('./inteligenciaLocal');
+const db = require('./database');
 
 /**
- * Motor de precificação — hierarquia de fontes:
+ * Motor de precificação — GURU IMOBILIÁRIO DE ANÁPOLIS
  *
- * 1. Portais reais (OLX, VivaReal, ZAP, Imovelweb) → comparativos diretos
- * 2. Perplexity → pesquisa anúncios reais na internet
- * 3. Fallback estático → último recurso
+ * Hierarquia de fontes para PREÇO:
+ * 1. Cache DB (preço pesquisado recentemente, < 3 dias) → instantâneo
+ * 2. Portais diretos (OLX, ZAP, VivaReal, Imovelweb)
+ * 3. Perplexity (pesquisa anúncios reais na internet)
+ * → Resultado SEMPRE salvo no Postgres para próximas consultas
  *
- * REGRA FUNDAMENTAL:
- * Quando temos comparativos REAIS (portais ou Perplexity), o preço/m²
- * já reflete localização, diferenciais e conservação porque os comparativos
- * são filtrados pelo mesmo perfil. NÃO aplicar ajustes por cima.
- * Ajustes artificiais só existem no fallback estático.
+ * Conhecimento da cidade:
+ * - Mapeamento de bairros (Postgres, atualizado a cada 7 dias)
+ * - Análise da rua (Google Maps, em tempo real)
+ * - Vizinhanças, perfil comercial, aptidões (Postgres)
  *
- * Google Places serve apenas como INFORMAÇÃO no laudo (o que tem por perto),
- * NÃO como multiplicador de preço quando temos dados reais.
+ * PREÇO É SEMPRE POR AMOSTRAGEM — nunca manual, nunca estático.
+ * A inteligência local complementa com contexto, não com preço fixo.
  */
 async function calcularPreco(dadosImovel) {
   const { tipo, finalidade, cidade, bairro, endereco, metragem, quartos, vagas, diferenciais, conservacao } = dadosImovel;
 
-  // 1. Validar endereço via Google Maps (confirma que bairro existe na cidade)
+  // 1. Validar endereço e analisar rua via Google Maps
   let geoInfo = null;
   try {
     geoInfo = await validarEndereco(cidade, bairro, endereco);
-    if (geoInfo && !geoInfo.valido) {
-      console.warn(`[Precificador] Endereço inválido: ${geoInfo.motivo}`);
-    } else if (geoInfo?.valido) {
-      console.log(`[Precificador] Endereço validado: ${geoInfo.enderecoCompleto}`);
+    if (geoInfo?.valido) {
+      console.log(`[Precificador] Geo OK: ${geoInfo.enderecoCompleto}`);
+      // Salva info do bairro no DB se tiver dados novos
+      await salvarInfoBairro(cidade, bairro, geoInfo);
     }
-  } catch (geoErr) {
-    console.error('[Precificador] Erro na validação geográfica:', geoErr.message);
+  } catch (err) {
+    console.error('[Precificador] Erro geo:', err.message);
   }
 
-  // Injeta dados geográficos no dadosImovel para a Perplexity usar
-  const dadosEnriquecidos = {
-    ...dadosImovel,
-    geoInfo: geoInfo?.valido ? geoInfo : null
-  };
+  const dadosEnriquecidos = { ...dadosImovel, geoInfo: geoInfo?.valido ? geoInfo : null };
 
-  // 2. Busca paralela: portais + localização (informativa)
+  // 2. Busca paralela: portais + Google Places (informativo)
   const [comparativosRes, localizacaoRes] = await Promise.allSettled([
     buscarComparativos(dadosImovel),
     analisarLocalizacao(cidade, bairro, endereco)
@@ -51,189 +48,157 @@ async function calcularPreco(dadosImovel) {
   let comparativos = comparativosRes.status === 'fulfilled' ? comparativosRes.value : null;
   const localizacao = localizacaoRes.status === 'fulfilled' ? localizacaoRes.value : null;
 
-  if (comparativosRes.status === 'rejected') console.warn('[Precificador] Comparativos rejeitados:', comparativosRes.reason?.message);
-  if (localizacaoRes.status === 'rejected') console.warn('[Precificador] Localização rejeitada:', localizacaoRes.reason?.message);
-
-  // ─── Determinar preço/m² base (hierarquia de fontes) ─────────────
-  //
-  // 1. Inteligência Local (dados validados pelo corretor) — PRIORIDADE MÁXIMA
-  // 2. Inteligência Local (dados de pesquisas anteriores, < 30 dias)
-  // 3. Portais diretos (OLX, ZAP, etc.)
-  // 4. Perplexity (pesquisa na internet) — e salva resultado na base local
-  //
-  // Cada consulta da Perplexity alimenta a inteligência local.
-  // Com o tempo, o sistema depende cada vez menos da Perplexity.
+  // ─── Determinar preço/m² ──────────────────────────────────────
 
   let precoM2Base = null;
   let fontePrincipal = null;
   let analiseIA = null;
-  let usouDadosReais = false;
   let confiancaFonte = null;
 
-  // Prioridade 1: Inteligência Local
-  const dadoLocal = inteligencia.consultar(cidade, bairro, tipo, finalidade);
-  if (dadoLocal && dadoLocal.confianca !== 'baixa') {
-    precoM2Base = dadoLocal.precoM2;
-    fontePrincipal = `${dadoLocal.fonte} (${dadoLocal.validadoPor === 'corretor' ? 'validado' : dadoLocal.amostras + ' amostras'})`;
-    usouDadosReais = true;
-    confiancaFonte = dadoLocal.confianca;
-    console.log(`[Precificador] Inteligência Local: R$ ${precoM2Base}/m² (${dadoLocal.validadoPor}, confiança ${dadoLocal.confianca})`);
+  // Prioridade 1: Cache DB (pesquisa recente < 3 dias)
+  try {
+    const precoDb = await db.buscarPreco(cidade, bairro, tipo, finalidade);
+    if (precoDb && precoDb.dias_desde < 3) {
+      precoM2Base = Number(precoDb.preco_m2);
+      fontePrincipal = `${precoDb.fonte} (cache ${Math.round(precoDb.dias_desde * 24)}h)`;
+      confiancaFonte = precoDb.confianca;
+      analiseIA = precoDb.comparativos ? {
+        precoMedioM2: precoM2Base,
+        faixaMinM2: Number(precoDb.faixa_min),
+        faixaMaxM2: Number(precoDb.faixa_max),
+        anunciosAnalisados: precoDb.amostras,
+        comparativos: typeof precoDb.comparativos === 'string' ? JSON.parse(precoDb.comparativos) : precoDb.comparativos,
+        confianca: precoDb.confianca,
+        raciocinio: 'Dados recentes do banco de dados',
+        faixaM2: `R$ ${precoDb.faixa_min} - R$ ${precoDb.faixa_max}/m²`
+      } : null;
+      console.log(`[Precificador] Cache DB: R$ ${precoM2Base}/m² (${Math.round(precoDb.dias_desde * 24)}h atrás)`);
+    }
+  } catch (err) {
+    console.warn('[Precificador] Erro ao buscar cache DB:', err.message);
   }
 
-  // Prioridade 2: dados REAIS dos portais
-  if (!precoM2Base && comparativos && comparativos.precoMedioM2) {
+  // Prioridade 2: Portais diretos
+  if (!precoM2Base && comparativos?.precoMedioM2) {
     precoM2Base = comparativos.precoMedioM2;
     fontePrincipal = comparativos.fonte;
-    usouDadosReais = true;
-    console.log(`[Precificador] Usando comparativos reais: R$ ${precoM2Base}/m² (${fontePrincipal})`);
-    // Salva na inteligência local
-    inteligencia.registrarPesquisa(cidade, bairro, tipo, finalidade, precoM2Base, comparativos.totalEncontrados, comparativos.precoMinimo, comparativos.precoMaximo);
+    confiancaFonte = 'alta';
+    console.log(`[Precificador] Portais: R$ ${precoM2Base}/m²`);
+    // Salva no DB
+    try {
+      await db.salvarPreco({ cidade, bairro, tipo, finalidade, preco_m2: precoM2Base, faixa_min: comparativos.precoMinimo, faixa_max: comparativos.precoMaximo, amostras: comparativos.totalEncontrados, confianca: 'alta', fonte: comparativos.fonte, comparativos: comparativos.imoveis });
+    } catch {}
   }
 
-  // Prioridade 3: Perplexity pesquisa na internet
+  // Prioridade 3: Perplexity
   if (!precoM2Base) {
     console.log('[Precificador] Consultando Perplexity...');
     try {
       analiseIA = await estimarPrecoComIA(dadosEnriquecidos);
-      console.log(`[Precificador] Perplexity retornou: ${analiseIA ? 'dados OK' : 'NULL (falhou)'}`);
       if (analiseIA) {
         precoM2Base = analiseIA.precoMedioM2;
         fontePrincipal = analiseIA.fonte;
-        usouDadosReais = true;
         confiancaFonte = analiseIA.confianca;
-        console.log(`[Precificador] Perplexity: R$ ${precoM2Base}/m² (confiança: ${analiseIA.confianca})`);
-        // Salva na inteligência local para próximas consultas
-        inteligencia.registrarPesquisa(cidade, bairro, tipo, finalidade, precoM2Base, analiseIA.anunciosAnalisados, analiseIA.faixaMinM2, analiseIA.faixaMaxM2);
+        console.log(`[Precificador] Perplexity: R$ ${precoM2Base}/m² (${analiseIA.confianca})`);
+        // Salva no DB para próximas consultas
+        try {
+          await db.salvarPreco({ cidade, bairro, tipo, finalidade, preco_m2: precoM2Base, faixa_min: analiseIA.faixaMinM2, faixa_max: analiseIA.faixaMaxM2, amostras: analiseIA.anunciosAnalisados, confianca: analiseIA.confianca, fonte: 'Perplexity', comparativos: analiseIA.comparativos });
+        } catch {}
       }
-    } catch (pplxErr) {
-      console.error('[Precificador] EXCEÇÃO na Perplexity:', pplxErr.message);
+    } catch (err) {
+      console.error('[Precificador] Erro Perplexity:', err.message);
     }
   }
 
-  // Prioridade 4: Inteligência Local com confiança baixa (melhor que nada)
-  if (!precoM2Base && dadoLocal) {
-    precoM2Base = dadoLocal.precoM2;
-    fontePrincipal = `${dadoLocal.fonte} (dado antigo — ${dadoLocal.diasDesdeAtualização} dias)`;
-    usouDadosReais = true;
-    console.log(`[Precificador] Usando dado local antigo: R$ ${precoM2Base}/m²`);
+  // Prioridade 4: Cache DB antigo (melhor que nada)
+  if (!precoM2Base) {
+    try {
+      const precoAntigo = await db.buscarPreco(cidade, bairro, tipo, finalidade);
+      if (precoAntigo) {
+        precoM2Base = Number(precoAntigo.preco_m2);
+        fontePrincipal = `Pesquisa anterior (${Math.round(precoAntigo.dias_desde)} dias atrás)`;
+        confiancaFonte = 'baixa';
+        console.log(`[Precificador] Cache antigo: R$ ${precoM2Base}/m²`);
+      }
+    } catch {}
   }
 
-  // Se nenhuma fonte retornou dados, NÃO inventar um preço.
-  // Melhor informar que não conseguiu do que dar um número errado.
+  // Sem dados = erro
   if (!precoM2Base) {
-    console.error('[Precificador] TODAS as fontes falharam — sem dados para precificar');
     return {
       erro: true,
-      mensagem: '⚠️ Não foi possível obter dados de mercado para este imóvel neste momento. Os portais e a pesquisa online não retornaram resultados. Tente novamente em alguns minutos ou com um endereço/bairro diferente.',
+      mensagem: '⚠️ Não foi possível obter dados de mercado neste momento. Tente novamente em alguns minutos.',
       precoMinimo: 0, precoRecomendado: 0, precoMaximo: 0,
       precoM2Mercado: 0, precoM2Imovel: 0,
       comparativosEncontrados: 0, fontesConsultadas: [],
       tempoEstimadoDias: '-', indiceLiquidez: '-',
-      ajustesAplicados: [], variacao3meses: null,
-      analiseIA: null, localizacao, scoreLocalizacao: localizacao?.score || null,
-      descLocalizacao: null
+      ajustesAplicados: [], analiseIA: null,
+      localizacao, scoreLocalizacao: localizacao?.score || null, descLocalizacao: null, geoInfo: null
     };
   }
 
   const precoM2Mercado = precoM2Base;
 
-  // ─── Preço final ────────────────────────────────────────────────
-  //
-  // Dados reais (portais ou Perplexity): preço JÁ reflete tudo.
-  // Os comparativos são do mesmo tipo, bairro, tamanho e estado.
-  // NÃO aplicar ajustes — seria contar duas vezes.
-  //
-  // Fallback estático: preço é genérico, precisa de ajuste.
+  // ─── Ajuste por análise da rua ──────────────────────────────────
 
-  let precoM2Final;
-  let ajustesDescricao = [];
+  let precoM2Final = precoM2Base;
+  let ajustesDescricao = ['Preço baseado em amostragem de mercado'];
 
-  if (usouDadosReais) {
-    precoM2Final = precoM2Base;
-    ajustesDescricao.push('Preço baseado em comparativos reais');
-
-    // ─── Ajuste inteligente por análise da rua ─────────────────
-    // Quando os comparativos são de bairros VIZINHOS (não do bairro exato)
-    // E a análise da rua indica que o local tem valor diferente da média,
-    // aplicar um ajuste proporcional. Isso é justo porque um terreno no
-    // Centro comercial vale mais que no bairro residencial vizinho.
-    const analiseRua = geoInfo?.analiseRua;
-    const confiancaBaixa = confiancaFonte === 'baixa' || analiseIA?.confianca === 'baixa';
-
-    if (analiseRua && confiancaBaixa) {
-      // Confiança baixa = provavelmente usou bairros vizinhos
-      if (analiseRua.impacto === 'positivo' && analiseRua.perfilRua === 'comercial forte') {
-        const ajuste = 1.20; // +20% para rua comercial forte quando dados são de vizinhos
-        precoM2Final = Math.round(precoM2Final * ajuste);
-        ajustesDescricao.push('+20% rua comercial forte (comparativos de bairros vizinhos)');
-        console.log(`[Precificador] Ajuste rua comercial forte: ${precoM2Base} → ${precoM2Final}/m²`);
-      } else if (analiseRua.impacto === 'positivo') {
-        const ajuste = 1.10; // +10% para rua com boa infraestrutura
-        precoM2Final = Math.round(precoM2Final * ajuste);
-        ajustesDescricao.push('+10% boa infraestrutura na rua (comparativos de bairros vizinhos)');
-        console.log(`[Precificador] Ajuste infraestrutura: ${precoM2Base} → ${precoM2Final}/m²`);
-      } else if (analiseRua.impacto === 'negativo') {
-        const ajuste = 0.90; // -10% para rua com fatores negativos
-        precoM2Final = Math.round(precoM2Final * ajuste);
-        ajustesDescricao.push('-10% fatores negativos na rua (comparativos de bairros vizinhos)');
-        console.log(`[Precificador] Ajuste negativo: ${precoM2Base} → ${precoM2Final}/m²`);
-      }
+  const analiseRua = geoInfo?.analiseRua;
+  if (analiseRua && confiancaFonte === 'baixa') {
+    if (analiseRua.impacto === 'positivo' && analiseRua.perfilRua === 'comercial forte') {
+      precoM2Final = Math.round(precoM2Final * 1.20);
+      ajustesDescricao.push('+20% rua comercial forte (comparativos de bairros vizinhos)');
+    } else if (analiseRua.impacto === 'positivo') {
+      precoM2Final = Math.round(precoM2Final * 1.10);
+      ajustesDescricao.push('+10% boa infraestrutura na rua');
+    } else if (analiseRua.impacto === 'negativo') {
+      precoM2Final = Math.round(precoM2Final * 0.90);
+      ajustesDescricao.push('-10% fatores negativos na rua');
     }
-  } else {
-    // Fallback: aplica ajustes porque o baseline é genérico
-    const ajustes = calcularAjustesFallback(dadosImovel);
-    precoM2Final = Math.round(precoM2Base * ajustes.fator);
-    ajustesDescricao = ajustes.descricao;
   }
 
-  // ─── Faixa final ────────────────────────────────────────────────
+  // ─── Resultado final ───────────────────────────────────────────
 
   const precoRecomendado = Math.round(precoM2Final * metragem);
   const precoMinimo = Math.round(precoRecomendado * 0.92);
   const precoMaximo = Math.round(precoRecomendado * 1.08);
-
-  // Liquidez
   const liquidez = estimarLiquidez(finalidade, precoM2Final, precoM2Mercado);
 
-  // Fontes
   const fontes = [fontePrincipal];
-  if (localizacao) fontes.push('Google Places (infraestrutura)');
-  if (analiseIA) fontes.push(`Confiança: ${analiseIA.confianca}`);
+  if (localizacao) fontes.push('Google Places');
+
+  // Salva avaliação no histórico
+  try {
+    await db.salvarAvaliacao({
+      cidade, bairro, endereco, tipo, finalidade, metragem, quartos, vagas, conservacao,
+      diferenciais: Array.isArray(diferenciais) ? diferenciais : [],
+      preco_m2_mercado: precoM2Mercado, preco_m2_ajustado: precoM2Final,
+      preco_recomendado: precoRecomendado, preco_minimo: precoMinimo, preco_maximo: precoMaximo,
+      fontes, confianca: confiancaFonte, analise_rua: analiseRua, laudo: null, canal: 'web'
+    });
+  } catch {}
 
   return {
-    precoMinimo,
-    precoRecomendado,
-    precoMaximo,
-
-    precoM2Mercado,
-    precoM2Imovel: precoM2Final,
-
+    precoMinimo, precoRecomendado, precoMaximo,
+    precoM2Mercado, precoM2Imovel: precoM2Final,
     comparativosEncontrados: comparativos?.totalEncontrados || 0,
     fontesConsultadas: fontes.filter(Boolean),
-
     tempoEstimadoDias: liquidez.dias,
     indiceLiquidez: liquidez.indicador,
-
     ajustesAplicados: ajustesDescricao,
     variacao3meses: null,
-
-    // Pesquisa Perplexity (se usada)
     analiseIA: analiseIA ? {
       raciocinio: analiseIA.raciocinio,
       confianca: analiseIA.confianca,
-      faixaM2: `R$ ${analiseIA.faixaMinM2} - R$ ${analiseIA.faixaMaxM2}/m²`,
+      faixaM2: analiseIA.faixaM2 || `R$ ${analiseIA.faixaMinM2} - R$ ${analiseIA.faixaMaxM2}/m²`,
       precoMedioM2: analiseIA.precoMedioM2,
       anunciosAnalisados: analiseIA.anunciosAnalisados || 0,
       comparativos: analiseIA.comparativos || [],
       citacoes: analiseIA.citacoes || []
     } : null,
-
-    // Google Places — apenas informativo, não altera preço
-    localizacao,
-    scoreLocalizacao: localizacao?.score || null,
+    localizacao, scoreLocalizacao: localizacao?.score || null,
     descLocalizacao: localizacao ? localizacao.multiplicador.descricao : null,
-
-    // Dados geográficos do Google Maps
     geoInfo: geoInfo?.valido ? {
       enderecoValidado: geoInfo.enderecoCompleto,
       bairrosVizinhos: geoInfo.bairrosProximos,
@@ -245,59 +210,26 @@ async function calcularPreco(dadosImovel) {
 }
 
 /**
- * Ajustes SOMENTE para fallback estático — quando não temos dados reais.
- * NÃO usar quando tiver comparativos reais.
+ * Salva informações do bairro no DB a partir do Google Maps
  */
-function calcularAjustesFallback(dados) {
-  const { tipo, conservacao, vagas, diferenciais } = dados;
-  let fator = 1.0;
-  const descricao = [];
-
-  if (conservacao === 'novo') {
-    fator *= 1.12;
-    descricao.push('+12% imóvel novo');
-  } else if (conservacao === 'reformar') {
-    fator *= 0.85;
-    descricao.push('-15% necessita reformas');
-  }
-
-  if (vagas >= 2) {
-    fator *= 1.06;
-    descricao.push('+6% 2+ vagas');
-  } else if (vagas === 0) {
-    fator *= 0.95;
-    descricao.push('-5% sem garagem');
-  }
-
-  const difsArray = Array.isArray(diferenciais) ? diferenciais : [];
-  const difsPremium = ['piscina', 'academia', 'portaria 24h', 'gourmet', 'churrasqueira', 'área de lazer'];
-  const count = difsArray.filter(d =>
-    difsPremium.some(dp => d.toLowerCase().includes(dp.toLowerCase()))
-  ).length;
-
-  if (count >= 3) {
-    fator *= 1.10;
-    descricao.push('+10% múltiplos diferenciais premium');
-  } else if (count >= 1) {
-    fator *= 1.05;
-    descricao.push('+5% diferenciais');
-  }
-
-  if (tipo === 'terreno') {
-    fator *= 0.75;
-    descricao.push('-25% terreno (sem construção)');
-  }
-
-  return { fator, descricao };
+async function salvarInfoBairro(cidade, bairro, geoInfo) {
+  try {
+    await db.salvarBairro({
+      cidade, bairro,
+      vizinhos: geoInfo.bairrosProximos,
+      ruas_valorizadas: geoInfo.viasProximas,
+      perfil: geoInfo.analiseRua?.perfilRua || null,
+      descricao: geoInfo.analiseRua?.descricao || null,
+      fatores_positivos: geoInfo.analiseRua?.positivos?.map(f => `${f.tipo}: ${f.exemplos?.join(', ')}`) || [],
+      fatores_negativos: geoInfo.analiseRua?.negativos?.map(f => f.tipo) || [],
+      fonte: 'google_maps'
+    });
+  } catch {}
 }
 
-/**
- * Estima liquidez
- */
 function estimarLiquidez(finalidade, precoM2Imovel, precoM2Mercado) {
   const ratio = precoM2Mercado > 0 ? precoM2Imovel / precoM2Mercado : 1.0;
   let dias, indicador;
-
   if (finalidade === 'aluguel') {
     if (ratio <= 0.95) { dias = '15 a 30'; indicador = '🟢 Alta liquidez'; }
     else if (ratio <= 1.05) { dias = '30 a 60'; indicador = '🟡 Liquidez normal'; }
@@ -307,7 +239,6 @@ function estimarLiquidez(finalidade, precoM2Imovel, precoM2Mercado) {
     else if (ratio <= 1.05) { dias = '60 a 120'; indicador = '🟡 Liquidez normal'; }
     else { dias = '120 a 180+'; indicador = '🔴 Liquidez baixa'; }
   }
-
   return { dias, indicador };
 }
 

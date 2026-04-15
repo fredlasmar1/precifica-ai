@@ -25,32 +25,47 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', service: 'Precifica AI', timestamp: new Date().toISOString() });
 });
 
-// ─── API da Inteligência Local ───────────────────────────────────
-const inteligencia = require('./data/inteligenciaLocal');
+// ─── API do Guru Imobiliário ─────────────────────────────────────
+const db = require('./data/database');
 
-// Ver estatísticas da base
-app.get('/api/inteligencia/stats', (req, res) => {
-  res.json(inteligencia.stats());
+// Estatísticas da base de conhecimento
+app.get('/api/guru/stats', async (req, res) => {
+  try { res.json(await db.stats()); }
+  catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// Ver todos os dados de uma cidade
-app.get('/api/inteligencia/:cidade', (req, res) => {
-  res.json(inteligencia.listarCidade(req.params.cidade));
+// Listar bairros mapeados de uma cidade
+app.get('/api/guru/bairros/:cidade', async (req, res) => {
+  try { res.json(await db.listarBairros(req.params.cidade)); }
+  catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// Corretor valida/corrige um preço
-// POST { cidade, bairro, tipo, finalidade, precoM2, faixaMin, faixaMax, notas }
-app.post('/api/inteligencia/validar', (req, res) => {
-  const { cidade, bairro, tipo, finalidade, precoM2, faixaMin, faixaMax, notas } = req.body;
-  if (!cidade || !bairro || !tipo || !finalidade || !precoM2) {
-    return res.status(400).json({ error: 'cidade, bairro, tipo, finalidade e precoM2 são obrigatórios' });
-  }
-  const resultado = inteligencia.validarPreco(cidade, bairro, tipo, finalidade, precoM2, faixaMin, faixaMax, notas);
-  res.json({ ok: true, dado: resultado });
+// Ver dados de um bairro específico
+app.get('/api/guru/bairro/:cidade/:bairro', async (req, res) => {
+  try { res.json(await db.buscarBairro(req.params.cidade, req.params.bairro)); }
+  catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Corretor adiciona/atualiza info de um bairro
+app.post('/api/guru/bairro', async (req, res) => {
+  try { res.json(await db.salvarBairro(req.body)); }
+  catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Corretor envia feedback sobre uma avaliação
+app.post('/api/guru/feedback', async (req, res) => {
+  try { res.json(await db.salvarFeedback(req.body)); }
+  catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log(`✅ Precifica AI rodando na porta ${PORT}`);
   console.log(`🌐 Interface web: http://localhost:${PORT}`);
+  // Inicializa tabelas do Postgres
+  try {
+    await db.inicializar();
+  } catch (err) {
+    console.error('[DB] Falha ao inicializar:', err.message);
+  }
 });

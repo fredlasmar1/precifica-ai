@@ -1,18 +1,9 @@
 const axios = require('axios');
-const cache = require('./cacheFile');
-
-const PERFIL_TTL = 604800; // 7 dias
+const db = require('./database');
 
 /**
  * Pesquisa NA INTERNET o perfil imobiliário de uma cidade via Perplexity.
- * Retorna texto com: bairros valorizados, ruas nobres, faixas de preço
- * por tipo, contexto econômico.
- *
- * Esse conhecimento é construído AUTOMATICAMENTE pela IA pesquisando
- * em tempo real — não é dado escrito manualmente.
- *
- * É cacheado por 7 dias e injetado no prompt de pesquisa de preço
- * para a Perplexity ter contexto local ao buscar comparativos.
+ * Salva no Postgres. Revalida a cada 7 dias.
  */
 async function getConhecimentoLocal(cidade) {
   const apiKey = process.env.PERPLEXITY_API_KEY;
@@ -21,111 +12,65 @@ async function getConhecimentoLocal(cidade) {
   const cidadeNorm = (cidade || '').trim();
   if (!cidadeNorm) return '';
 
-  const cacheKey = `perfil_v2_${cidadeNorm}`.toLowerCase().replace(/\s/g, '_');
-  const cached = cache.get(cacheKey);
-  if (cached) {
-    console.log(`[Conhecimento] Cache hit: ${cidadeNorm}`);
-    return cached;
+  // Busca no Postgres
+  const existente = await db.buscarConhecimentoCidade(cidadeNorm);
+  if (existente && existente.dias_desde < 7) {
+    console.log(`[Conhecimento] DB hit: ${cidadeNorm} (${Math.round(existente.dias_desde)} dias)`);
+    return existente.perfil_geral;
   }
 
-  console.log(`[Conhecimento] Pesquisando perfil imobiliário de ${cidadeNorm}-GO na internet...`);
+  console.log(`[Conhecimento] Pesquisando perfil de ${cidadeNorm}-GO na internet...`);
 
   const prompt = `Pesquise informações REAIS e ATUAIS sobre o mercado imobiliário da cidade de ${cidadeNorm}, no estado de Goiás (GO), Brasil.
 
-Preciso de um perfil completo para usar como contexto em avaliações imobiliárias. Pesquise nos portais imobiliários (ZAP, OLX, VivaReal, 62imóveis) e fontes locais.
-
 Retorne as seguintes informações:
 
-1. PERFIL DA CIDADE:
-   - População, economia, posição no estado
-   - Distância de capitais e cidades vizinhas
-   - Principais atividades econômicas (industrial, comercial, agrícola)
+1. PERFIL DA CIDADE: população, economia, posição no estado
 
-2. MAPA COMPLETO DE BAIRROS — lista TODOS os bairros que encontrar, organizados por região/zona da cidade:
-   - ZONA NORTE: quais bairros ficam, perfil de cada um
-   - ZONA SUL: quais bairros ficam, perfil de cada um
-   - ZONA LESTE: quais bairros ficam, perfil de cada um
-   - ZONA OESTE: quais bairros ficam, perfil de cada um
-   - CENTRO: quais bairros/setores compõem a região central
-   - Para CADA bairro: diga se é residencial, comercial, industrial ou misto
-   - Para CADA bairro: diga o nível (alto padrão, médio, popular)
-   - Quais bairros fazem DIVISA entre si (vizinhança)
-   - Exemplo: "Anápolis City faz divisa com o Centro e Jundiaí"
+2. MAPA DE BAIRROS — liste os bairros organizados por zona:
+   - Para cada bairro: perfil (residencial/comercial/industrial), nível (alto/médio/popular)
+   - Quais bairros fazem DIVISA entre si
 
-3. CONDOMÍNIOS FECHADOS:
-   - Liste os principais condomínios fechados da cidade
-   - Em qual bairro cada um está localizado
-   - Perfil (alto padrão, médio)
+3. CONDOMÍNIOS FECHADOS: principais, em qual bairro
 
-4. RUAS E AVENIDAS mais importantes e valorizadas:
-   - Avenidas principais e o que fica nelas (comércio, residências nobres)
-   - Ruas valorizadas em bairros nobres
-   - Vias de acesso (rodovias, anéis viários)
+4. RUAS E AVENIDAS mais valorizadas
 
-5. FAIXAS DE PREÇO POR M² — pesquise nos portais imobiliários (ZAP, OLX, VivaReal, 62imóveis, Chaves na Mão) anúncios REAIS e monte as faixas:
-   a) TERRENOS/LOTES VAZIOS por região/bairro:
-      - Alto padrão (ex: Jundiaí): R$ ???/m²
-      - Centro: R$ ???/m²
-      - Médio: R$ ???/m²
-      - Popular: R$ ???/m²
-   b) CASAS USADAS (revenda) por região/bairro
-   c) CASAS NOVAS por região/bairro
-   d) APARTAMENTOS NOVOS por região/bairro
-   e) APARTAMENTOS USADOS por região/bairro
-   f) GALPÕES/COMERCIAL (se houver)
+5. FAIXAS DE PREÇO POR M² pesquisadas nos portais:
+   a) Terrenos/lotes vazios por bairro
+   b) Casas usadas por bairro
+   c) Casas novas por bairro
+   d) Apartamentos novos e usados por bairro
 
-6. PARTICULARIDADES DO MERCADO LOCAL:
-   - Metragem mínima de lotes por bairro (ex: Jundiaí tem lotes a partir de 300m²)
-   - Regiões industriais (DAIA, etc.) — NÃO confundir com residencial
-   - Bairros em expansão / loteamentos novos
-   - Bairros com muita oferta vs pouca oferta
-   - Diferença de preço entre bairros vizinhos e por quê
-   - Sazonalidade ou tendências recentes do mercado
+6. PARTICULARIDADES: metragem mínima de lotes, zonas industriais, tendências
 
-7. ARMADILHAS COMUNS EM PESQUISA DE PREÇO:
-   - Bairros com nomes iguais a cidades de outros estados
-   - Bairros novos que portais ainda não têm bem catalogados
-   - Anúncios que misturam tipos (casa anunciada como terreno, etc.)
-
-MUITO IMPORTANTE: baseie-se em anúncios e dados REAIS que encontrar na internet. Pesquise em múltiplos portais. NÃO invente dados — se não encontrar informação sobre algum bairro, diga que não encontrou.`;
+IMPORTANTE: baseie-se em dados REAIS da internet.`;
 
   try {
     const response = await axios.post('https://api.perplexity.ai/chat/completions', {
       model: 'sonar',
       messages: [
-        {
-          role: 'system',
-          content: 'Você é um pesquisador de mercado imobiliário brasileiro. Pesquise dados reais na internet e retorne informações detalhadas e factuais. Retorne em texto corrido organizado por seções.'
-        },
+        { role: 'system', content: 'Pesquisador de mercado imobiliário brasileiro. Dados reais, factuais e organizados.' },
         { role: 'user', content: prompt }
       ],
       temperature: 0.1,
       max_tokens: 2000
     }, {
       timeout: 60000,
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json'
-      }
+      headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' }
     });
 
     const conhecimento = response.data.choices[0].message.content;
     const citations = response.data.citations || [];
 
-    // Monta o contexto com fontes
-    let resultado = `PERFIL IMOBILIÁRIO DE ${cidadeNorm.toUpperCase()}-GO (pesquisado automaticamente na internet):\n\n`;
-    resultado += conhecimento;
-    if (citations.length > 0) {
-      resultado += `\n\nFontes consultadas: ${citations.slice(0, 5).join(', ')}`;
-    }
-    resultado += `\n\nUse este perfil para VALIDAR os resultados da pesquisa de preço. Se um preço encontrado estiver muito fora das faixas acima, desconfie — pode ser imóvel do tipo errado ou de outra cidade.`;
+    // Salva no Postgres
+    await db.salvarConhecimentoCidade(cidadeNorm, conhecimento, 'Perplexity', citations.slice(0, 10));
+    console.log(`[Conhecimento] Perfil de ${cidadeNorm} salvo no DB (${conhecimento.length} chars)`);
 
-    console.log(`[Conhecimento] Perfil de ${cidadeNorm} obtido (${conhecimento.length} chars), cacheando por 7 dias`);
-    cache.set(cacheKey, resultado, PERFIL_TTL);
-    return resultado;
-
+    return conhecimento;
   } catch (err) {
-    console.error(`[Conhecimento] Erro ao pesquisar ${cidadeNorm}:`, err.response?.data || err.message);
+    console.error(`[Conhecimento] Erro:`, err.response?.data || err.message);
+    // Se tem dado antigo no DB, usa
+    if (existente) return existente.perfil_geral;
     return '';
   }
 }
