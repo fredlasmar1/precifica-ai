@@ -87,9 +87,6 @@ async function validarEndereco(cidade, bairro, endereco) {
     // 4. Buscar vias principais próximas
     const viasProximas = await buscarViasProximas(location, apiKey);
 
-    // 5. Analisar a rua/entorno imediato (o que valoriza ou desvaloriza)
-    const analiseRua = await analisarRua(location, apiKey);
-
     const resultado = {
       valido: true,
       enderecoCompleto: formatted,
@@ -99,8 +96,7 @@ async function validarEndereco(cidade, bairro, endereco) {
       cidadeGoogle,
       bairrosProximos: [...new Set(bairrosProximos)].filter(b => b.toLowerCase() !== bairroGoogle.toLowerCase()),
       distanciaCentroKm: distanciaCentro,
-      viasProximas: [...new Set(viasProximas)].slice(0, 5),
-      analiseRua
+      viasProximas: [...new Set(viasProximas)].slice(0, 5)
     };
 
     console.log(`[Geo] Validado: ${formatted} | Vizinhos: ${resultado.bairrosProximos.join(', ')} | ${distanciaCentro}km do centro`);

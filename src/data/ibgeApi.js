@@ -65,7 +65,8 @@ async function getDadosMunicipio(codigoIBGE) {
       mesorregiao: info.microrregiao?.mesorregiao?.nome || null,
       populacao,
       pibMilhoes: pib ? Math.round(pib / 1000) : null,
-      pibPerCapita: populacao && pib ? Math.round(pib / populacao) : null
+      // PIB do IBGE vem em milhares de reais, então pib * 1000 / populacao = per capita
+      pibPerCapita: populacao && pib ? Math.round((pib * 1000) / populacao) : null
     };
 
     console.log(`[IBGE] ${resultado.nome}: pop ${populacao?.toLocaleString()}, PIB R$ ${resultado.pibMilhoes}mi`);

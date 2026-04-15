@@ -1,5 +1,5 @@
 const { buscarComparativos } = require('./portais');
-const { analisarLocalizacao, formatarSecaoLocalizacao } = require('./googleplaces');
+// Google Places removido — OSM é mais preciso e não inventa dados
 const { estimarPrecoComIA } = require('./analistaIA');
 const { validarEndereco } = require('./geoValidacao');
 const { perfilarLocal, gerarContextoGuru } = require('./guruAnapolis');
@@ -54,14 +54,12 @@ async function calcularPreco(dadosImovel) {
     contextoGuru: perfilGuru ? gerarContextoGuru(perfilGuru) : null
   };
 
-  // 2. Busca paralela: portais + Google Places (informativo)
-  const [comparativosRes, localizacaoRes] = await Promise.allSettled([
-    buscarComparativos(dadosImovel),
-    analisarLocalizacao(cidade, bairro, endereco)
+  // 2. Busca comparativos nos portais
+  const [comparativosRes] = await Promise.allSettled([
+    buscarComparativos(dadosImovel)
   ]);
 
   let comparativos = comparativosRes.status === 'fulfilled' ? comparativosRes.value : null;
-  const localizacao = localizacaoRes.status === 'fulfilled' ? localizacaoRes.value : null;
 
   // ─── Determinar preço/m² ──────────────────────────────────────
 
@@ -148,7 +146,7 @@ async function calcularPreco(dadosImovel) {
       comparativosEncontrados: 0, fontesConsultadas: [],
       tempoEstimadoDias: '-', indiceLiquidez: '-',
       ajustesAplicados: [], analiseIA: null,
-      localizacao, scoreLocalizacao: localizacao?.score || null, descLocalizacao: null, geoInfo: null
+      localizacao: null, scoreLocalizacao: null, descLocalizacao: null, geoInfo: null
     };
   }
 
@@ -159,17 +157,18 @@ async function calcularPreco(dadosImovel) {
   let precoM2Final = precoM2Base;
   let ajustesDescricao = ['Preço baseado em amostragem de mercado'];
 
-  const analiseRua = geoInfo?.analiseRua;
-  if (analiseRua && confiancaFonte === 'baixa') {
-    if (analiseRua.impacto === 'positivo' && analiseRua.perfilRua === 'comercial forte') {
+  // Ajuste baseado no perfil OpenStreetMap (dados reais mapeados por pessoas)
+  const perfilOSM = perfilGuru?.infraestrutura;
+  if (perfilOSM && confiancaFonte === 'baixa') {
+    if (perfilOSM.perfil === 'comercial forte') {
       precoM2Final = Math.round(precoM2Final * 1.20);
-      ajustesDescricao.push('+20% rua comercial forte (comparativos de bairros vizinhos)');
-    } else if (analiseRua.impacto === 'positivo') {
+      ajustesDescricao.push('+20% região comercial forte (comparativos de bairros vizinhos)');
+    } else if (perfilOSM.perfil === 'misto' && perfilOSM.score >= 50) {
       precoM2Final = Math.round(precoM2Final * 1.10);
-      ajustesDescricao.push('+10% boa infraestrutura na rua');
-    } else if (analiseRua.impacto === 'negativo') {
+      ajustesDescricao.push('+10% boa infraestrutura (comparativos de bairros vizinhos)');
+    } else if (perfilOSM.perfil === 'residencial isolado') {
       precoM2Final = Math.round(precoM2Final * 0.90);
-      ajustesDescricao.push('-10% fatores negativos na rua');
+      ajustesDescricao.push('-10% região isolada (comparativos de bairros vizinhos)');
     }
   }
 
@@ -181,7 +180,7 @@ async function calcularPreco(dadosImovel) {
   const liquidez = estimarLiquidez(finalidade, precoM2Final, precoM2Mercado);
 
   const fontes = [fontePrincipal];
-  if (localizacao) fontes.push('Google Places');
+  if (perfilGuru) fontes.push('OpenStreetMap + IBGE');
 
   // Salva avaliação no histórico
   try {
@@ -190,7 +189,7 @@ async function calcularPreco(dadosImovel) {
       diferenciais: Array.isArray(diferenciais) ? diferenciais : [],
       preco_m2_mercado: precoM2Mercado, preco_m2_ajustado: precoM2Final,
       preco_recomendado: precoRecomendado, preco_minimo: precoMinimo, preco_maximo: precoMaximo,
-      fontes, confianca: confiancaFonte, analise_rua: analiseRua, laudo: null, canal: 'web'
+      fontes, confianca: confiancaFonte, analise_rua: perfilOSM, laudo: null, canal: 'web'
     });
   } catch {}
 
@@ -212,14 +211,12 @@ async function calcularPreco(dadosImovel) {
       comparativos: analiseIA.comparativos || [],
       citacoes: analiseIA.citacoes || []
     } : null,
-    localizacao, scoreLocalizacao: localizacao?.score || null,
-    descLocalizacao: localizacao ? localizacao.multiplicador.descricao : null,
+    localizacao: null, scoreLocalizacao: null, descLocalizacao: null,
     geoInfo: geoInfo?.valido ? {
       enderecoValidado: geoInfo.enderecoCompleto,
       bairrosVizinhos: geoInfo.bairrosProximos,
       distanciaCentroKm: geoInfo.distanciaCentroKm,
-      viasProximas: geoInfo.viasProximas,
-      analiseRua: geoInfo.analiseRua
+      viasProximas: geoInfo.viasProximas
     } : null,
     perfilGuru: perfilGuru ? {
       infraestrutura: perfilGuru.infraestrutura,
@@ -238,10 +235,6 @@ async function salvarInfoBairro(cidade, bairro, geoInfo) {
       cidade, bairro,
       vizinhos: geoInfo.bairrosProximos,
       ruas_valorizadas: geoInfo.viasProximas,
-      perfil: geoInfo.analiseRua?.perfilRua || null,
-      descricao: geoInfo.analiseRua?.descricao || null,
-      fatores_positivos: geoInfo.analiseRua?.positivos?.map(f => `${f.tipo}: ${f.exemplos?.join(', ')}`) || [],
-      fatores_negativos: geoInfo.analiseRua?.negativos?.map(f => f.tipo) || [],
       fonte: 'google_maps'
     });
   } catch {}

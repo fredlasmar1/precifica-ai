@@ -3,7 +3,6 @@ const router = express.Router();
 const { getSession, addMessage, clearSession, isReadyToEvaluate } = require('../agent/session');
 const { chat, extractPropertyData } = require('../agent/openai');
 const { calcularPreco, formatarReais } = require('../data/precificador');
-const { formatarSecaoLocalizacao } = require('../data/googleplaces');
 
 /**
  * POST /api/chat
@@ -103,7 +102,7 @@ function gerarLaudo(dados, resultado) {
     precoM2Mercado, precoM2Imovel,
     comparativosEncontrados, tempoEstimadoDias,
     indiceLiquidez, ajustesAplicados,
-    fontesConsultadas, analiseIA, localizacao
+    fontesConsultadas, analiseIA
   } = resultado;
 
   const tipoLabel = tipo.charAt(0).toUpperCase() + tipo.slice(1);
@@ -154,11 +153,6 @@ function gerarLaudo(dados, resultado) {
     }
   }
 
-  if (localizacao) {
-    laudo += formatarSecaoLocalizacao(localizacao);
-    laudo += '\n';
-  }
-
   if (ajustesAplicados?.length > 0) {
     laudo += `🔧 *Ajustes aplicados:*\n`;
     ajustesAplicados.forEach(a => laudo += `• ${a}\n`);
@@ -192,20 +186,6 @@ function gerarLaudo(dados, resultado) {
     if (geoInfo.bairrosVizinhos?.length) laudo += `• Bairros vizinhos: ${geoInfo.bairrosVizinhos.join(', ')}\n`;
     if (geoInfo.distanciaCentroKm != null) laudo += `• Distância ao centro: ${geoInfo.distanciaCentroKm} km\n`;
     if (geoInfo.viasProximas?.length) laudo += `• Vias próximas: ${geoInfo.viasProximas.join(', ')}\n`;
-    if (geoInfo.analiseRua) {
-      const rua = geoInfo.analiseRua;
-      laudo += `\n📍 *Análise da rua:*\n`;
-      laudo += `• Perfil: ${rua.perfilRua}\n`;
-      laudo += `• ${rua.descricao}\n`;
-      if (rua.positivos?.length) {
-        rua.positivos.slice(0, 4).forEach(f => {
-          laudo += `• ${f.tipo}: ${f.exemplos?.join(', ') || f.quantidade + ' encontrado(s)'}\n`;
-        });
-      }
-      if (rua.negativos?.length) {
-        laudo += `• ⚠️ ${rua.negativos.map(f => f.tipo).join(', ')}\n`;
-      }
-    }
     laudo += '\n';
   }
 
