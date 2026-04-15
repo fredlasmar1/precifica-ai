@@ -3,3 +3,4 @@ node_modules/
 *.log
 .DS_Store
 .perplexity-cache.json
+.inteligencia-local.json

@@ -2,6 +2,7 @@ const { buscarComparativos } = require('./portais');
 const { analisarLocalizacao, formatarSecaoLocalizacao } = require('./googleplaces');
 const { estimarPrecoComIA } = require('./analistaIA');
 const { validarEndereco } = require('./geoValidacao');
+const inteligencia = require('./inteligenciaLocal');
 
 /**
  * Motor de precificação — hierarquia de fontes:
@@ -53,24 +54,45 @@ async function calcularPreco(dadosImovel) {
   if (comparativosRes.status === 'rejected') console.warn('[Precificador] Comparativos rejeitados:', comparativosRes.reason?.message);
   if (localizacaoRes.status === 'rejected') console.warn('[Precificador] Localização rejeitada:', localizacaoRes.reason?.message);
 
-  // ─── Determinar preço/m² base ───────────────────────────────────
+  // ─── Determinar preço/m² base (hierarquia de fontes) ─────────────
+  //
+  // 1. Inteligência Local (dados validados pelo corretor) — PRIORIDADE MÁXIMA
+  // 2. Inteligência Local (dados de pesquisas anteriores, < 30 dias)
+  // 3. Portais diretos (OLX, ZAP, etc.)
+  // 4. Perplexity (pesquisa na internet) — e salva resultado na base local
+  //
+  // Cada consulta da Perplexity alimenta a inteligência local.
+  // Com o tempo, o sistema depende cada vez menos da Perplexity.
 
   let precoM2Base = null;
   let fontePrincipal = null;
   let analiseIA = null;
   let usouDadosReais = false;
+  let confiancaFonte = null;
 
-  // Prioridade 1: dados REAIS dos portais
-  if (comparativos && comparativos.precoMedioM2) {
+  // Prioridade 1: Inteligência Local
+  const dadoLocal = inteligencia.consultar(cidade, bairro, tipo, finalidade);
+  if (dadoLocal && dadoLocal.confianca !== 'baixa') {
+    precoM2Base = dadoLocal.precoM2;
+    fontePrincipal = `${dadoLocal.fonte} (${dadoLocal.validadoPor === 'corretor' ? 'validado' : dadoLocal.amostras + ' amostras'})`;
+    usouDadosReais = true;
+    confiancaFonte = dadoLocal.confianca;
+    console.log(`[Precificador] Inteligência Local: R$ ${precoM2Base}/m² (${dadoLocal.validadoPor}, confiança ${dadoLocal.confianca})`);
+  }
+
+  // Prioridade 2: dados REAIS dos portais
+  if (!precoM2Base && comparativos && comparativos.precoMedioM2) {
     precoM2Base = comparativos.precoMedioM2;
     fontePrincipal = comparativos.fonte;
     usouDadosReais = true;
     console.log(`[Precificador] Usando comparativos reais: R$ ${precoM2Base}/m² (${fontePrincipal})`);
+    // Salva na inteligência local
+    inteligencia.registrarPesquisa(cidade, bairro, tipo, finalidade, precoM2Base, comparativos.totalEncontrados, comparativos.precoMinimo, comparativos.precoMaximo);
   }
 
-  // Prioridade 2: Perplexity pesquisa na internet
+  // Prioridade 3: Perplexity pesquisa na internet
   if (!precoM2Base) {
-    console.log('[Precificador] Sem comparativos diretos, consultando Perplexity...');
+    console.log('[Precificador] Consultando Perplexity...');
     try {
       analiseIA = await estimarPrecoComIA(dadosEnriquecidos);
       console.log(`[Precificador] Perplexity retornou: ${analiseIA ? 'dados OK' : 'NULL (falhou)'}`);
@@ -78,12 +100,22 @@ async function calcularPreco(dadosImovel) {
         precoM2Base = analiseIA.precoMedioM2;
         fontePrincipal = analiseIA.fonte;
         usouDadosReais = true;
+        confiancaFonte = analiseIA.confianca;
         console.log(`[Precificador] Perplexity: R$ ${precoM2Base}/m² (confiança: ${analiseIA.confianca})`);
+        // Salva na inteligência local para próximas consultas
+        inteligencia.registrarPesquisa(cidade, bairro, tipo, finalidade, precoM2Base, analiseIA.anunciosAnalisados, analiseIA.faixaMinM2, analiseIA.faixaMaxM2);
       }
     } catch (pplxErr) {
       console.error('[Precificador] EXCEÇÃO na Perplexity:', pplxErr.message);
-      console.error('[Precificador] Stack:', pplxErr.stack?.split('\n').slice(0, 3).join(' | '));
     }
+  }
+
+  // Prioridade 4: Inteligência Local com confiança baixa (melhor que nada)
+  if (!precoM2Base && dadoLocal) {
+    precoM2Base = dadoLocal.precoM2;
+    fontePrincipal = `${dadoLocal.fonte} (dado antigo — ${dadoLocal.diasDesdeAtualização} dias)`;
+    usouDadosReais = true;
+    console.log(`[Precificador] Usando dado local antigo: R$ ${precoM2Base}/m²`);
   }
 
   // Se nenhuma fonte retornou dados, NÃO inventar um preço.
@@ -126,7 +158,7 @@ async function calcularPreco(dadosImovel) {
     // aplicar um ajuste proporcional. Isso é justo porque um terreno no
     // Centro comercial vale mais que no bairro residencial vizinho.
     const analiseRua = geoInfo?.analiseRua;
-    const confiancaBaixa = analiseIA?.confianca === 'baixa';
+    const confiancaBaixa = confiancaFonte === 'baixa' || analiseIA?.confianca === 'baixa';
 
     if (analiseRua && confiancaBaixa) {
       // Confiança baixa = provavelmente usou bairros vizinhos
