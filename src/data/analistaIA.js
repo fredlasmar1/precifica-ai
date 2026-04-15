@@ -104,30 +104,53 @@ REGRAS RÍGIDAS:
 - Busque entre 5 e 15 anúncios
 - PRIORIZE anúncios que estejam REALMENTE no bairro ${bairro}, não em bairros distantes`;
 
+  } else if (isApto) {
+    // ─── LÓGICA PARA APARTAMENTOS ─────────────────────────────
+    // Mesma lógica dos terrenos: buscar preço/m² do bairro por CATEGORIA
+    // (novo, semi-novo, usado). Depois multiplicar pela metragem.
+    prompt = `Preciso descobrir o PREÇO MÉDIO DO METRO QUADRADO de apartamentos ${finalidadeLabel} no bairro ${bairro}, ${cidade}-GO (estado de Goiás, Brasil).
+
+APARTAMENTO QUE ESTOU AVALIANDO: ${metragem}m², ${quartos} quartos, ${vagas} vagas, estado: ${conservacao}
+
+COMO PESQUISAR:
+1. Busque apartamentos ${finalidadeLabel} no bairro ${bairro} em ${cidade}-GO
+2. Aceite apartamentos de QUALQUER tamanho — o que importa é o preço por m² do bairro
+3. Para cada anúncio: preço ÷ área = preço/m²
+4. SEPARE os resultados por categoria:
+   - NOVOS (na planta ou recém-entregues)
+   - SEMI-NOVOS (até 5 anos de uso, bom estado)
+   - USADOS (mais de 5 anos, usado/revenda)
+5. Calcule a média de preço/m² para CADA categoria
+6. Busque entre 5 e 10 anúncios no total
+7. Se não achar suficientes no ${bairro}, busque em bairros vizinhos de perfil similar${geoInfo?.bairrosProximos?.length ? ` (vizinhos: ${geoInfo.bairrosProximos.join(', ')})` : ''}
+
+ATENÇÃO:
+- O apartamento que estou avaliando está em estado "${conservacao}" — use a categoria correspondente como referência principal
+- ${conservacao === 'novo' ? 'Use a média de NOVOS como referência' : conservacao === 'bom' ? 'Use a média de SEMI-NOVOS como referência' : 'Use a média de USADOS como referência'}
+- A cidade é ${cidade} no estado de GOIÁS (GO) — NÃO confunda com homônimos
+- SOMENTE apartamentos, não casas ou terrenos`;
+
   } else {
-    // ─── LÓGICA PARA IMÓVEIS CONSTRUÍDOS ──────────────────────
-    // Comparação por perfil similar (tamanho, quartos, estado)
-    prompt = `Preciso que você pesquise anúncios REAIS de imóveis para fazer uma análise comparativa de mercado.
+    // ─── LÓGICA PARA CASAS E OUTROS ──────────────────────────
+    // Casas: buscar preço/m² do bairro, separando por categoria
+    prompt = `Preciso descobrir o PREÇO MÉDIO DO METRO QUADRADO de ${tipo}s ${finalidadeLabel} no bairro ${bairro}, ${cidade}-GO (estado de Goiás, Brasil).
 
-IMÓVEL QUE ESTOU AVALIANDO:
-- Tipo: ${tipo}
-- Finalidade: ${finalidade}
-- Bairro: ${bairro}, ${cidade} - GO (estado de Goiás, Brasil)
-- Metragem: ${metragem}m²
-- Quartos: ${quartos} | Vagas: ${vagas}
-- Estado: ${conservacao}
-- Diferenciais: ${difsTexto}
+IMÓVEL QUE ESTOU AVALIANDO: ${tipo}, ${metragem}m², ${quartos} quartos, ${vagas} vagas, estado: ${conservacao}
+Diferenciais: ${difsTexto}
 
-O QUE BUSCAR:
-${descricaoTipo}
+COMO PESQUISAR:
+1. Busque ${tipo}s ${finalidadeLabel} no bairro ${bairro} em ${cidade}-GO
+2. Aceite ${tipo}s de QUALQUER tamanho — o que importa é o preço por m² do bairro
+3. Para cada anúncio: preço ÷ área = preço/m²
+4. SEPARE por categoria: NOVOS, SEMI-NOVOS/BOM ESTADO, USADOS/PARA REFORMA
+5. Calcule a média de preço/m² para cada categoria
+6. Busque entre 5 e 10 anúncios
+7. Se não achar no ${bairro}, busque vizinhos${geoInfo?.bairrosProximos?.length ? ` (${geoInfo.bairrosProximos.join(', ')})` : ''}
+8. ${conservacao === 'novo' ? 'Use NOVOS como referência' : conservacao === 'bom' ? 'Use SEMI-NOVOS como referência' : 'Use USADOS como referência'}
 
-FILTROS OBRIGATÓRIOS (comparação justa — maçã com maçã):
-1. Busque SOMENTE no bairro ${bairro} em ${cidade}-GO (ou bairro vizinho de perfil idêntico se não achar suficientes${geoInfo?.bairrosProximos?.length ? ` — vizinhos: ${geoInfo.bairrosProximos.join(', ')}` : ''})
-2. Busque SOMENTE imóveis com área entre ${metMin}m² e ${metMax}m² (similar ao avaliado)
-3. Busque SOMENTE imóveis ${estadoFiltro} — não misture novos com usados
-4. A cidade é ${cidade} no estado de GOIÁS (GO) — não confunda com cidades homônimas em outros estados
-5. Busque entre 5 e 10 anúncios que atendam TODOS os filtros acima
-6. Para cada anúncio, calcule o preço por m² (preço total ÷ área do imóvel)`;
+ATENÇÃO:
+- A cidade é ${cidade} no estado de GOIÁS (GO)
+- SOMENTE ${tipo}s, não misture com outros tipos`;
   }
 
   // Parte comum do prompt
