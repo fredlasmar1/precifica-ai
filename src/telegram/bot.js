@@ -159,7 +159,7 @@ function splitMessage(text, maxLen) {
 function gerarLaudo(dados, resultado) {
   const { tipo, finalidade, cidade, bairro, endereco, metragem, quartos, vagas } = dados;
   const {
-    precoMinimo, precoRecomendado, precoMaximo, geoInfo,
+    precoMinimo, precoRecomendado, precoMaximo, geoInfo, perfilGuru,
     precoM2Mercado, precoM2Imovel,
     comparativosEncontrados, tempoEstimadoDias,
     indiceLiquidez, ajustesAplicados,
@@ -222,6 +222,18 @@ function gerarLaudo(dados, resultado) {
 
   if (comparativosEncontrados > 0) {
     laudo += `🔍 Comparativos diretos: ${comparativosEncontrados} imóveis\n`;
+  }
+
+  if (perfilGuru?.infraestrutura) {
+    const i = perfilGuru.infraestrutura;
+    laudo += `🏘️ *Perfil do bairro:*\n`;
+    laudo += `• ${i.resumo}\n`;
+    if (i.vocacoes?.length) laudo += `• Vocação: ${i.vocacoes.join(', ')}\n`;
+    laudo += '\n';
+  }
+
+  if (perfilGuru?.municipio?.populacao) {
+    laudo += `📊 Pop: ${perfilGuru.municipio.populacao.toLocaleString()} | PIB/cap: R$ ${perfilGuru.municipio.pibPerCapita?.toLocaleString() || '?'}\n\n`;
   }
 
   if (geoInfo) {

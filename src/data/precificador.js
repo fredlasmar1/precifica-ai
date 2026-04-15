@@ -2,6 +2,7 @@ const { buscarComparativos } = require('./portais');
 const { analisarLocalizacao, formatarSecaoLocalizacao } = require('./googleplaces');
 const { estimarPrecoComIA } = require('./analistaIA');
 const { validarEndereco } = require('./geoValidacao');
+const { perfilarLocal, gerarContextoGuru } = require('./guruAnapolis');
 const db = require('./database');
 
 /**
@@ -37,7 +38,21 @@ async function calcularPreco(dadosImovel) {
     console.error('[Precificador] Erro geo:', err.message);
   }
 
-  const dadosEnriquecidos = { ...dadosImovel, geoInfo: geoInfo?.valido ? geoInfo : null };
+  // 1b. Perfilar local com todas as APIs (OSM + IBGE + BrasilAPI)
+  let perfilGuru = null;
+  try {
+    if (geoInfo?.valido) {
+      perfilGuru = await perfilarLocal(cidade, bairro, geoInfo.lat, geoInfo.lng);
+    }
+  } catch (err) {
+    console.warn('[Precificador] Erro no Guru:', err.message);
+  }
+
+  const dadosEnriquecidos = {
+    ...dadosImovel,
+    geoInfo: geoInfo?.valido ? geoInfo : null,
+    contextoGuru: perfilGuru ? gerarContextoGuru(perfilGuru) : null
+  };
 
   // 2. Busca paralela: portais + Google Places (informativo)
   const [comparativosRes, localizacaoRes] = await Promise.allSettled([
@@ -205,6 +220,11 @@ async function calcularPreco(dadosImovel) {
       distanciaCentroKm: geoInfo.distanciaCentroKm,
       viasProximas: geoInfo.viasProximas,
       analiseRua: geoInfo.analiseRua
+    } : null,
+    perfilGuru: perfilGuru ? {
+      infraestrutura: perfilGuru.infraestrutura,
+      municipio: perfilGuru.municipio,
+      ruasPrincipais: perfilGuru.ruasPrincipais
     } : null
   };
 }

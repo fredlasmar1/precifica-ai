@@ -14,7 +14,7 @@ const CACHE_TTL = 86400; // 24h — preços não mudam no mesmo dia
  * Retorna { precoMedioM2, faixaMinM2, faixaMaxM2, confianca, analise, fontes }
  */
 async function estimarPrecoComIA(dadosImovel) {
-  const { tipo, finalidade, cidade, bairro, endereco, metragem, quartos, vagas, diferenciais, conservacao, geoInfo } = dadosImovel;
+  const { tipo, finalidade, cidade, bairro, endereco, metragem, quartos, vagas, diferenciais, conservacao, geoInfo, contextoGuru } = dadosImovel;
 
   const apiKey = process.env.PERPLEXITY_API_KEY;
   if (!apiKey) {
@@ -149,6 +149,7 @@ ANÁLISE DA RUA (Google Maps):
 - ${geoInfo.analiseRua.descricao}
 ${geoInfo.analiseRua.positivos?.length ? '- O que tem por perto: ' + geoInfo.analiseRua.positivos.map(f => `${f.tipo} (${f.quantidade})`).join(', ') : ''}
 Considere o perfil da rua ao avaliar se o preço/m² deve ser ajustado para cima ou para baixo em relação à média do bairro.` : ''}
+${contextoGuru ? `\n${contextoGuru}` : ''}
 
 ${contextoLocal}
 

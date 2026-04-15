@@ -99,7 +99,7 @@ router.delete('/chat/:sessionId', (req, res) => {
 function gerarLaudo(dados, resultado) {
   const { tipo, finalidade, cidade, bairro, endereco, metragem, quartos, vagas } = dados;
   const {
-    precoMinimo, precoRecomendado, precoMaximo, geoInfo,
+    precoMinimo, precoRecomendado, precoMaximo, geoInfo, perfilGuru,
     precoM2Mercado, precoM2Imovel,
     comparativosEncontrados, tempoEstimadoDias,
     indiceLiquidez, ajustesAplicados,
@@ -166,6 +166,25 @@ function gerarLaudo(dados, resultado) {
   }
 
   if (comparativosEncontrados > 0) laudo += `🔍 Comparativos analisados: ${comparativosEncontrados} imóveis\n`;
+
+  if (perfilGuru?.infraestrutura) {
+    const i = perfilGuru.infraestrutura;
+    laudo += `🏘️ *Perfil do bairro:*\n`;
+    laudo += `• ${i.resumo}\n`;
+    if (i.vocacoes?.length) laudo += `• Vocação: ${i.vocacoes.join(', ')}\n`;
+    if (i.exemplosComercios?.length) laudo += `• Comércios: ${i.exemplosComercios.slice(0, 3).join(', ')}\n`;
+    if (i.exemplosAlimentacao?.length) laudo += `• Alimentação: ${i.exemplosAlimentacao.slice(0, 3).join(', ')}\n`;
+    if (i.exemplosSaude?.length) laudo += `• Saúde: ${i.exemplosSaude.slice(0, 3).join(', ')}\n`;
+    laudo += '\n';
+  }
+
+  if (perfilGuru?.municipio) {
+    const m = perfilGuru.municipio;
+    laudo += `📊 *Dados do município (IBGE):*\n`;
+    if (m.populacao) laudo += `• População: ${m.populacao.toLocaleString()}\n`;
+    if (m.pibPerCapita) laudo += `• PIB per capita: R$ ${m.pibPerCapita.toLocaleString()}\n`;
+    laudo += '\n';
+  }
 
   if (geoInfo) {
     laudo += `🗺️ *Localização (Google Maps):*\n`;
