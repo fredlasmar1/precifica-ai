@@ -40,7 +40,7 @@ async function handleTelegram(req, res) {
     }
 
     // Comando /reiniciar ou /novo
-    if (/^\\/?(reiniciar|novo|nova|reset)/i.test(text)) {
+    if (/^[/]?(reiniciar|novo|nova|reset)/i.test(text)) {
       clearSession(sessionId);
       laudoCache.delete(sessionId);
       await enviar(chatId, '🔄 Sessão reiniciada! Qual o tipo do imóvel que quer avaliar?');
