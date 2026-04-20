@@ -110,7 +110,7 @@ const BAIRROS_ANAPOLIS = {
   'jardim america':                 { mult: 1.00, perfil: 'médio', zona: 'leste' },
   'jardim américa':                 { mult: 1.00, perfil: 'médio', zona: 'leste' },
   'jardim bandeirante':             { mult: 0.95, perfil: 'médio', zona: 'norte' },
-  'jardim europa':                  { mult: 0.92, perfil: 'médio', zona: 'norte' },
+  'jardim europa':                  { mult: 0.88, perfil: 'médio', zona: 'norte' }, // calibrado: ~R$700-800/m² terreno (VivaReal/Chaves na Mão abr/2026)
   'parque sao joao':                { mult: 0.95, perfil: 'médio', zona: 'leste' },
   'parque são joão':                { mult: 0.95, perfil: 'médio', zona: 'leste' },
   'santo andre':                    { mult: 0.93, perfil: 'médio', zona: 'leste' },
@@ -212,7 +212,7 @@ const BAIRROS_GOIANIA = {
   'cidade jardim':       { mult: 1.15, perfil: 'médio', zona: 'norte' },
   'setor jaó':           { mult: 1.10, perfil: 'médio-alto', zona: 'leste' },
   'parque amazônia':     { mult: 0.95, perfil: 'médio', zona: 'sul' },
-  'jardim europa':       { mult: 0.90, perfil: 'médio', zona: 'norte' },
+  'jardim europa':       { mult: 0.88, perfil: 'médio', zona: 'norte' }, // calibrado: ~R$700-800/m² terreno (VivaReal/Chaves na Mão abr/2026)
   'fazenda caveiras':    { mult: 1.30, perfil: 'condomínio fechado', zona: 'sul' }
 };
 

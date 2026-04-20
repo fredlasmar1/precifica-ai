@@ -164,27 +164,33 @@ async function estimarPrecoComIA(dadosImovel) {
 
   if (isTerreno) {
     // ─── LÓGICA PARA TERRENOS ─────────────────────────────────────────────
-    // Busca o preço/m² médio do bairro com QUALQUER tamanho de lote.
-    // O fator de escala para terrenos grandes é aplicado no precificador.
-    // Se < 3 anúncios no bairro, amplia OBRIGATORIAMENTE para vizinhos.
-    prompt = `Preciso descobrir o PREÇO MÉDIO DO METRO QUADRADO de terrenos/lotes vazios ${finalidadeLabel} no bairro ${bairro}, ${cidade}-GO (estado de Goiás, Brasil).
+    prompt = `Preciso descobrir o PREÇO MÉDIO DO METRO QUADRADO de terrenos/lotes vazios ${finalidadeLabel} no bairro ${bairro}, ${cidade}-GO.
 
-TERRENO QUE ESTOU AVALIANDO: ${metragem}m² no ${bairro}${endereco ? `, ${endereco}` : ''}
+TERRENO AVALIADO: ${metragem}m² em ${bairro}, ${cidade}-GO${endereco ? ` (${endereco})` : ''}
 
-COMO PESQUISAR (siga essa ordem):
-1. Busque terrenos/lotes VAZIOS no bairro ${bairro} em ${cidade}-GO nos portais
-2. Aceite QUALQUER tamanho de lote (200m², 500m², 1000m², 2000m²+) — quer o preço/m² do bairro
-3. Para cada anúncio: calcule preço ÷ área = preço/m²
-4. SE achar menos de 3 anúncios no ${bairro}, amplie OBRIGATORIAMENTE para os bairros vizinhos: ${vizinhosTexto || 'bairros próximos de perfil similar'}
-5. Calcule a média ponderada de preço/m² de todos os anúncios encontrados
-6. No raciocínio, informe quantos anúncios achou no bairro principal e quantos nos vizinhos
+PASSO 1 — Pesquise AGORA nas URLs abaixo (acesse diretamente):
+- https://www.vivareal.com.br/venda/goias/anapolis/${bairro.toLowerCase().replace(/\s/g, '-')}/terreno_residencial/
+- https://www.chavesnamao.com.br/terrenos-a-venda/${cidade.toLowerCase()}-go/${bairro.toLowerCase().replace(/\s/g, '-')}/
+- https://www.olx.com.br/imoveis/venda/terrenos-e-lotes/estado-go?q=${encodeURIComponent(bairro + ' ' + cidade)}
+- https://www.zapimoveis.com.br/venda/terrenos/${cidade.toLowerCase()}-go+${bairro.toLowerCase().replace(/\s/g, '-')}/
+- https://www.62imoveis.com.br/busca?city=anapolis&type=terreno&neighborhood=${encodeURIComponent(bairro)}
+- https://encontreimoveisanapolis.com.br/ (busque por terrenos em ${bairro})
+- https://www.mgfimoveis.com.br (busque por lotes em ${bairro}, ${cidade})
 
-REGRAS ABSOLUTAS:
-- SOMENTE terrenos/lotes VAZIOS sem construção — ignore casas, sobrados, imóveis construídos
-- A cidade é ${cidade}-GO (estado de GOIÁS, Brasil) — NÃO confunda com homônimos de outros estados
-- Busque entre 5 e 15 anúncios no total
-- NÃO filtre por tamanho similar ao avaliado — o ajuste de escala é feito depois pelo sistema
-- Se o único anúncio for pequeno (ex: 200m²), use o preço/m² dele mesmo assim`;
+PASSO 2 — Para cada anúncio encontrado:
+- Registre: área (m²), preço (R$), preço/m² = preço ÷ área, nome do site
+- SOMENTE terrenos/lotes VAZIOS sem construção
+- Aceite QUALQUER tamanho de lote
+
+PASSO 3 — Se achar menos de 3 anúncios em ${bairro}:
+- Amplie OBRIGATORIAMENTE para os bairros vizinhos: ${vizinhosTexto || 'bairros próximos'}
+- Repita a busca nos mesmos portais para os bairros vizinhos
+
+REGRAS:
+- SOMENTE ${cidade}-GO (Goiás, Brasil) — nunca use dados de outras cidades
+- NUNCA invente preços — use somente anúncios reais encontrados
+- Busque no mínimo 3 e no máximo 15 anúncios
+- Informe quantos achou em ${bairro} e quantos nos vizinhos`;
 
   } else if (isApto) {
     // ─── LÓGICA PARA APARTAMENTOS ─────────────────────────────
@@ -238,7 +244,7 @@ ATENÇÃO:
   // Parte comum do prompt
   prompt += `
 
-SITES PARA CONSULTAR: OLX, ZAP Imóveis, VivaReal, Imovelweb, Chaves na Mão, 62imóveis, QuintoAndar
+SITES PARA CONSULTAR (em ordem de prioridade): VivaReal, ZAP Imóveis, Chaves na Mão, OLX, 62imóveis, Imovelweb, encontreimoveisanapolis.com.br, mgfimoveis.com.br, dfimoveis.com.br, quintoandar.com.br
 
 ATENÇÃO ABSOLUTA: A cidade é ${cidade.toUpperCase()}-GO no estado de GOIÁS, Brasil. NÃO use dados de ${cidade} de outros estados. NÃO use dados genéricos nacionais. SOMENTE anúncios REAIS e ATUAIS de ${cidade}-GO.
 ${geoInfo ? `
