@@ -69,7 +69,7 @@ function filtrarOutliersComparativos(resultado) {
     faixaMinM2: Math.min(...filtrados.map(c => c.precoM2)),
     faixaMaxM2: Math.max(...filtrados.map(c => c.precoM2)),
     anunciosAnalisados: filtrados.length,
-    raciocinio: resultado.raciocinio + (descartados > 0 ? ` (${descartados} outlier(s) descartado(s))` : '')
+    raciocinio: (resultado.raciocinio || 'Comparativos filtrados por mediana') + (descartados > 0 ? ` (${descartados} outlier(s) descartado(s))` : '')
   };
 }
 
