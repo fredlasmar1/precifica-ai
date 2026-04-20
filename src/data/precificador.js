@@ -145,6 +145,26 @@ async function calcularPreco(dadosImovel) {
     } catch {}
   }
 
+  // Prioridade 5 (último recurso): Multiplicador de bairro sobre média da cidade
+  // Só entra quando NENHUMA fonte de mercado retornou dados.
+  // Usa a média conhecida da cidade × multiplicador do bairro como estimativa.
+  if (!precoM2Base && perfilBairro?.conhecido) {
+    const mediasCidade = {
+      'anapolis': { venda: 6000, aluguel: 28 },
+      'anápolis': { venda: 6000, aluguel: 28 },
+      'goiania':  { venda: 7500, aluguel: 35 },
+      'goiânia':  { venda: 7500, aluguel: 35 },
+      'default':  { venda: 5000, aluguel: 22 }
+    };
+    const cidadeKey = (cidade || 'anapolis').toLowerCase().trim();
+    const medias = mediasCidade[cidadeKey] || mediasCidade['default'];
+    const mediaBase = finalidade === 'aluguel' ? medias.aluguel : medias.venda;
+    precoM2Base = Math.round(mediaBase * perfilBairro.mult);
+    fontePrincipal = `Estimativa base (sem dados de mercado disponíveis para ${bairro})`;
+    confiancaFonte = 'baixa';
+    console.log(`[Precificador] Fallback base: R$ ${precoM2Base}/m² (mult ${perfilBairro.mult}x sobre média ${cidade})`);
+  }
+
   // Sem dados = erro
   if (!precoM2Base) {
     return {
@@ -220,6 +240,7 @@ async function calcularPreco(dadosImovel) {
       comparativos: analiseIA.comparativos || [],
       citacoes: analiseIA.citacoes || []
     } : null,
+    confiancaFonte,
     localizacao: null, scoreLocalizacao: null, descLocalizacao: null,
     geoInfo: geoInfo?.valido ? {
       enderecoValidado: geoInfo.enderecoCompleto,

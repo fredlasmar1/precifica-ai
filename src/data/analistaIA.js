@@ -199,7 +199,7 @@ RETORNE SOMENTE um JSON válido neste formato:
       messages: [
         {
           role: 'system',
-          content: 'Você é um pesquisador de mercado imobiliário. Pesquise preços REAIS em portais de imóveis brasileiros. Retorne SOMENTE JSON válido, sem markdown, sem texto extra.'
+          content: 'Você é um pesquisador de mercado imobiliário brasileiro. Sua função é pesquisar preços REAIS e ATUAIS em portais de imóveis (OLX, ZAP, VivaReal, Imovelweb, 62imóveis). NUNCA invente preços. NUNCA use médias nacionais genéricas. Use SOMENTE anúncios reais encontrados na internet para a cidade e bairro solicitados. Retorne SOMENTE JSON válido, sem markdown, sem texto extra.'
         },
         { role: 'user', content: prompt }
       ],

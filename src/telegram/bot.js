@@ -243,6 +243,16 @@ function gerarLaudo(dados, resultado) {
     laudo += '\n';
   }
 
+  // Indicador de confiança da fonte
+  const confiancaLabel = resultado.confiancaFonte === 'alta' ? '🟢 Alta (dados reais dos portais)'
+    : resultado.confiancaFonte === 'media' ? '🟡 Média (poucos comparativos encontrados)'
+    : resultado.confiancaFonte === 'baixa' ? '🔴 Baixa (estimativa — poucos anúncios na região)'
+    : null;
+
+  if (confiancaLabel) {
+    laudo += `📡 *Confiança da pesquisa:* ${confiancaLabel}\n`;
+  }
+
   laudo += `📋 *Fontes:* ${(fontesConsultadas || []).join(' | ')}\n`;
   laudo += `_Avaliação gerada por PrecificaAI_\n\n`;
   laudo += `⚠️ _Este laudo é por amostragem/aproximação, baseado na média dos valores publicados em sites e portais de imóveis. Válido somente para simples consulta e sem valor de documento oficial._`;
