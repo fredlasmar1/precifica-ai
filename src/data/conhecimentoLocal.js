@@ -21,29 +21,33 @@ async function getConhecimentoLocal(cidade) {
 
   console.log(`[Conhecimento] Pesquisando perfil de ${cidadeNorm}-GO na internet...`);
 
-  const prompt = `Pesquise informações REAIS e ATUAIS sobre o mercado imobiliário da cidade de ${cidadeNorm}, no estado de Goiás (GO), Brasil.
+  const prompt = `Pesquise informações REAIS e ATUAIS sobre o mercado imobiliário de ${cidadeNorm}-GO (estado de Goiás, Brasil). ATENÇÃO: ${cidadeNorm} fica em GOIÁS, não confunda com cidades homônimas de outros estados.
 
 Retorne as seguintes informações:
 
-1. PERFIL DA CIDADE: população, economia, posição no estado
+1. PERFIL DA CIDADE: população, economia (destaque para DAIA se for Anápolis), posição no estado
 
-2. MAPA DE BAIRROS — liste os bairros organizados por zona:
-   - Para cada bairro: perfil (residencial/comercial/industrial), nível (alto/médio/popular)
-   - Quais bairros fazem DIVISA entre si
+2. MAPA DE BAIRROS — liste organizados por perfil:
+   - Alto padrão e condomínios fechados: quais são, localização
+   - Médio-alto e médio: quais são
+   - Popular: quais são
+   - Quais bairros fazem divisa entre si
 
-3. CONDOMÍNIOS FECHADOS: principais, em qual bairro
+3. CONDOMÍNIOS FECHADOS: nome, bairro, padrão (alto/médio), lotes ou casas
 
-4. RUAS E AVENIDAS mais valorizadas
+4. RUAS E AVENIDAS mais valorizadas para imóveis comerciais e residenciais
 
-5. FAIXAS DE PREÇO POR M² pesquisadas nos portais:
-   a) Terrenos/lotes vazios por bairro
-   b) Casas usadas por bairro
+5. FAIXAS DE PREÇO POR M² (pesquise nos portais OLX, ZAP, VivaReal, 62imóveis, Imovelweb):
+   a) Terrenos/lotes em condomínios fechados
+   b) Terrenos/lotes abertos por bairro
    c) Casas novas por bairro
-   d) Apartamentos novos e usados por bairro
+   d) Casas usadas por bairro
+   e) Apartamentos novos e usados
+   f) Galpões/comercial
 
-6. PARTICULARIDADES: metragem mínima de lotes, zonas industriais, tendências
+6. PARTICULARIDADES: lote mínimo do município, DAIA/industrial, tendências de expansão da cidade, bairros em valorização
 
-IMPORTANTE: baseie-se em dados REAIS da internet.`;
+Fonte obrigatória: portais imobiliários REAIS com dados atuais de ${cidadeNorm}-GO.`;
 
   try {
     const response = await axios.post('https://api.perplexity.ai/chat/completions', {

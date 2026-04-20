@@ -1,4 +1,5 @@
 const { buscarComparativos } = require('./portais');
+const { getMultiplicadorBairro, getBairrosVizinhos } = require('./bairros');
 // Google Places removido — OSM é mais preciso e não inventa dados
 const { estimarPrecoComIA } = require('./analistaIA');
 const { validarEndereco } = require('./geoValidacao');
@@ -48,10 +49,18 @@ async function calcularPreco(dadosImovel) {
     console.warn('[Precificador] Erro no Guru:', err.message);
   }
 
+  // Enriquece com bairros vizinhos da mesma zona (para a Perplexity buscar comparativos)
+  const perfilBairro = getMultiplicadorBairro(cidade, bairro);
+  const bairrosVizinhos = getBairrosVizinhos(cidade, bairro, 4);
+
   const dadosEnriquecidos = {
     ...dadosImovel,
-    geoInfo: geoInfo?.valido ? geoInfo : null,
-    contextoGuru: perfilGuru ? gerarContextoGuru(perfilGuru) : null
+    cidade: cidade || 'Anápolis', // Garante cidade padrão
+    geoInfo: geoInfo?.valido
+      ? { ...geoInfo, bairrosProximos: [...(geoInfo.bairrosProximos || []), ...bairrosVizinhos].slice(0, 6) }
+      : bairrosVizinhos.length > 0 ? { bairrosProximos: bairrosVizinhos, valido: false } : null,
+    contextoGuru: perfilGuru ? gerarContextoGuru(perfilGuru) : null,
+    perfilBairro: perfilBairro.conhecido ? perfilBairro : null
   };
 
   // 2. Busca comparativos nos portais

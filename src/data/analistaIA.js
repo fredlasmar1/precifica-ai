@@ -157,6 +157,8 @@ ATENÇÃO:
   prompt += `
 
 SITES PARA CONSULTAR: OLX, ZAP Imóveis, VivaReal, Imovelweb, Chaves na Mão, 62imóveis, QuintoAndar
+
+ATENÇÃO ABSOLUTA: A cidade é ${cidade.toUpperCase()}-GO no estado de GOIÁS, Brasil. NÃO use dados de ${cidade} de outros estados. NÃO use dados genéricos nacionais. SOMENTE anúncios REAIS e ATUAIS de ${cidade}-GO.
 ${geoInfo ? `
 DADOS GEOGRÁFICOS CONFIRMADOS PELO GOOGLE MAPS:
 - Endereço validado: ${geoInfo.enderecoCompleto}
