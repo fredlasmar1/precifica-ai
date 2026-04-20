@@ -13,6 +13,66 @@ const CACHE_TTL = 86400; // 24h — preços não mudam no mesmo dia
  *
  * Retorna { precoMedioM2, faixaMinM2, faixaMaxM2, confianca, analise, fontes }
  */
+/**
+ * Filtra outliers de um array de comparativos usando mediana.
+ * Descarta valores que desviam mais de 60% da mediana.
+ * Recalcula precoMedioM2 com os valores filtrados.
+ */
+function filtrarOutliersComparativos(resultado) {
+  if (!resultado || !resultado.comparativos || resultado.comparativos.length < 2) {
+    return resultado;
+  }
+
+  const precos = resultado.comparativos
+    .map(c => c.precoM2)
+    .filter(p => p > 0)
+    .sort((a, b) => a - b);
+
+  // Mediana
+  const mid = Math.floor(precos.length / 2);
+  const mediana = precos.length % 2 !== 0
+    ? precos[mid]
+    : (precos[mid - 1] + precos[mid]) / 2;
+
+  // Descarta comparativos que desviam mais de 60% da mediana
+  const limite = 0.60;
+  const filtrados = resultado.comparativos.filter(c =>
+    c.precoM2 > 0 &&
+    Math.abs(c.precoM2 - mediana) / mediana <= limite
+  );
+
+  const descartados = resultado.comparativos.length - filtrados.length;
+  if (descartados > 0) {
+    console.log(`[Outlier] Descartados ${descartados} comparativo(s) fora de 60% da mediana (${Math.round(mediana)}/m²)`);
+    resultado.comparativos.forEach(c => {
+      const desvio = Math.abs(c.precoM2 - mediana) / mediana;
+      if (desvio > limite) {
+        console.log(`  ↳ Outlier: ${c.area}m² R$${c.precoM2}/m² (desvia ${Math.round(desvio * 100)}% da mediana de R$${Math.round(mediana)}/m²)`);
+      }
+    });
+  }
+
+  if (filtrados.length === 0) {
+    // Todos eram outliers — usa todos mesmo
+    console.log('[Outlier] Todos os comparativos foram descartados — mantendo todos');
+    return resultado;
+  }
+
+  // Recalcula média com valores filtrados
+  const soma = filtrados.reduce((acc, c) => acc + c.precoM2, 0);
+  const novaMed = Math.round(soma / filtrados.length);
+
+  return {
+    ...resultado,
+    comparativos: filtrados,
+    precoMedioM2: novaMed,
+    faixaMinM2: Math.min(...filtrados.map(c => c.precoM2)),
+    faixaMaxM2: Math.max(...filtrados.map(c => c.precoM2)),
+    anunciosAnalisados: filtrados.length,
+    raciocinio: resultado.raciocinio + (descartados > 0 ? ` (${descartados} outlier(s) descartado(s))` : '')
+  };
+}
+
 async function estimarPrecoComIA(dadosImovel) {
   const { tipo, finalidade, cidade, bairro, endereco, metragem, quartos, vagas, diferenciais, conservacao, geoInfo, contextoGuru } = dadosImovel;
 
@@ -205,7 +265,7 @@ RETORNE SOMENTE um JSON válido neste formato:
   "comparativos": [
     {"area": número_m2, "preco": número_reais, "precoM2": número, "fonte": "nome do site", "detalhe": "breve descrição"}
   ],
-  "precoMedioM2": número (média de preço/m² dos comparativos),
+  "precoMedioM2": número (média de preço/m² dos comparativos, EXCLUINDO outliers: descarte qualquer valor que desvie mais de 60% da mediana antes de calcular a média),
   "faixaMinM2": número (menor preço/m² encontrado),
   "faixaMaxM2": número (maior preço/m² encontrado),
   "anunciosAnalisados": número,
@@ -286,6 +346,7 @@ RETORNE SOMENTE um JSON válido neste formato:
     // Extrai fontes citadas pela Perplexity (se disponíveis)
     const citations = response.data.citations || [];
 
+    resultado = filtrarOutliersComparativos(resultado);
     const analise = {
       precoMedioM2: Math.round(resultado.precoMedioM2),
       faixaMinM2: Math.round(resultado.faixaMinM2 || resultado.precoMedioM2 * 0.85),
@@ -317,7 +378,7 @@ RETORNE SOMENTE um JSON válido neste formato:
 
 ${isTerreno ? 'SOMENTE lotes vazios, NÃO inclua casas ou imóveis construídos.' : ''}
 
-Retorne SOMENTE JSON: {"comparativos":[{"area":N,"preco":N,"precoM2":N,"fonte":"site","detalhe":"desc"}],"precoMedioM2":N,"faixaMinM2":N,"faixaMaxM2":N,"anunciosAnalisados":N,"confianca":"alta|media|baixa","raciocinio":"resumo"}`;
+Retorne SOMENTE JSON: {"comparativos":[{"area":N,"preco":N,"precoM2":N,"fonte":"site","detalhe":"desc"}],"precoMedioM2":N (média SEM outliers — exclua valores que desviem >60% da mediana),"faixaMinM2":N,"faixaMaxM2":N,"anunciosAnalisados":N,"confianca":"alta|media|baixa","raciocinio":"resumo"}`;
 
     const retryResp = await axios.post('https://api.perplexity.ai/chat/completions', {
       model: 'sonar',
@@ -344,6 +405,7 @@ Retorne SOMENTE JSON: {"comparativos":[{"area":N,"preco":N,"precoM2":N,"fonte":"
 
     if (retryResult && retryResult.precoMedioM2 > 0) {
       const citations = retryResp.data.citations || [];
+      retryResult = filtrarOutliersComparativos(retryResult);
       const analise = {
         precoMedioM2: Math.round(retryResult.precoMedioM2),
         faixaMinM2: Math.round(retryResult.faixaMinM2 || retryResult.precoMedioM2 * 0.85),
