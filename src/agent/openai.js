@@ -31,18 +31,39 @@ async function chat(history) {
  * Extrai dados estruturados do imóvel a partir do histórico
  */
 async function extractPropertyData(history) {
+  // Filtra o histórico: remove laudos anteriores (mensagens do assistente muito longas)
+  // para evitar que o modelo confunda bairros de laudos passados com o atual
+  const historyLimpo = history.filter((msg, idx) => {
+    // Sempre mantém mensagens do usuário
+    if (msg.role === 'user') return true;
+    // Mensagens do assistente: mantém apenas se forem curtas (perguntas de coleta de dados)
+    // Laudos têm >500 chars — descarta para não confundir a extração
+    if (msg.role === 'assistant' && msg.content.length > 500) return false;
+    return true;
+  });
+
+  // Última mensagem do usuário — tem prioridade máxima para bairro e endereço
+  const ultimaMsgUsuario = [...history].reverse().find(m => m.role === 'user')?.content || '';
+
   const extraction = await getClient().chat.completions.create({
     model: 'gpt-4o',
     messages: [
       {
         role: 'system',
         content: `Extraia os dados do imóvel da conversa e retorne SOMENTE um JSON válido, sem markdown, sem explicação.
+
+REGRA CRÍTICA: Para "bairro" e "endereco", use SOMENTE o que o usuário disse nas suas próprias mensagens.
+NUNCA use bairros ou endereços que apareceram em laudos ou respostas anteriores do assistente.
+A última mensagem do usuário tem prioridade absoluta.
+
+Última mensagem do usuário: "${ultimaMsgUsuario.replace(/"/g, "'")}"
+
 Formato exato:
 {
   "tipo": "casa|apartamento|terreno|comercial",
   "finalidade": "venda|aluguel",
   "cidade": "nome da cidade",
-  "bairro": "nome do bairro",
+  "bairro": "nome do bairro EXATAMENTE como o usuário informou",
   "endereco": "rua e número se informado, ou null se não informado",
   "metragem": número,
   "quartos": número,
@@ -51,7 +72,7 @@ Formato exato:
   "conservacao": "novo|bom|reformar"
 }`
       },
-      ...history
+      ...historyLimpo
     ],
     temperature: 0,
     response_format: { type: 'json_object' }
