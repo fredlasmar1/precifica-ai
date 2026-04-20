@@ -80,7 +80,15 @@ async function calcularPreco(dadosImovel) {
   // Prioridade 1: Cache DB (pesquisa recente < 3 dias)
   try {
     const precoDb = await db.buscarPreco(cidade, bairro, tipo, finalidade);
-    if (precoDb && precoDb.dias_desde < 3) {
+    // Só usa cache DB se:
+    // - tem menos de 3 dias de idade
+    // - E confiança é "alta" ou "media" (>=3 amostras)
+    // Confiança "baixa" = poucos anúncios → força nova busca no Perplexity
+    const cacheValido = precoDb &&
+      precoDb.dias_desde < 3 &&
+      precoDb.confianca !== 'baixa' &&
+      (precoDb.amostras || 0) >= 3;
+    if (cacheValido) {
       precoM2Base = Number(precoDb.preco_m2);
       fontePrincipal = `${precoDb.fonte} (cache ${Math.round(precoDb.dias_desde * 24)}h)`;
       confiancaFonte = precoDb.confianca;
@@ -94,7 +102,9 @@ async function calcularPreco(dadosImovel) {
         raciocinio: 'Dados recentes do banco de dados',
         faixaM2: `R$ ${precoDb.faixa_min} - R$ ${precoDb.faixa_max}/m²`
       } : null;
-      console.log(`[Precificador] Cache DB: R$ ${precoM2Base}/m² (${Math.round(precoDb.dias_desde * 24)}h atrás)`);
+      console.log(`[Precificador] Cache DB: R$ ${precoM2Base}/m² (${Math.round(precoDb.dias_desde * 24)}h atrás, ${precoDb.amostras} amostras)`);
+    } else if (precoDb) {
+      console.log(`[Precificador] Cache DB ignorado: confiança="${precoDb.confianca}", amostras=${precoDb.amostras} — forçando nova busca`);
     }
   } catch (err) {
     console.warn('[Precificador] Erro ao buscar cache DB:', err.message);

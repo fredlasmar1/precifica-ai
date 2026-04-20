@@ -22,8 +22,21 @@ async function estimarPrecoComIA(dadosImovel) {
     return null;
   }
 
-  const cacheKey = `pplx_${tipo}_${finalidade}_${cidade}_${bairro}_${quartos}_${metragem}`
-    .toLowerCase().replace(/\s/g, '_');
+  // Para terrenos: inclui faixa de tamanho na chave de cache
+  // (terreno 200m² e 2000m² têm preço/m² diferente após fator de escala)
+  let cacheKey;
+  if (tipo === 'terreno') {
+    const faixaTerreno = metragem > 5000 ? 'g5000'
+      : metragem > 2000 ? 'g2000'
+      : metragem > 1000 ? 'g1000'
+      : metragem > 500  ? 'g500'
+      : 'ate500';
+    cacheKey = `pplx_${tipo}_${finalidade}_${cidade}_${bairro}_${faixaTerreno}`
+      .toLowerCase().replace(/\s/g, '_');
+  } else {
+    cacheKey = `pplx_${tipo}_${finalidade}_${cidade}_${bairro}_${quartos}_${metragem}`
+      .toLowerCase().replace(/\s/g, '_');
+  }
 
   const cached = cache.get(cacheKey);
   if (cached) {
@@ -31,12 +44,15 @@ async function estimarPrecoComIA(dadosImovel) {
     return cached;
   }
 
-  // Tenta cache similar (mesmo tipo/bairro/finalidade, metragem próxima)
-  const similarPrefix = `pplx_${tipo}_${finalidade}_${cidade}_${bairro}`.toLowerCase().replace(/\s/g, '_');
-  const similar = cache.getSimilar(similarPrefix);
-  if (similar) {
-    console.log(`[Perplexity] Cache similar encontrado para ${similarPrefix}`);
-    return similar;
+  // Cache similar: só para apartamentos/casas (metragem não afeta preço/m² do bairro)
+  // Para terrenos: NÃO reaproveitar cache por tamanho, pois o fator de escala varia
+  if (tipo !== 'terreno') {
+    const similarPrefix = `pplx_${tipo}_${finalidade}_${cidade}_${bairro}`.toLowerCase().replace(/\s/g, '_');
+    const similar = cache.getSimilar(similarPrefix);
+    if (similar) {
+      console.log(`[Perplexity] Cache similar encontrado para ${similarPrefix}`);
+      return similar;
+    }
   }
 
   const difsTexto = Array.isArray(diferenciais) && diferenciais.length > 0
