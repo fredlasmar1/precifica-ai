@@ -186,6 +186,20 @@ async function calcularPreco(dadosImovel) {
   let precoM2Final = precoM2Base;
   let ajustesDescricao = ['Preço baseado em amostragem de mercado'];
 
+  // Fator de escala para terrenos grandes
+  // Realidade do mercado: quanto maior o terreno, menor o preço/m²
+  if (tipo === 'terreno' && metragem > 500) {
+    let fatorEscala = 1.0;
+    let descEscala = null;
+    if (metragem > 5000)      { fatorEscala = 0.55; descEscala = '-45% escala (terreno acima de 5.000m²)'; }
+    else if (metragem > 2000) { fatorEscala = 0.65; descEscala = '-35% escala (terreno acima de 2.000m²)'; }
+    else if (metragem > 1000) { fatorEscala = 0.75; descEscala = '-25% escala (terreno acima de 1.000m²)'; }
+    else if (metragem > 500)  { fatorEscala = 0.85; descEscala = '-15% escala (terreno acima de 500m²)'; }
+    precoM2Final = Math.round(precoM2Final * fatorEscala);
+    if (descEscala) ajustesDescricao.push(descEscala);
+    console.log(`[Precificador] Fator escala terreno ${metragem}m²: ×${fatorEscala} → R$ ${precoM2Final}/m²`);
+  }
+
   // Ajuste baseado no perfil OpenStreetMap (dados reais mapeados por pessoas)
   const perfilOSM = perfilGuru?.infraestrutura;
   if (perfilOSM && confiancaFonte === 'baixa') {

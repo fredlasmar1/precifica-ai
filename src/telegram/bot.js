@@ -7,6 +7,9 @@ const { formatarSecaoLocalizacao } = require('../data/googleplaces');
 const BOT_TOKEN = () => process.env.TELEGRAM_BOT_TOKEN;
 const API = () => `https://api.telegram.org/bot${BOT_TOKEN()}`;
 
+// Guarda o último laudo por sessão para uso no modo conversa
+const laudoCache = new Map();
+
 /**
  * Handler do webhook do Telegram
  */
@@ -27,6 +30,7 @@ async function handleTelegram(req, res) {
     // Comando /start
     if (text === '/start') {
       clearSession(sessionId);
+      laudoCache.delete(sessionId);
       await enviar(chatId,
         '👋 Olá! Sou o *PrecificaAI* — seu assistente de precificação imobiliária.\n\n' +
         'Me diga os dados do imóvel e eu consulto o mercado em tempo real para gerar um laudo com faixa de preço.\n\n' +
@@ -36,8 +40,9 @@ async function handleTelegram(req, res) {
     }
 
     // Comando /reiniciar ou /novo
-    if (/^\/?(reiniciar|novo|nova|reset)/i.test(text)) {
+    if (/^\\/?(reiniciar|novo|nova|reset)/i.test(text)) {
       clearSession(sessionId);
+      laudoCache.delete(sessionId);
       await enviar(chatId, '🔄 Sessão reiniciada! Qual o tipo do imóvel que quer avaliar?');
       return;
     }
@@ -50,6 +55,70 @@ async function handleTelegram(req, res) {
 }
 
 async function processarMensagem(chatId, sessionId, texto) {
+  // ─── MODO CONVERSA PÓS-LAUDO ─────────────────────────────────────────────
+  // Se já existe um laudo gerado nesta sessão, responde perguntas sobre ele
+  const laudoSessao = laudoCache.get(sessionId);
+  if (laudoSessao) {
+    // Detecta intenção de nova avaliação
+    const novaAvaliacao = /\b(novo|nova|outro|outra|avaliar|avaliar outro|precificar|começar|comecar|reiniciar)\b/i.test(texto);
+    if (novaAvaliacao) {
+      clearSession(sessionId);
+      laudoCache.delete(sessionId);
+      await enviar(chatId, '🔄 Certo! Vamos avaliar outro imóvel.\n\nQual o *tipo* do imóvel? (casa, apartamento, terreno ou comercial)');
+      return;
+    }
+
+    // Responde perguntas sobre o laudo com contexto completo
+    try {
+      const systemPostLaudo = `Você é o PrecificaAI, um especialista em precificação imobiliária. 
+O usuário acabou de receber um laudo de precificação e pode ter dúvidas ou querer aprofundar a análise.
+
+LAUDO GERADO:
+${laudoSessao.texto}
+
+DADOS DO IMÓVEL AVALIADO:
+${JSON.stringify(laudoSessao.dados, null, 2)}
+
+Responda de forma clara e direta, como um corretor experiente explicaria para o cliente.
+Você pode:
+- Explicar como chegamos ao preço sugerido
+- Comparar com outros bairros ou tipos de imóvel
+- Esclarecer o que significa cada indicador do laudo
+- Sugerir como melhorar a precificação (ex: reformas, diferenciais)
+- Simular cenários (ex: "e se fosse aluguel?", "e se tivesse piscina?")
+Se o usuário quiser avaliar um novo imóvel, oriente-o a digitar /novo.`;
+
+      const history = addMessage(sessionId, 'user', texto);
+
+      const resposta = await axios.post('https://api.openai.com/v1/chat/completions', {
+        model: 'gpt-4o',
+        messages: [
+          { role: 'system', content: systemPostLaudo },
+          ...history.slice(-10) // últimas 10 mensagens para contexto da conversa
+        ],
+        temperature: 0.7,
+        max_tokens: 600
+      }, {
+        headers: {
+          'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      const respostaTexto = resposta.data.choices[0].message.content;
+      addMessage(sessionId, 'assistant', respostaTexto);
+      await enviar(chatId, respostaTexto);
+      await new Promise(r => setTimeout(r, 800));
+      await enviar(chatId, '_Para avaliar outro imóvel, digite /novo_');
+
+    } catch (err) {
+      console.error('[Telegram PostLaudo] Erro:', err.message);
+      await enviar(chatId, '❌ Erro ao responder. Tente de novo ou digite /reiniciar');
+    }
+    return;
+  }
+
+  // ─── FLUXO NORMAL: COLETA DE DADOS ────────────────────────────────────────
   const history = addMessage(sessionId, 'user', texto);
   const jaColetouDados = isReadyToEvaluate(history.slice(0, -1));
 
@@ -73,8 +142,15 @@ async function processarMensagem(chatId, sessionId, texto) {
       addMessage(sessionId, 'assistant', laudo);
       await enviar(chatId, laudo);
 
+      // Salva laudo para modo conversa pós-laudo
+      laudoCache.set(sessionId, { texto: laudo, dados: dadosImovel, resultado });
+
       await new Promise(r => setTimeout(r, 1000));
-      await enviar(chatId, '💡 Quer avaliar outro imóvel? Digite /novo para recomeçar.');
+      await enviar(chatId,
+        '💬 *Posso te ajudar mais?*\n' +
+        'Pergunte qualquer coisa sobre este laudo — por que esse preço, comparação com outros bairros, simulações, etc.\n\n' +
+        '_Para avaliar outro imóvel, digite /novo_'
+      );
 
     } catch (err) {
       console.error('[Telegram Precificação] Erro:', err);
@@ -83,13 +159,13 @@ async function processarMensagem(chatId, sessionId, texto) {
     return;
   }
 
-  // Fluxo normal: agente conversa
+  // Fluxo normal: agente conversa para coletar dados
   try {
     const resposta = await chat(history);
     addMessage(sessionId, 'assistant', resposta);
     await enviar(chatId, resposta);
 
-    // Verifica se agora está pronto
+    // Verifica se agora está pronto para precificar
     const historicoAtual = [...history, { role: 'assistant', content: resposta }];
     if (isReadyToEvaluate(historicoAtual)) {
       await new Promise(r => setTimeout(r, 1000));
@@ -103,8 +179,16 @@ async function processarMensagem(chatId, sessionId, texto) {
           const laudo = gerarLaudo(dadosImovel, resultado);
           addMessage(sessionId, 'assistant', laudo);
           await enviar(chatId, laudo);
+
+          // Salva laudo para modo conversa pós-laudo
+          laudoCache.set(sessionId, { texto: laudo, dados: dadosImovel, resultado });
+
           await new Promise(r => setTimeout(r, 1000));
-          await enviar(chatId, '💡 Quer avaliar outro imóvel? Digite /novo para recomeçar.');
+          await enviar(chatId,
+            '💬 *Posso te ajudar mais?*\n' +
+            'Pergunte qualquer coisa sobre este laudo — por que esse preço, comparação com outros bairros, simulações, etc.\n\n' +
+            '_Para avaliar outro imóvel, digite /novo_'
+          );
         }
       }
     }
