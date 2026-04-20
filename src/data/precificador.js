@@ -136,6 +136,8 @@ async function calcularPreco(dadosImovel) {
         try {
           await db.salvarPreco({ cidade, bairro, tipo, finalidade, preco_m2: precoM2Base, faixa_min: analiseIA.faixaMinM2, faixa_max: analiseIA.faixaMaxM2, amostras: analiseIA.anunciosAnalisados, confianca: analiseIA.confianca, fonte: 'Perplexity', comparativos: analiseIA.comparativos });
         } catch {}
+      } else {
+        console.warn(`[Precificador] ⚠️ Perplexity retornou null para ${tipo}/${finalidade} em ${bairro}, ${cidade} — vai usar fallback`);
       }
     } catch (err) {
       console.error('[Precificador] Erro Perplexity:', err.message);
@@ -159,17 +161,46 @@ async function calcularPreco(dadosImovel) {
   // Só entra quando NENHUMA fonte de mercado retornou dados.
   // Usa a média conhecida da cidade × multiplicador do bairro como estimativa.
   if (!precoM2Base && perfilBairro?.conhecido) {
+    // Médias separadas por TIPO de imóvel — terrenos têm preço/m² bem menor que casas/aptos
+    // Valores baseados na realidade do mercado de Anápolis-GO (2024-2025)
     const mediasCidade = {
-      'anapolis': { venda: 6000, aluguel: 28 },
-      'anápolis': { venda: 6000, aluguel: 28 },
-      'goiania':  { venda: 7500, aluguel: 35 },
-      'goiânia':  { venda: 7500, aluguel: 35 },
-      'default':  { venda: 5000, aluguel: 22 }
+      'anapolis': {
+        venda: {
+          terreno:     800,   // R$/m² médio de lote em Anápolis (bairros simples ~400, Centro ~2000)
+          casa:        3500,  // R$/m² médio de casa em Anápolis
+          apartamento: 5500,  // R$/m² médio de apartamento em Anápolis
+          comercial:   4000,  // R$/m² médio de comercial em Anápolis
+          default:     3000
+        },
+        aluguel: {
+          terreno:     3,    // R$/m²/mês de terreno (raro)
+          casa:        18,
+          apartamento: 25,
+          comercial:   22,
+          default:     18
+        }
+      },
+      'anápolis': null, // alias — resolvido abaixo
+      'goiania': {
+        venda: { terreno: 1200, casa: 5000, apartamento: 7000, comercial: 5500, default: 4500 },
+        aluguel: { terreno: 4, casa: 25, apartamento: 35, comercial: 30, default: 25 }
+      },
+      'goiânia': null, // alias
+      'default': {
+        venda: { terreno: 600, casa: 2500, apartamento: 4000, comercial: 3000, default: 2000 },
+        aluguel: { terreno: 2, casa: 14, apartamento: 22, comercial: 18, default: 14 }
+      }
     };
+    // Resolve aliases
+    mediasCidade['anápolis'] = mediasCidade['anapolis'];
+    mediasCidade['goiânia']  = mediasCidade['goiania'];
+
     const cidadeKey = (cidade || 'anapolis').toLowerCase().trim();
-    const medias = mediasCidade[cidadeKey] || mediasCidade['default'];
-    const mediaBase = finalidade === 'aluguel' ? medias.aluguel : medias.venda;
+    const mediasCidadeData = mediasCidade[cidadeKey] || mediasCidade['default'];
+    const mediasPorFinalidade = finalidade === 'aluguel' ? mediasCidadeData.aluguel : mediasCidadeData.venda;
+    const mediaBase = mediasPorFinalidade[tipo] || mediasPorFinalidade.default;
     precoM2Base = Math.round(mediaBase * perfilBairro.mult);
+    console.log(`[Precificador] Fallback: ${tipo}/${finalidade} base R$${mediaBase}/m² × ${perfilBairro.mult} = R$${precoM2Base}/m²`);
     fontePrincipal = `Estimativa base (sem dados de mercado disponíveis para ${bairro})`;
     confiancaFonte = 'baixa';
     console.log(`[Precificador] Fallback base: R$ ${precoM2Base}/m² (mult ${perfilBairro.mult}x sobre média ${cidade})`);
