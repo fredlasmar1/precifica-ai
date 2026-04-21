@@ -18,49 +18,45 @@ const CACHE_TTL = 86400; // 24h — preços não mudam no mesmo dia
  * Descarta valores que desviam mais de 60% da mediana.
  * Recalcula precoMedioM2 com os valores filtrados.
  */
+/**
+ * Filtra outliers usando média aparada (trimmed mean):
+ * - 4+ amostras: remove o valor mais alto E o mais baixo (extremos distorcem a média)
+ * - 2-3 amostras: remove apenas se desviar >80% da mediana
+ * Mais justo que filtro por mediana para mercados com poucos anúncios.
+ */
 function filtrarOutliersComparativos(resultado) {
   if (!resultado || !resultado.comparativos || resultado.comparativos.length < 2) {
     return resultado;
   }
 
-  const precos = resultado.comparativos
-    .map(c => c.precoM2)
-    .filter(p => p > 0)
-    .sort((a, b) => a - b);
+  const validos = resultado.comparativos.filter(c => c.precoM2 > 0);
+  if (validos.length < 2) return resultado;
 
-  // Mediana
-  const mid = Math.floor(precos.length / 2);
-  const mediana = precos.length % 2 !== 0
-    ? precos[mid]
-    : (precos[mid - 1] + precos[mid]) / 2;
+  const ordenados = [...validos].sort((a, b) => a.precoM2 - b.precoM2);
 
-  // Descarta comparativos que desviam mais de 70% da mediana
-  const limite = 0.70;
-  const filtrados = resultado.comparativos.filter(c =>
-    c.precoM2 > 0 &&
-    Math.abs(c.precoM2 - mediana) / mediana <= limite
-  );
-
-  const descartados = resultado.comparativos.length - filtrados.length;
-  if (descartados > 0) {
-    console.log(`[Outlier] Descartados ${descartados} comparativo(s) fora de 60% da mediana (${Math.round(mediana)}/m²)`);
-    resultado.comparativos.forEach(c => {
-      const desvio = Math.abs(c.precoM2 - mediana) / mediana;
-      if (desvio > limite) {
-        console.log(`  ↳ Outlier: ${c.area}m² R$${c.precoM2}/m² (desvia ${Math.round(desvio * 100)}% da mediana de R$${Math.round(mediana)}/m²)`);
-      }
-    });
+  let filtrados;
+  if (ordenados.length >= 4) {
+    // Média aparada: remove 1 mais barato e 1 mais caro
+    filtrados = ordenados.slice(1, ordenados.length - 1);
+    console.log(`[Outlier] Aparado: menor R$${ordenados[0].precoM2}/m² (${ordenados[0].area}m²) e maior R$${ordenados[ordenados.length-1].precoM2}/m² (${ordenados[ordenados.length-1].area}m²)`);
+  } else {
+    // Poucos comparativos: só remove se desviar >80% da mediana
+    const mid = Math.floor(ordenados.length / 2);
+    const mediana = ordenados.length % 2 !== 0
+      ? ordenados[mid].precoM2
+      : (ordenados[mid - 1].precoM2 + ordenados[mid].precoM2) / 2;
+    filtrados = validos.filter(c => Math.abs(c.precoM2 - mediana) / mediana <= 0.80);
+    if (filtrados.length === 0) filtrados = validos;
   }
 
   if (filtrados.length === 0) {
-    // Todos eram outliers — usa todos mesmo
-    console.log('[Outlier] Todos os comparativos foram descartados — mantendo todos');
+    console.log('[Outlier] Nenhum restou — mantendo todos');
     return resultado;
   }
 
-  // Recalcula média com valores filtrados
   const soma = filtrados.reduce((acc, c) => acc + c.precoM2, 0);
   const novaMed = Math.round(soma / filtrados.length);
+  const descartados = validos.length - filtrados.length;
 
   return {
     ...resultado,
@@ -69,7 +65,8 @@ function filtrarOutliersComparativos(resultado) {
     faixaMinM2: Math.min(...filtrados.map(c => c.precoM2)),
     faixaMaxM2: Math.max(...filtrados.map(c => c.precoM2)),
     anunciosAnalisados: filtrados.length,
-    raciocinio: (resultado.raciocinio || 'Comparativos filtrados por mediana') + (descartados > 0 ? ` (${descartados} outlier(s) descartado(s))` : '')
+    raciocinio: (resultado.raciocinio || 'Comparativos filtrados') +
+      (descartados > 0 ? ` (${descartados} outlier(s) descartado(s))` : '')
   };
 }
 
