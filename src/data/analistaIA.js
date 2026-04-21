@@ -334,6 +334,8 @@ Mas registre TODOS os anúncios encontrados para calcular a média geral do bair
 - **PRIORIZE apartamentos de tamanho similar**: entre ${Math.round(metragem*0.5)}m² e ${Math.round(metragem*1.5)}m² e com ${quartos > 1 ? quartos - 1 + ' a ' + (quartos + 1) : quartos} quartos
 - Se não achar suficientes desse porte, amplie para qualquer tamanho no bairro
 - Busque no mínimo 3 e no máximo 15 anúncios
+- **RETORNE TODOS OS COMPARATIVOS ENCONTRADOS — não filtre nem descarte nenhum**
+- O sistema fará a filtragem estatística depois — sua tarefa é coletar dados brutos
 - Calcule: Média = soma(preço/m² de cada anúncio) ÷ N`;
 
   } else {
@@ -389,7 +391,7 @@ RETORNE SOMENTE um JSON válido neste formato:
   "comparativos": [
     {"area": número_m2, "preco": número_reais, "precoM2": número, "quartos": número_ou_null, "fonte": "nome do site", "detalhe": "breve descrição"}
   ],
-  "precoMedioM2": número (média de preço/m² dos comparativos, EXCLUINDO outliers: descarte qualquer valor que desvie mais de 60% da mediana antes de calcular a média),
+  "precoMedioM2": número (média simples de TODOS os preço/m² — NÃO descarte nenhum valor, retorne todos os comparativos encontrados),
   "faixaMinM2": número (menor preço/m² encontrado),
   "faixaMaxM2": número (maior preço/m² encontrado),
   "anunciosAnalisados": número,
@@ -524,7 +526,7 @@ RETORNE SOMENTE um JSON válido neste formato:
 
 ${isTerreno ? 'SOMENTE lotes vazios, NÃO inclua casas ou imóveis construídos.' : ''}
 
-Retorne SOMENTE JSON: {"comparativos":[{"area":N,"preco":N,"precoM2":N,"fonte":"site","detalhe":"desc"}],"precoMedioM2":N (média SEM outliers — exclua valores que desviem >60% da mediana),"faixaMinM2":N,"faixaMaxM2":N,"anunciosAnalisados":N,"confianca":"alta|media|baixa","raciocinio":"resumo"}`;
+Retorne SOMENTE JSON: {"comparativos":[{"area":N,"preco":N,"precoM2":N,"fonte":"site","detalhe":"desc"}],"precoMedioM2":N (média simples de TODOS — não filtre nada),"faixaMinM2":N,"faixaMaxM2":N,"anunciosAnalisados":N,"confianca":"alta|media|baixa","raciocinio":"resumo"}`;
 
     const retryResp = await axios.post('https://api.perplexity.ai/chat/completions', {
       model: 'sonar',
