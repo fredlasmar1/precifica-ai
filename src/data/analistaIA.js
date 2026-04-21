@@ -73,6 +73,67 @@ function filtrarOutliersComparativos(resultado) {
   };
 }
 
+/**
+ * Filtra comparativos de apartamentos por relevância:
+ * - Metragem não pode desviar mais de 80% do imóvel avaliado
+ * - Quartos não podem diferir mais de 2 do imóvel avaliado
+ * Evita que apartamentos de perfis muito diferentes distorçam a média do m²
+ */
+function filtrarRelevanciaApartamento(resultado, metragemRef, quartosRef) {
+  if (!resultado?.comparativos || resultado.comparativos.length < 2) return resultado;
+
+  const descartados = [];
+  const filtrados = resultado.comparativos.filter(c => {
+    const area = c.area || 0;
+    const quartos = c.quartos != null ? c.quartos : null;
+
+    // Filtro de metragem: aceita ±80% da metragem de referência
+    if (area > 0 && metragemRef > 0) {
+      const desvioArea = Math.abs(area - metragemRef) / metragemRef;
+      if (desvioArea > 0.80) {
+        descartados.push(`${area}m² descartado (desvia ${Math.round(desvioArea*100)}% da metragem de referência ${metragemRef}m²)`);
+        return false;
+      }
+    }
+
+    // Filtro de quartos: aceita ±2 quartos de diferença
+    if (quartos != null && quartosRef != null && quartosRef > 0) {
+      const difQuartos = Math.abs(quartos - quartosRef);
+      if (difQuartos > 2) {
+        descartados.push(`${area}m² ${quartos}q descartado (${difQuartos} quartos de diferença do avaliado com ${quartosRef}q)`);
+        return false;
+      }
+    }
+
+    return true;
+  });
+
+  if (descartados.length > 0) {
+    console.log(`[Relevância] ${descartados.length} comparativo(s) removido(s) por perfil diferente:`);
+    descartados.forEach(d => console.log(`  ↳ ${d}`));
+  }
+
+  if (filtrados.length === 0) {
+    console.log('[Relevância] Todos descartados — mantendo todos');
+    return resultado;
+  }
+
+  const precosValidos = filtrados.map(c => c.precoM2).filter(p => p > 0);
+  const soma = precosValidos.reduce((a, b) => a + b, 0);
+  const novaMedia = Math.round(soma / precosValidos.length);
+
+  return {
+    ...resultado,
+    comparativos: filtrados,
+    precoMedioM2: novaMedia,
+    faixaMinM2: Math.min(...precosValidos),
+    faixaMaxM2: Math.max(...precosValidos),
+    anunciosAnalisados: filtrados.length,
+    raciocinio: (resultado.raciocinio || '') +
+      (descartados.length > 0 ? ` (${descartados.length} comparativo(s) de perfil diferente descartado(s))` : '')
+  };
+}
+
 async function estimarPrecoComIA(dadosImovel) {
   const { tipo, finalidade, cidade, bairro, endereco, condominio, metragem, quartos, vagas, diferenciais, conservacao, geoInfo, contextoGuru } = dadosImovel;
 
@@ -304,7 +365,7 @@ ${contextoLocal}
 RETORNE SOMENTE um JSON válido neste formato:
 {
   "comparativos": [
-    {"area": número_m2, "preco": número_reais, "precoM2": número, "fonte": "nome do site", "detalhe": "breve descrição"}
+    {"area": número_m2, "preco": número_reais, "precoM2": número, "quartos": número_ou_null, "fonte": "nome do site", "detalhe": "breve descrição"}
   ],
   "precoMedioM2": número (média de preço/m² dos comparativos, EXCLUINDO outliers: descarte qualquer valor que desvie mais de 60% da mediana antes de calcular a média),
   "faixaMinM2": número (menor preço/m² encontrado),
@@ -405,6 +466,10 @@ RETORNE SOMENTE um JSON válido neste formato:
         resultado.faixaMaxM2 = Math.max(...precosValidos);
         resultado.anunciosAnalisados = precosValidos.length;
       }
+    }
+    // Para apartamentos: filtra por relevância (metragem e quartos) antes dos outliers
+    if (tipo === 'apartamento' || tipo === 'casa') {
+      resultado = filtrarRelevanciaApartamento(resultado, metragem, quartos);
     }
     resultado = filtrarOutliersComparativos(resultado);
     const analise = {
