@@ -34,8 +34,8 @@ function filtrarOutliersComparativos(resultado) {
     ? precos[mid]
     : (precos[mid - 1] + precos[mid]) / 2;
 
-  // Descarta comparativos que desviam mais de 60% da mediana
-  const limite = 0.60;
+  // Descarta comparativos que desviam mais de 70% da mediana
+  const limite = 0.70;
   const filtrados = resultado.comparativos.filter(c =>
     c.precoM2 > 0 &&
     Math.abs(c.precoM2 - mediana) / mediana <= limite
@@ -492,10 +492,9 @@ RETORNE SOMENTE um JSON válido neste formato:
         resultado.anunciosAnalisados = precosValidos.length;
       }
     }
-    // Para apartamentos: filtra por relevância (metragem e quartos) antes dos outliers
-    if (tipo === 'apartamento' || tipo === 'casa') {
-      resultado = filtrarRelevanciaApartamento(resultado, metragem, quartos);
-    }
+    // Mantém todos os comparativos para calcular a média do m² da região
+    // (mesmo metodologia dos terrenos — quanto mais amostras, melhor a média)
+    // Filtro de outliers apenas para valores absurdos (>60% da mediana)
     resultado = filtrarOutliersComparativos(resultado);
     const analise = {
       precoMedioM2: Math.round(resultado.precoMedioM2),
