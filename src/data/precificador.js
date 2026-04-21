@@ -152,8 +152,14 @@ async function calcularPreco(dadosImovel) {
       if (analiseIA) {
         precoM2Base = analiseIA.precoMedioM2;
         fontePrincipal = analiseIA.fonte;
-        confiancaFonte = analiseIA.confianca;
-        console.log(`[Precificador] Perplexity: R$ ${precoM2Base}/m² (${analiseIA.confianca})`);
+        // Confiança determinada objetivamente pelo número de amostras reais
+        // (não pela opinião do GPT-4o, que tende a ser conservador)
+        const amostrasReais = analiseIA.anunciosAnalisados || 0;
+        confiancaFonte = amostrasReais >= 5 ? 'alta'
+          : amostrasReais >= 3 ? 'media'
+          : 'baixa';
+        analiseIA.confianca = confiancaFonte; // sincroniza para o laudo
+        console.log(`[Precificador] Perplexity: R$ ${precoM2Base}/m² — ${amostrasReais} amostras → confiança ${confiancaFonte}`);
         // Salva no DB para próximas consultas
         try {
           await db.salvarPreco({ cidade, bairro, tipo, finalidade, preco_m2: precoM2Base, faixa_min: analiseIA.faixaMinM2, faixa_max: analiseIA.faixaMaxM2, amostras: analiseIA.anunciosAnalisados, confianca: analiseIA.confianca, fonte: 'Perplexity', comparativos: analiseIA.comparativos });

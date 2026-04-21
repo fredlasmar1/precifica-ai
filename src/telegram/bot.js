@@ -345,9 +345,13 @@ function gerarLaudo(dados, resultado) {
   }
 
   // Indicador de confiança da fonte
-  const confiancaLabel = resultado.confiancaFonte === 'alta' ? '🟢 Alta (dados reais dos portais)'
-    : resultado.confiancaFonte === 'media' ? '🟡 Média (poucos comparativos encontrados)'
-    : resultado.confiancaFonte === 'baixa' ? '🔴 Baixa (estimativa — poucos anúncios na região)'
+  const amostrasCount = resultado.analiseIA?.anunciosAnalisados || 0;
+  const confiancaLabel = resultado.confiancaFonte === 'alta'
+    ? `🟢 Alta (${amostrasCount} comparativos reais dos portais)`
+    : resultado.confiancaFonte === 'media'
+    ? `🟡 Média (${amostrasCount} comparativo${amostrasCount !== 1 ? 's' : ''} — amostra pequena)`
+    : resultado.confiancaFonte === 'baixa'
+    ? `🔴 Baixa (${amostrasCount} comparativo${amostrasCount !== 1 ? 's' : ''} — estimativa ponderada com base calibrada)`
     : null;
 
   if (confiancaLabel) {
