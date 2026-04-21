@@ -84,10 +84,32 @@ async function calcularPreco(dadosImovel) {
     // - tem menos de 3 dias de idade
     // - E confiança é "alta" ou "media" (>=3 amostras)
     // Confiança "baixa" = poucos anúncios → força nova busca no Perplexity
+    // Valida se os comparativos do cache são do bairro correto
+    // (evita usar cache de "centro" quando usuário pediu "jardim europa")
+    let cacheComparativosOk = true;
+    if (precoDb && precoDb.comparativos) {
+      const comps = typeof precoDb.comparativos === 'string'
+        ? JSON.parse(precoDb.comparativos) : precoDb.comparativos;
+      if (Array.isArray(comps) && comps.length > 0) {
+        const bairroNorm = bairro.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        // Se NENHUM comparativo menciona o bairro solicitado, o cache é de outra consulta
+        const algumDosBairro = comps.some(c => {
+          const det = (c.detalhe || c.descricao || '').toLowerCase();
+          return det.includes(bairroNorm) || det.includes(cidade.toLowerCase());
+        });
+        if (!algumDosBairro && comps.length > 0) {
+          console.warn(`[Precificador] Cache DB com comparativos de bairro diferente — invalidando`);
+          try { await db.invalidarPreco(cidade, bairro, tipo, finalidade); } catch {}
+          cacheComparativosOk = false;
+        }
+      }
+    }
+
     const cacheValido = precoDb &&
       precoDb.dias_desde < 3 &&
       precoDb.confianca !== 'baixa' &&
-      (precoDb.amostras || 0) >= 3;
+      (precoDb.amostras || 0) >= 3 &&
+      cacheComparativosOk;
     if (cacheValido) {
       precoM2Base = Number(precoDb.preco_m2);
       fontePrincipal = `${precoDb.fonte} (cache ${Math.round(precoDb.dias_desde * 24)}h)`;

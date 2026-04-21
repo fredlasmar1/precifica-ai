@@ -74,8 +74,11 @@ async function validarEndereco(cidade, bairro, endereco) {
     const cidadeNorm = cidade.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
     const cidadeGoogleNorm = cidadeGoogle.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
     if (!cidadeGoogleNorm.includes(cidadeNorm) && !cidadeNorm.includes(cidadeGoogleNorm)) {
+      // "Centro" como bairro em qualquer cidade é genérico — Google pode geocodificar errado
+      // Não bloqueia o fluxo: retorna sem dados geo mas permite que a precificação continue
       console.warn(`[Geo] Cidade diverge: esperado "${cidade}", Google retornou "${cidadeGoogle}" (${formatted})`);
-      return { valido: false, motivo: `Google Maps encontrou "${cidadeGoogle}" em vez de "${cidade}"` };
+      console.warn(`[Geo] Prosseguindo sem dados de geolocalização — bairro "${bairro}" pode ser genérico`);
+      return null; // null = sem geo, sistema usa bairros.js como fallback
     }
 
     // 2. Buscar bairros vizinhos (4 pontos cardeais ~1km de distância)

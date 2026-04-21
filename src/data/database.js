@@ -176,6 +176,16 @@ async function buscarPreco(cidade, bairro, tipo, finalidade) {
   return result.rows[0] || null;
 }
 
+async function invalidarPreco(cidade, bairro, tipo, finalidade) {
+  await pool.query(
+    `DELETE FROM precos_mercado
+     WHERE LOWER(cidade)=LOWER($1) AND LOWER(bairro)=LOWER($2)
+       AND LOWER(tipo)=LOWER($3) AND LOWER(finalidade)=LOWER($4)`,
+    [cidade, bairro, tipo, finalidade]
+  );
+  console.log(`[DB] Cache invalidado: ${tipo}/${finalidade} em ${bairro}, ${cidade}`);
+}
+
 // ─── Operações de Avaliações ─────────────────────────────────────
 
 async function salvarAvaliacao(dados) {
@@ -239,7 +249,7 @@ async function stats() {
 module.exports = {
   pool, inicializar,
   salvarBairro, buscarBairro, listarBairros,
-  salvarPreco, buscarPreco,
+  salvarPreco, buscarPreco, invalidarPreco,
   salvarAvaliacao, salvarFeedback,
   salvarConhecimentoCidade, buscarConhecimentoCidade,
   stats
