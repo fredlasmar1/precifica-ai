@@ -58,6 +58,7 @@ Formato exato:
   "cidade": "nome da cidade",
   "bairro": "nome do bairro EXATAMENTE como o usuário informou",
   "endereco": "rua e número se informado, ou null se não informado",
+  "condominio": "nome do condomínio ou edifício se informado (ex: Residencial Araujoville, Edifício Solar), ou null",
   "metragem": número,
   "quartos": número,
   "vagas": número,

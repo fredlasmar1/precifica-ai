@@ -74,7 +74,7 @@ function filtrarOutliersComparativos(resultado) {
 }
 
 async function estimarPrecoComIA(dadosImovel) {
-  const { tipo, finalidade, cidade, bairro, endereco, metragem, quartos, vagas, diferenciais, conservacao, geoInfo, contextoGuru } = dadosImovel;
+  const { tipo, finalidade, cidade, bairro, endereco, condominio, metragem, quartos, vagas, diferenciais, conservacao, geoInfo, contextoGuru } = dadosImovel;
 
   const apiKey = process.env.PERPLEXITY_API_KEY;
   if (!apiKey) {
@@ -209,29 +209,49 @@ Média do m² = (preço/m² do lote 1 + preço/m² do lote 2 + ... + preço/m² 
 
   } else if (isApto) {
     // ─── LÓGICA PARA APARTAMENTOS ─────────────────────────────
-    // Mesma lógica dos terrenos: buscar preço/m² do bairro por CATEGORIA
-    // (novo, semi-novo, usado). Depois multiplicar pela metragem.
-    prompt = `Preciso descobrir o PREÇO MÉDIO DO METRO QUADRADO de apartamentos ${finalidadeLabel} no bairro ${bairro}, ${cidade}-GO (estado de Goiás, Brasil).
+    // Busca em 2 etapas: primeiro no mesmo condomínio (se informado), depois no bairro
+    const condominioTexto = condominio ? `"${condominio}"` : null;
+    prompt = `Você é um pesquisador de mercado imobiliário. Preciso calcular o PREÇO MÉDIO DO METRO QUADRADO de apartamentos ${finalidadeLabel} em ${bairro}, ${cidade}-GO.
 
-APARTAMENTO QUE ESTOU AVALIANDO: ${metragem}m², ${quartos} quartos, ${vagas} vagas, estado: ${conservacao}
+## APARTAMENTO AVALIADO:
+- Localização: ${bairro}, ${cidade}-GO${endereco ? ` (${endereco})` : ''}${condominioTexto ? `
+- Condomínio/Edifício: ${condominioTexto}` : ''}
+- Área: ${metragem}m² | ${quartos} quartos | ${vagas} vaga(s)
+- Estado: ${conservacao}
 
-COMO PESQUISAR:
-1. Busque apartamentos ${finalidadeLabel} no bairro ${bairro} em ${cidade}-GO
-2. Aceite apartamentos de QUALQUER tamanho — o que importa é o preço por m² do bairro
-3. Para cada anúncio: preço ÷ área = preço/m²
-4. SEPARE os resultados por categoria:
-   - NOVOS (na planta ou recém-entregues)
-   - SEMI-NOVOS (até 5 anos de uso, bom estado)
-   - USADOS (mais de 5 anos, usado/revenda)
-5. Calcule a média de preço/m² para CADA categoria
-6. Busque entre 5 e 10 anúncios no total
-7. Se não achar suficientes no ${bairro}, busque em bairros vizinhos de perfil similar${geoInfo?.bairrosProximos?.length ? ` (vizinhos: ${geoInfo.bairrosProximos.join(', ')})` : ''}
+## MÉTODO DE PESQUISA (siga essa ordem):
 
-ATENÇÃO:
-- O apartamento que estou avaliando está em estado "${conservacao}" — use a categoria correspondente como referência principal
-- ${conservacao === 'novo' ? 'Use a média de NOVOS como referência' : conservacao === 'bom' ? 'Use a média de SEMI-NOVOS como referência' : 'Use a média de USADOS como referência'}
-- A cidade é ${cidade} no estado de GOIÁS (GO) — NÃO confunda com homônimos
-- SOMENTE apartamentos, não casas ou terrenos`;
+${condominioTexto ? `**ETAPA 1 — Busque no mesmo condomínio/edifício:**
+Pesquise apartamentos ${finalidadeLabel} no condomínio ${condominioTexto} em ${cidade}-GO.
+Sites: vivareal.com.br, zapimoveis.com.br, 62imoveis.com.br, chavesnamao.com.br, olx.com.br
+Para cada anúncio: registre área (m²), preço (R$), preço/m² = preço ÷ área.
+
+**ETAPA 2 — Se achar menos de 3 no mesmo condomínio, amplie para o bairro:**` :
+`**ETAPA 1 — Busque no bairro ${bairro}:**`}
+Pesquise apartamentos ${finalidadeLabel} em ${bairro}, ${cidade}-GO nos portais:
+- vivareal.com.br → busque "apartamento ${bairro} ${cidade}"
+- zapimoveis.com.br → busque "apartamento ${bairro} ${cidade} GO"
+- chavesnamao.com.br → "apartamentos ${cidade} GO ${bairro}"
+- 62imoveis.com.br, olx.com.br, encontreimoveisanapolis.com.br
+
+**ETAPA ${condominioTexto ? '3' : '2'} — Se não achar 5+ anúncios no bairro:**
+Amplie para bairros vizinhos de perfil similar: ${vizinhosTexto || geoInfo?.bairrosProximos?.join(', ') || 'bairros próximos'}
+
+## PARA CADA ANÚNCIO ENCONTRADO:
+| Condomínio/Edifício | Área (m²) | Preço (R$) | Preço/m² | Estado | Fonte |
+Preço/m² = Preço ÷ Área (calcule individualmente para cada anúncio)
+
+## CATEGORIA DE REFERÊNCIA:
+O apartamento avaliado está em estado "${conservacao}":
+${conservacao === 'novo' ? '→ Priorize NOVOS (na planta ou recém-entregues)' : conservacao === 'bom' ? '→ Priorize SEMI-NOVOS (até 5 anos, bom estado)' : '→ Priorize USADOS (revenda, mais de 5 anos)'}
+Mas registre TODOS os anúncios encontrados para calcular a média geral do bairro.
+
+## REGRAS:
+- SOMENTE ${cidade}-GO (Goiás) — nunca use dados de outras cidades
+- NUNCA invente preços — apenas anúncios reais encontrados
+- Aceite qualquer metragem — o que importa é o preço/m² da região
+- Busque no mínimo 3 e no máximo 15 anúncios
+- Calcule: Média = soma(preço/m² de cada anúncio) ÷ N`;
 
   } else {
     // ─── LÓGICA PARA CASAS E OUTROS ──────────────────────────

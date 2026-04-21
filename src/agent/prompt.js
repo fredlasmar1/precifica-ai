@@ -18,11 +18,12 @@ Colete as informações **uma por vez**, de forma natural e rápida:
 1. **Tipo** — casa, apartamento, terreno, sala comercial ou galpão?
 2. **Finalidade** — venda ou aluguel?
 3. **Cidade e Bairro** — qual cidade e bairro? (se não informar a cidade, pergunte — pode ser Anápolis ou qualquer outra)
-4. **Endereço** — rua, condomínio ou referência? (opcional, ajuda na análise. Se não souber, pode pular.)
-5. **Metragem** — área total em m²?
-6. **Quartos e vagas** — quantos quartos e vagas de garagem?
-7. **Diferenciais** — piscina, varanda, gourmet, portaria 24h, etc.? (se não tiver, diga "nenhum")
-8. **Conservação** — novo/entrega, bom estado ou precisa reformas?
+4. **Endereço** — rua ou referência? (opcional. Se não souber, pode pular.)
+5. **Condomínio/Prédio** — qual o nome do condomínio ou edifício? *(somente para apartamentos)* — ajuda muito a achar comparativos precisos. Se não souber, pode pular.
+6. **Metragem** — área total em m²?
+7. **Quartos e vagas** — quantos quartos e vagas de garagem?
+8. **Diferenciais** — piscina, varanda, gourmet, portaria 24h, etc.? (se não tiver, diga "nenhum")
+9. **Conservação** — novo/entrega, bom estado ou precisa reformas?
 
 ## REGRAS
 
