@@ -24,7 +24,7 @@ const db = require('./database');
  * A inteligência local complementa com contexto, não com preço fixo.
  */
 async function calcularPreco(dadosImovel) {
-  const { tipo, finalidade, cidade, bairro, endereco, metragem, quartos, vagas, diferenciais, conservacao } = dadosImovel;
+  const { tipo, finalidade, cidade, bairro, endereco, condominio, metragem, quartos, vagas, diferenciais, conservacao } = dadosImovel;
 
   // 1. Validar endereço e analisar rua via Google Maps
   let geoInfo = null;
@@ -79,7 +79,7 @@ async function calcularPreco(dadosImovel) {
 
   // Prioridade 1: Cache DB (pesquisa recente < 3 dias)
   try {
-    const precoDb = await db.buscarPreco(cidade, bairro, tipo, finalidade);
+    const precoDb = await db.buscarPreco(cidade, bairro, tipo, finalidade, condominio);
     // Só usa cache DB se:
     // - tem menos de 3 dias de idade
     // - E confiança é "alta" ou "media" (>=3 amostras)
@@ -99,7 +99,7 @@ async function calcularPreco(dadosImovel) {
         });
         if (!algumDosBairro && comps.length > 0) {
           console.warn(`[Precificador] Cache DB com comparativos de bairro diferente — invalidando`);
-          try { await db.invalidarPreco(cidade, bairro, tipo, finalidade); } catch {}
+          try { await db.invalidarPreco(cidade, bairro, tipo, finalidade, condominio); } catch {}
           cacheComparativosOk = false;
         }
       }
@@ -140,7 +140,7 @@ async function calcularPreco(dadosImovel) {
     console.log(`[Precificador] Portais: R$ ${precoM2Base}/m²`);
     // Salva no DB
     try {
-      await db.salvarPreco({ cidade, bairro, tipo, finalidade, preco_m2: precoM2Base, faixa_min: comparativos.precoMinimo, faixa_max: comparativos.precoMaximo, amostras: comparativos.totalEncontrados, confianca: 'alta', fonte: comparativos.fonte, comparativos: comparativos.imoveis });
+      await db.salvarPreco({ cidade, bairro, tipo, finalidade, condominio, preco_m2: precoM2Base, faixa_min: comparativos.precoMinimo, faixa_max: comparativos.precoMaximo, amostras: comparativos.totalEncontrados, confianca: 'alta', fonte: comparativos.fonte, comparativos: comparativos.imoveis });
     } catch {}
   }
 
@@ -162,7 +162,7 @@ async function calcularPreco(dadosImovel) {
         console.log(`[Precificador] Perplexity: R$ ${precoM2Base}/m² — ${amostrasReais} amostras → confiança ${confiancaFonte}`);
         // Salva no DB para próximas consultas
         try {
-          await db.salvarPreco({ cidade, bairro, tipo, finalidade, preco_m2: precoM2Base, faixa_min: analiseIA.faixaMinM2, faixa_max: analiseIA.faixaMaxM2, amostras: analiseIA.anunciosAnalisados, confianca: analiseIA.confianca, fonte: 'Perplexity', comparativos: analiseIA.comparativos });
+          await db.salvarPreco({ cidade, bairro, tipo, finalidade, condominio, preco_m2: precoM2Base, faixa_min: analiseIA.faixaMinM2, faixa_max: analiseIA.faixaMaxM2, amostras: analiseIA.anunciosAnalisados, confianca: analiseIA.confianca, fonte: 'Perplexity', comparativos: analiseIA.comparativos });
         } catch {}
       } else {
         console.warn(`[Precificador] ⚠️ Perplexity retornou null para ${tipo}/${finalidade} em ${bairro}, ${cidade} — vai usar fallback`);

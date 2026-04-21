@@ -45,10 +45,11 @@ async function inicializar() {
         faixa_max NUMERIC,
         amostras INT DEFAULT 0,
         confianca VARCHAR(20),               -- alta, media, baixa
-        fonte VARCHAR(100),                  -- Perplexity, OLX, etc.
+        fonte VARCHAR(100),
+        condominio VARCHAR(200) DEFAULT '',                  -- Perplexity, OLX, etc.
         comparativos JSONB,                  -- lista de anúncios encontrados
         pesquisado_em TIMESTAMP DEFAULT NOW(),
-        UNIQUE(cidade, bairro, tipo, finalidade)
+        UNIQUE(cidade, bairro, tipo, finalidade, condominio)
       );
 
       -- Histórico de todas as avaliações feitas
@@ -153,37 +154,39 @@ async function listarBairros(cidade) {
 // ─── Operações de Preços ─────────────────────────────────────────
 
 async function salvarPreco(dados) {
-  const { cidade, bairro, tipo, finalidade, preco_m2, faixa_min, faixa_max, amostras, confianca, fonte, comparativos } = dados;
+  const { cidade, bairro, tipo, finalidade, condominio, preco_m2, faixa_min, faixa_max, amostras, confianca, fonte, comparativos } = dados;
   const result = await pool.query(`
-    INSERT INTO precos_mercado (cidade, bairro, tipo, finalidade, preco_m2, faixa_min, faixa_max, amostras, confianca, fonte, comparativos, pesquisado_em)
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,NOW())
-    ON CONFLICT (cidade, bairro, tipo, finalidade) DO UPDATE SET
-      preco_m2=$5, faixa_min=$6, faixa_max=$7, amostras=$8,
-      confianca=$9, fonte=$10, comparativos=$11, pesquisado_em=NOW()
+    INSERT INTO precos_mercado (cidade, bairro, tipo, finalidade, condominio, preco_m2, faixa_min, faixa_max, amostras, confianca, fonte, comparativos, pesquisado_em)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW())
+    ON CONFLICT (cidade, bairro, tipo, finalidade, condominio) DO UPDATE SET
+      preco_m2=$6, faixa_min=$7, faixa_max=$8, amostras=$9,
+      confianca=$10, fonte=$11, comparativos=$12, pesquisado_em=NOW()
     RETURNING *
-  `, [cidade, bairro, tipo, finalidade, preco_m2, faixa_min, faixa_max, amostras, confianca, fonte, JSON.stringify(comparativos || [])]);
+  `, [cidade, bairro, tipo, finalidade, condominio || '', preco_m2, faixa_min, faixa_max, amostras, confianca, fonte, JSON.stringify(comparativos || [])]);
   return result.rows[0];
 }
 
-async function buscarPreco(cidade, bairro, tipo, finalidade) {
+async function buscarPreco(cidade, bairro, tipo, finalidade, condominio) {
   const result = await pool.query(
     `SELECT *, EXTRACT(DAY FROM NOW() - pesquisado_em) as dias_desde
      FROM precos_mercado
      WHERE LOWER(cidade)=LOWER($1) AND LOWER(bairro)=LOWER($2)
-       AND LOWER(tipo)=LOWER($3) AND LOWER(finalidade)=LOWER($4)`,
-    [cidade, bairro, tipo, finalidade]
+       AND LOWER(tipo)=LOWER($3) AND LOWER(finalidade)=LOWER($4)
+       AND LOWER(COALESCE(condominio,''))=LOWER($5)`,
+    [cidade, bairro, tipo, finalidade, condominio || '']
   );
   return result.rows[0] || null;
 }
 
-async function invalidarPreco(cidade, bairro, tipo, finalidade) {
+async function invalidarPreco(cidade, bairro, tipo, finalidade, condominio) {
   await pool.query(
     `DELETE FROM precos_mercado
      WHERE LOWER(cidade)=LOWER($1) AND LOWER(bairro)=LOWER($2)
-       AND LOWER(tipo)=LOWER($3) AND LOWER(finalidade)=LOWER($4)`,
-    [cidade, bairro, tipo, finalidade]
+       AND LOWER(tipo)=LOWER($3) AND LOWER(finalidade)=LOWER($4)
+       AND LOWER(COALESCE(condominio,''))=LOWER($5)`,
+    [cidade, bairro, tipo, finalidade, condominio || '']
   );
-  console.log(`[DB] Cache invalidado: ${tipo}/${finalidade} em ${bairro}, ${cidade}`);
+  console.log(`[DB] Cache invalidado: ${tipo}/${finalidade} em ${bairro}, ${cidade}${condominio ? ' (' + condominio + ')' : ''}`);
 }
 
 // ─── Operações de Avaliações ─────────────────────────────────────
