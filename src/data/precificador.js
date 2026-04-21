@@ -297,17 +297,31 @@ async function calcularPreco(dadosImovel) {
     const pesoPplx = amostras === 1 ? 0.40 : 0.65;
     const pesoFallback = 1 - pesoPplx;
 
-    // Fallback calibrado: média do tipo de imóvel para a cidade × mult do bairro
+    // Fallback calibrado por tipo E finalidade (venda vs aluguel)
+    // Aluguel em R$/m²/mês — valores completamente diferentes de venda
     const mediasFallback = {
-      'anapolis':  { terreno: 800, casa: 3500, apartamento: 5500, comercial: 4000, default: 3000 },
-      'anápolis':  { terreno: 800, casa: 3500, apartamento: 5500, comercial: 4000, default: 3000 },
-      'goiania':   { terreno: 1200, casa: 5000, apartamento: 7000, comercial: 5500, default: 4500 },
-      'goiânia':   { terreno: 1200, casa: 5000, apartamento: 7000, comercial: 5500, default: 4500 },
-      'default':   { terreno: 600, casa: 2500, apartamento: 4000, comercial: 3000, default: 2000 }
+      'anapolis': {
+        venda:    { terreno: 800, casa: 3500, apartamento: 5500, comercial: 4000, default: 3000 },
+        aluguel:  { terreno: 3,   casa: 18,   apartamento: 28,   comercial: 22,   default: 18 }
+      },
+      'anápolis': null, // alias abaixo
+      'goiania': {
+        venda:    { terreno: 1200, casa: 5000, apartamento: 7000, comercial: 5500, default: 4500 },
+        aluguel:  { terreno: 4,    casa: 25,   apartamento: 38,   comercial: 30,   default: 25 }
+      },
+      'goiânia': null, // alias abaixo
+      'default': {
+        venda:    { terreno: 600, casa: 2500, apartamento: 4000, comercial: 3000, default: 2000 },
+        aluguel:  { terreno: 2,   casa: 14,   apartamento: 22,   comercial: 18,   default: 14 }
+      }
     };
+    mediasFallback['anápolis'] = mediasFallback['anapolis'];
+    mediasFallback['goiânia']  = mediasFallback['goiania'];
+
     const cidadeKeyFb = (cidade || 'anapolis').toLowerCase().trim();
-    const mediasFb = mediasFallback[cidadeKeyFb] || mediasFallback['default'];
-    const baseFb = mediasFb[tipo] || mediasFb.default;
+    const mediasFbCidade = mediasFallback[cidadeKeyFb] || mediasFallback['default'];
+    const mediasFbFinal  = mediasFbCidade[finalidade] || mediasFbCidade['venda'];
+    const baseFb = mediasFbFinal[tipo] || mediasFbFinal.default;
     const fallbackM2 = Math.round(baseFb * perfilBairro.mult);
     const precoMesclado = Math.round(precoM2Final * pesoPplx + fallbackM2 * pesoFallback);
 
