@@ -87,19 +87,20 @@ function filtrarRelevanciaApartamento(resultado, metragemRef, quartosRef) {
     const area = c.area || 0;
     const quartos = c.quartos != null ? c.quartos : null;
 
-    // Filtro de metragem: aceita ±80% da metragem de referência
+    // Filtro de metragem: aceita ±50% da metragem de referência
+    // Ex: avaliado 142m² → aceita entre 71m² e 213m²
     if (area > 0 && metragemRef > 0) {
       const desvioArea = Math.abs(area - metragemRef) / metragemRef;
-      if (desvioArea > 0.80) {
+      if (desvioArea > 0.50) {
         descartados.push(`${area}m² descartado (desvia ${Math.round(desvioArea*100)}% da metragem de referência ${metragemRef}m²)`);
         return false;
       }
     }
 
-    // Filtro de quartos: aceita ±2 quartos de diferença
+    // Filtro de quartos: aceita ±1 quarto de diferença
     if (quartos != null && quartosRef != null && quartosRef > 0) {
       const difQuartos = Math.abs(quartos - quartosRef);
-      if (difQuartos > 2) {
+      if (difQuartos > 1) {
         descartados.push(`${area}m² ${quartos}q descartado (${difQuartos} quartos de diferença do avaliado com ${quartosRef}q)`);
         return false;
       }
@@ -114,7 +115,30 @@ function filtrarRelevanciaApartamento(resultado, metragemRef, quartosRef) {
   }
 
   if (filtrados.length === 0) {
-    console.log('[Relevância] Todos descartados — mantendo todos');
+    // Todos descartados por relevância — relaxa o filtro de metragem para ±80%
+    // para não ficar sem nenhum comparativo
+    console.log('[Relevância] Todos descartados — relaxando filtro para ±80%');
+    const filtradosRelaxados = resultado.comparativos.filter(c => {
+      const area = c.area || 0;
+      if (area > 0 && metragemRef > 0) {
+        return Math.abs(area - metragemRef) / metragemRef <= 0.80;
+      }
+      return true;
+    });
+    if (filtradosRelaxados.length > 0) {
+      const precosR = filtradosRelaxados.map(c => c.precoM2).filter(p => p > 0);
+      const somaR = precosR.reduce((a, b) => a + b, 0);
+      return {
+        ...resultado,
+        comparativos: filtradosRelaxados,
+        precoMedioM2: Math.round(somaR / precosR.length),
+        faixaMinM2: Math.min(...precosR),
+        faixaMaxM2: Math.max(...precosR),
+        anunciosAnalisados: filtradosRelaxados.length,
+        raciocinio: (resultado.raciocinio || '') + ' (filtro de relevância relaxado — poucos comparativos do mesmo porte na região)'
+      };
+    }
+    // Se ainda vazio, mantém todos
     return resultado;
   }
 
@@ -310,7 +334,8 @@ Mas registre TODOS os anúncios encontrados para calcular a média geral do bair
 ## REGRAS:
 - SOMENTE ${cidade}-GO (Goiás) — nunca use dados de outras cidades
 - NUNCA invente preços — apenas anúncios reais encontrados
-- Aceite qualquer metragem — o que importa é o preço/m² da região
+- **PRIORIZE apartamentos de tamanho similar**: entre ${Math.round(metragem*0.5)}m² e ${Math.round(metragem*1.5)}m² e com ${quartos > 1 ? quartos - 1 + ' a ' + (quartos + 1) : quartos} quartos
+- Se não achar suficientes desse porte, amplie para qualquer tamanho no bairro
 - Busque no mínimo 3 e no máximo 15 anúncios
 - Calcule: Média = soma(preço/m² de cada anúncio) ÷ N`;
 
