@@ -60,11 +60,19 @@ async function processarMensagem(chatId, sessionId, texto) {
   const laudoSessao = laudoCache.get(sessionId);
   if (laudoSessao) {
     // Detecta intenção de nova avaliação
-    const novaAvaliacao = /\b(novo|nova|outro|outra|avaliar|avaliar outro|precificar|começar|comecar|reiniciar)\b/i.test(texto);
-    if (novaAvaliacao) {
+    // Casos: palavra-chave explícita OU usuário descreve um novo imóvel (tipo + localização)
+    const novaAvaliacaoExplicita = /\b(novo|nova|outro|outra|precificar|começar|comecar|reiniciar|nova avalia)\b/i.test(texto);
+    const descreveImovel = /\b(terreno|casa|apart|apto|comercial|sala|galpão|lote)\b/i.test(texto) &&
+      /\b(bairro|rua|av\.|avenida|setor|jardim|vila|parque|residencial|em [A-Z])/i.test(texto);
+    if (novaAvaliacaoExplicita || descreveImovel) {
       clearSession(sessionId);
       laudoCache.delete(sessionId);
-      await enviar(chatId, '🔄 Certo! Vamos avaliar outro imóvel.\n\nQual o *tipo* do imóvel? (casa, apartamento, terreno ou comercial)');
+      if (descreveImovel && !novaAvaliacaoExplicita) {
+        // Usuário começou nova avaliação sem avisar — processa direto
+        await processarMensagem(chatId, sessionId, texto);
+      } else {
+        await enviar(chatId, '🔄 Certo! Vamos avaliar outro imóvel.\n\nQual o *tipo* do imóvel? (casa, apartamento, terreno ou comercial)');
+      }
       return;
     }
 
@@ -278,7 +286,16 @@ function gerarLaudo(dados, resultado) {
       analiseIA.comparativos.slice(0, 7).forEach((c, i) => {
         laudo += `  ${i + 1}. ${c.area}m² • ${formatarReais(c.preco)} (${formatarReais(c.precoM2)}/m²)\n`;
         if (c.detalhe) laudo += `     ${c.detalhe}\n`;
-        if (c.fonte) laudo += `     Fonte: ${c.fonte}\n`;
+        if (c.fonte) {
+          // Monta link clicável se for um domínio reconhecível
+          const fonteStr = String(c.fonte).trim();
+          const dominio = fonteStr.match(/^https?:\/\//i) ? fonteStr
+            : fonteStr.match(/\.(com|com\.br|br|net|org)/) ? `https://${fonteStr}`
+            : null;
+          laudo += dominio
+            ? `     Fonte: [${fonteStr}](${dominio})\n`
+            : `     Fonte: ${fonteStr}\n`;
+        }
       });
       laudo += `\n📊 *Resultado da pesquisa:*\n`;
       laudo += `• Média: *${formatarReais(analiseIA.precoMedioM2)}/m²*\n`;

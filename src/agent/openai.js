@@ -31,16 +31,9 @@ async function chat(history) {
  * Extrai dados estruturados do imóvel a partir do histórico
  */
 async function extractPropertyData(history) {
-  // Filtra o histórico: remove laudos anteriores (mensagens do assistente muito longas)
-  // para evitar que o modelo confunda bairros de laudos passados com o atual
-  const historyLimpo = history.filter((msg, idx) => {
-    // Sempre mantém mensagens do usuário
-    if (msg.role === 'user') return true;
-    // Mensagens do assistente: mantém apenas se forem curtas (perguntas de coleta de dados)
-    // Laudos têm >500 chars — descarta para não confundir a extração
-    if (msg.role === 'assistant' && msg.content.length > 500) return false;
-    return true;
-  });
+  // Para extração de dados: usa SOMENTE mensagens do usuário
+  // Mensagens do assistente (perguntas, laudos) NÃO entram — evita contaminação de sessão anterior
+  const historyLimpo = history.filter(msg => msg.role === 'user');
 
   // Última mensagem do usuário — tem prioridade máxima para bairro e endereço
   const ultimaMsgUsuario = [...history].reverse().find(m => m.role === 'user')?.content || '';
