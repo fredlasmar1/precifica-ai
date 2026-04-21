@@ -164,33 +164,48 @@ async function estimarPrecoComIA(dadosImovel) {
 
   if (isTerreno) {
     // ─── LÓGICA PARA TERRENOS ─────────────────────────────────────────────
-    prompt = `Preciso descobrir o PREÇO MÉDIO DO METRO QUADRADO de terrenos/lotes vazios ${finalidadeLabel} no bairro ${bairro}, ${cidade}-GO.
+    // A lógica correta de precificação por amostragem:
+    // 1. Coletar N lotes anunciados na região (qualquer tamanho)
+    // 2. Calcular preço/m² de cada um: preço ÷ área
+    // 3. Somar todos os preço/m² e dividir por N → média do m² da região
+    // 4. Multiplicar pela metragem do imóvel avaliado → preço sugerido
+    prompt = `Você é um pesquisador de mercado imobiliário. Preciso calcular o PREÇO MÉDIO DO METRO QUADRADO de terrenos/lotes em ${bairro}, ${cidade}-GO.
 
-TERRENO AVALIADO: ${metragem}m² em ${bairro}, ${cidade}-GO${endereco ? ` (${endereco})` : ''}
+## MÉTODO (siga exatamente):
 
-PASSO 1 — Pesquise AGORA nas URLs abaixo (acesse diretamente):
-- https://www.vivareal.com.br/venda/goias/anapolis/${bairro.toLowerCase().replace(/\s/g, '-')}/terreno_residencial/
-- https://www.chavesnamao.com.br/terrenos-a-venda/${cidade.toLowerCase()}-go/${bairro.toLowerCase().replace(/\s/g, '-')}/
-- https://www.olx.com.br/imoveis/venda/terrenos-e-lotes/estado-go?q=${encodeURIComponent(bairro + ' ' + cidade)}
-- https://www.zapimoveis.com.br/venda/terrenos/${cidade.toLowerCase()}-go+${bairro.toLowerCase().replace(/\s/g, '-')}/
-- https://www.62imoveis.com.br/busca?city=anapolis&type=terreno&neighborhood=${encodeURIComponent(bairro)}
-- https://encontreimoveisanapolis.com.br/ (busque por terrenos em ${bairro})
-- https://www.mgfimoveis.com.br (busque por lotes em ${bairro}, ${cidade})
+**PASSO 1 — Colete lotes anunciados**
+Pesquise lotes/terrenos VAZIOS à venda em ${bairro} e região em ${cidade}-GO nos portais abaixo.
+Acesse cada URL diretamente:
+• vivareal.com.br → busque "terreno ${bairro} ${cidade}"
+• zapimoveis.com.br → busque "lote ${bairro} ${cidade} GO"  
+• chavesnamao.com.br → busque "terreno ${cidade} GO ${bairro}"
+• olx.com.br → busque "terreno ${bairro} ${cidade} Goiás"
+• 62imoveis.com.br → busque terrenos em ${cidade}, bairro ${bairro}
+• encontreimoveisanapolis.com.br → busque lotes em ${bairro}
+• mgfimoveis.com.br e dfimoveis.com.br → busque lotes em ${bairro}
 
-PASSO 2 — Para cada anúncio encontrado:
-- Registre: área (m²), preço (R$), preço/m² = preço ÷ área, nome do site
-- SOMENTE terrenos/lotes VAZIOS sem construção
-- Aceite QUALQUER tamanho de lote
+**PASSO 2 — Para cada lote encontrado, anote:**
+| Área (m²) | Preço (R$) | Preço/m² | Fonte |
+|---|---|---|---|
+| ex: 360 | ex: 290.000 | ex: 806 | vivareal |
 
-PASSO 3 — Se achar menos de 3 anúncios em ${bairro}:
-- Amplie OBRIGATORIAMENTE para os bairros vizinhos: ${vizinhosTexto || 'bairros próximos'}
-- Repita a busca nos mesmos portais para os bairros vizinhos
+Preço/m² = Preço ÷ Área. Calcule para CADA lote individualmente.
 
-REGRAS:
-- SOMENTE ${cidade}-GO (Goiás, Brasil) — nunca use dados de outras cidades
-- NUNCA invente preços — use somente anúncios reais encontrados
-- Busque no mínimo 3 e no máximo 15 anúncios
-- Informe quantos achou em ${bairro} e quantos nos vizinhos`;
+**PASSO 3 — Se achar menos de 5 lotes em ${bairro}:**
+Amplie para os bairros vizinhos: ${vizinhosTexto || 'bairros próximos de perfil similar'}
+Continue coletando até ter no mínimo 3 lotes no total.
+
+**PASSO 4 — Calcule a média:**
+Média do m² = (preço/m² do lote 1 + preço/m² do lote 2 + ... + preço/m² do lote N) ÷ N
+
+## REGRAS ABSOLUTAS:
+- SOMENTE lotes/terrenos VAZIOS — ignore casas, sobrados, galpões, construídos
+- SOMENTE ${cidade}-GO (Goiás, Brasil) — nunca confunda com cidades homônimas
+- NUNCA invente preços — use apenas anúncios reais que você encontrar
+- Aceite qualquer tamanho de lote — o que importa é o preço/m² da região
+- Registre a fonte (nome do site) de cada anúncio
+
+## RETORNE o JSON com os lotes coletados e a média calculada:`;
 
   } else if (isApto) {
     // ─── LÓGICA PARA APARTAMENTOS ─────────────────────────────
@@ -352,6 +367,25 @@ RETORNE SOMENTE um JSON válido neste formato:
     // Extrai fontes citadas pela Perplexity (se disponíveis)
     const citations = response.data.citations || [];
 
+    // Recalcula precoMedioM2 a partir dos comparativos brutos (média simples dos preço/m²)
+    // Garante que a média é sempre: soma(precoM2 de cada lote) ÷ N
+    // independente do que o modelo calculou
+    if (resultado.comparativos && resultado.comparativos.length > 0) {
+      const precosValidos = resultado.comparativos
+        .map(c => Number(c.precoM2))
+        .filter(p => p > 0);
+      if (precosValidos.length > 0) {
+        const somaM2 = precosValidos.reduce((acc, p) => acc + p, 0);
+        const mediaRecalculada = Math.round(somaM2 / precosValidos.length);
+        if (Math.abs(mediaRecalculada - resultado.precoMedioM2) > 50) {
+          console.log(`[Precificador] Recalculo média: modelo=${resultado.precoMedioM2} → correto=${mediaRecalculada} (${precosValidos.length} amostras)`);
+        }
+        resultado.precoMedioM2 = mediaRecalculada;
+        resultado.faixaMinM2 = Math.min(...precosValidos);
+        resultado.faixaMaxM2 = Math.max(...precosValidos);
+        resultado.anunciosAnalisados = precosValidos.length;
+      }
+    }
     resultado = filtrarOutliersComparativos(resultado);
     const analise = {
       precoMedioM2: Math.round(resultado.precoMedioM2),
