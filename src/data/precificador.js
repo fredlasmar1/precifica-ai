@@ -241,19 +241,53 @@ async function calcularPreco(dadosImovel) {
     console.log(`[Precificador] Fator escala terreno ${metragem}m²: ×${fatorEscala} → R$ ${precoM2Final}/m²`);
   }
 
-  // Ajuste baseado no perfil OpenStreetMap (dados reais mapeados por pessoas)
+  // Ajuste baseado no perfil OpenStreetMap
+  // REGRAS:
+  // - Score OSM < 30: área pouco mapeada no OSM (não significa isolada de verdade) → ignora
+  // - Só aplica ajuste quando score >= 30 E confiança da pesquisa é alta ou media
+  // - Nunca penaliza duplamente: confiança baixa já indica incerteza, não adiciona desconto
   const perfilOSM = perfilGuru?.infraestrutura;
-  if (perfilOSM && confiancaFonte === 'baixa') {
+  const osmConfiavel = perfilOSM && (perfilOSM.score || 0) >= 30 && confiancaFonte !== 'baixa';
+  if (osmConfiavel) {
     if (perfilOSM.perfil === 'comercial forte') {
       precoM2Final = Math.round(precoM2Final * 1.20);
-      ajustesDescricao.push('+20% região comercial forte (comparativos de bairros vizinhos)');
+      ajustesDescricao.push('+20% localização comercial forte');
     } else if (perfilOSM.perfil === 'misto' && perfilOSM.score >= 50) {
       precoM2Final = Math.round(precoM2Final * 1.10);
-      ajustesDescricao.push('+10% boa infraestrutura (comparativos de bairros vizinhos)');
-    } else if (perfilOSM.perfil === 'residencial isolado') {
-      precoM2Final = Math.round(precoM2Final * 0.90);
-      ajustesDescricao.push('-10% região isolada (comparativos de bairros vizinhos)');
+      ajustesDescricao.push('+10% boa infraestrutura local');
+    } else if (perfilOSM.perfil === 'residencial isolado' && perfilOSM.score >= 30) {
+      precoM2Final = Math.round(precoM2Final * 0.92);
+      ajustesDescricao.push('-8% região residencial com infraestrutura limitada');
     }
+  }
+
+  // Mesclagem Perplexity + fallback quando confiança é baixa (< 3 amostras)
+  // Evita que 1 anúncio de bairro vizinho distorça o preço final
+  // Pesos: 1 amostra = 40% Perplexity + 60% fallback; 2 amostras = 65% + 35%
+  if (confiancaFonte === 'baixa' && analiseIA) {
+    const amostras = analiseIA.anunciosAnalisados || 1;
+    const pesoPplx = amostras === 1 ? 0.40 : 0.65;
+    const pesoFallback = 1 - pesoPplx;
+
+    // Fallback calibrado: média do tipo de imóvel para a cidade × mult do bairro
+    const mediasFallback = {
+      'anapolis':  { terreno: 800, casa: 3500, apartamento: 5500, comercial: 4000, default: 3000 },
+      'anápolis':  { terreno: 800, casa: 3500, apartamento: 5500, comercial: 4000, default: 3000 },
+      'goiania':   { terreno: 1200, casa: 5000, apartamento: 7000, comercial: 5500, default: 4500 },
+      'goiânia':   { terreno: 1200, casa: 5000, apartamento: 7000, comercial: 5500, default: 4500 },
+      'default':   { terreno: 600, casa: 2500, apartamento: 4000, comercial: 3000, default: 2000 }
+    };
+    const cidadeKeyFb = (cidade || 'anapolis').toLowerCase().trim();
+    const mediasFb = mediasFallback[cidadeKeyFb] || mediasFallback['default'];
+    const baseFb = mediasFb[tipo] || mediasFb.default;
+    const fallbackM2 = Math.round(baseFb * perfilBairro.mult);
+    const precoMesclado = Math.round(precoM2Final * pesoPplx + fallbackM2 * pesoFallback);
+
+    console.log(`[Precificador] Mesclagem confiança baixa (${amostras} amostras): ` +
+      `Perplexity R$${precoM2Final}/m² (×${pesoPplx}) + Fallback R$${fallbackM2}/m² (×${pesoFallback}) = R$${precoMesclado}/m²`);
+
+    precoM2Final = precoMesclado;
+    ajustesDescricao.push(`Estimativa combinada: ${Math.round(pesoPplx*100)}% mercado + ${Math.round(pesoFallback*100)}% base calibrada (poucos anúncios na região)`);
   }
 
   // ─── Resultado final ───────────────────────────────────────────
