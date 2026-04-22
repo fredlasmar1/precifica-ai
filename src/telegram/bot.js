@@ -2,6 +2,7 @@ const axios = require('axios');
 const { getSession, addMessage, clearSession, isReadyToEvaluate } = require('../agent/session');
 const { chat, extractPropertyData } = require('../agent/openai');
 const { calcularPreco, formatarReais } = require('../data/precificador');
+const db = require('../data/database');
 const { formatarSecaoLocalizacao } = require('../data/googleplaces');
 
 const BOT_TOKEN = () => process.env.TELEGRAM_BOT_TOKEN;
@@ -36,6 +37,38 @@ async function handleTelegram(req, res) {
         'Me diga os dados do imóvel e eu consulto o mercado em tempo real para gerar um laudo com faixa de preço.\n\n' +
         'Vamos começar? Qual o *tipo* do imóvel? (casa, apartamento, terreno ou comercial)'
       );
+      return;
+    }
+
+    // Comando /historico
+    if (text === '/historico') {
+      try {
+        const laudos = await db.buscarHistorico(String(chatId), 5);
+        if (!laudos || laudos.length === 0) {
+          await enviar(chatId, '📋 Você ainda não tem laudos gerados. Faça sua primeira avaliação!');
+        } else {
+          let msg = '📋 *Seus últimos laudos:*\n━━━━━━━━━━━━━━━━━━━━━\n';
+          laudos.forEach((l, i) => {
+            const data = new Date(l.gerado_em).toLocaleDateString('pt-BR');
+            const tipo = l.tipo.charAt(0).toUpperCase() + l.tipo.slice(1);
+            const finalidade = l.finalidade === 'aluguel' ? 'Aluguel' : 'Venda';
+            const preco = Number(l.preco_recomendado).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+            const m2 = Number(l.preco_m2).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+            const conf = l.confianca === 'alta' ? '🟢' : l.confianca === 'media' ? '🟡' : '🔴';
+            const quartosStr = l.quartos > 0 ? ` • ${l.quartos}q` : '';
+            msg += '\n*' + (i+1) + '. ' + tipo + ' • ' + finalidade + '*\n';
+            msg += '📍 ' + l.bairro + ', ' + l.cidade + '\n';
+            msg += '📐 ' + l.metragem + 'm²' + quartosStr + '\n';
+            msg += '💰 ' + preco + ' (' + m2 + '/m²) ' + conf + '\n';
+            msg += '📅 ' + data + '\n';
+          });
+          msg += '\n_Para nova avaliação, descreva o imóvel ou digite /novo_';
+          await enviar(chatId, msg);
+        }
+      } catch (err) {
+        console.error('[Historico] Erro:', err.message);
+        await enviar(chatId, '❌ Erro ao buscar histórico. Tente de novo.');
+      }
       return;
     }
 
@@ -152,6 +185,8 @@ Se o usuário quiser avaliar um novo imóvel, oriente-o a digitar /novo.`;
 
       // Salva laudo para modo conversa pós-laudo
       laudoCache.set(sessionId, { texto: laudo, dados: dadosImovel, resultado });
+          // Salva no histórico do usuário
+          try { await db.salvarHistorico(String(chatId), dadosImovel, resultado, laudo); } catch {}
 
       await new Promise(r => setTimeout(r, 1000));
       await enviar(chatId,
@@ -190,6 +225,8 @@ Se o usuário quiser avaliar um novo imóvel, oriente-o a digitar /novo.`;
 
           // Salva laudo para modo conversa pós-laudo
           laudoCache.set(sessionId, { texto: laudo, dados: dadosImovel, resultado });
+          // Salva no histórico do usuário
+          try { await db.salvarHistorico(String(chatId), dadosImovel, resultado, laudo); } catch {}
 
           await new Promise(r => setTimeout(r, 1000));
           await enviar(chatId,
