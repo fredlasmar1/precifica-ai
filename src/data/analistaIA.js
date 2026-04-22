@@ -71,31 +71,37 @@ function filtrarOutliersComparativos(resultado) {
 }
 
 /**
- * Filtra comparativos de apartamentos por relevância:
+ * Filtra comparativos por relevância (apartamentos e casas):
  * - Metragem não pode desviar mais de 80% do imóvel avaliado
- * - Quartos não podem diferir mais de 2 do imóvel avaliado
- * Evita que apartamentos de perfis muito diferentes distorçam a média do m²
+ * - Quartos (opcional) não podem diferir mais de 2
+ * Evita que imóveis de perfis muito diferentes distorçam a média do m²
+ * IMPORTANTE: só remove quando há amostras suficientes — nunca deixa vazio.
  */
-function filtrarRelevanciaApartamento(resultado, metragemRef, quartosRef) {
+function filtrarRelevanciaApartamento(resultado, metragemRef, quartosRef, tipo = 'apartamento') {
   if (!resultado?.comparativos || resultado.comparativos.length < 2) return resultado;
+
+  // Para casas: limite mais generoso (±70%) pois mercado tem menos imóveis
+  // Para apartamentos: ±50% (mais anúncios disponíveis, comparação mais precisa)
+  const limiteMetragem = tipo === 'casa' ? 0.70 : 0.50;
+  // Filtro de quartos: só aplica para apartamentos (em casas, número de quartos varia muito)
+  const filtrarQuartos = tipo === 'apartamento';
 
   const descartados = [];
   const filtrados = resultado.comparativos.filter(c => {
     const area = c.area || 0;
     const quartos = c.quartos != null ? c.quartos : null;
 
-    // Filtro de metragem: aceita ±50% da metragem de referência
-    // Ex: avaliado 142m² → aceita entre 71m² e 213m²
+    // Filtro de metragem: aceita dentro do limite por tipo
     if (area > 0 && metragemRef > 0) {
       const desvioArea = Math.abs(area - metragemRef) / metragemRef;
-      if (desvioArea > 0.50) {
+      if (desvioArea > limiteMetragem) {
         descartados.push(`${area}m² descartado (desvia ${Math.round(desvioArea*100)}% da metragem de referência ${metragemRef}m²)`);
         return false;
       }
     }
 
-    // Filtro de quartos: aceita ±1 quarto de diferença
-    if (quartos != null && quartosRef != null && quartosRef > 0) {
+    // Filtro de quartos: aceita ±1 quarto de diferença (apenas apartamentos)
+    if (filtrarQuartos && quartos != null && quartosRef != null && quartosRef > 0) {
       const difQuartos = Math.abs(quartos - quartosRef);
       if (difQuartos > 1) {
         descartados.push(`${area}m² ${quartos}q descartado (${difQuartos} quartos de diferença do avaliado com ${quartosRef}q)`);
@@ -182,13 +188,19 @@ async function estimarPrecoComIA(dadosImovel) {
 
   const cached = cache.get(cacheKey);
   if (cached) {
-    console.log(`[Perplexity] Cache hit: ${cacheKey}`);
-    return cached;
+    // Não usa cache se confiança for baixa (< 3 amostras) — força nova busca
+    if (cached.confianca === 'baixa' || (cached.anunciosAnalisados || 0) < 3) {
+      console.log(`[Perplexity] Cache hit ignorado (confiança=${cached.confianca}, amostras=${cached.anunciosAnalisados || 0}) — refazendo busca: ${cacheKey}`);
+    } else {
+      console.log(`[Perplexity] Cache hit: ${cacheKey}`);
+      return cached;
+    }
   }
 
-  // Cache similar: só para apartamentos/casas (metragem não afeta preço/m² do bairro)
-  // Para terrenos: NÃO reaproveitar cache por tamanho, pois o fator de escala varia
-  if (tipo !== 'terreno') {
+  // Cache similar: SOMENTE para apartamentos (metragem varia pouco, preço/m² do bairro é estável)
+  // Para terrenos e casas: NÃO reaproveitar — metragem afeta muito o resultado (fator escala terreno,
+  // e casas grandes têm perfil de mercado diferente de casas pequenas no mesmo bairro)
+  if (tipo === 'apartamento') {
     const similarPrefix = `pplx_${tipo}_${finalidade}_${cidade}_${bairro}`.toLowerCase().replace(/\s/g, '_');
     const similar = cache.getSimilar(similarPrefix);
     if (similar) {
@@ -340,7 +352,10 @@ Mas registre TODOS os anúncios encontrados para calcular a média geral do bair
 
   } else if (isCasa) {
     // ─── LÓGICA PARA CASAS ────────────────────────────────────
-    prompt = `Você é um pesquisador de mercado imobiliário. Preciso calcular o PREÇO MÉDIO DO METRO QUADRADO de casas ${finalidadeLabel} em ${bairro}, ${cidade}-GO.
+    const casaGrande = metragem >= 250;
+    const faixaCasaMin = Math.round(metragem * 0.5);
+    const faixaCasaMax = Math.round(metragem * 2.0);
+    prompt = `Você é um pesquisador de mercado imobiliário. Preciso calcular o PREÇO MÉDIO DO METRO QUADRADO de casas ${finalidadeLabel} em ${bairro}, ${cidade}-GO (estado de Goiás, Brasil — NÃO confunda com outras cidades).
 
 ## CASA AVALIADA:
 - Localização: ${bairro}, ${cidade}-GO${endereco ? ` (${endereco})` : ''}
@@ -350,31 +365,42 @@ Mas registre TODOS os anúncios encontrados para calcular a média geral do bair
 
 ## MÉTODO (siga exatamente):
 
-**PASSO 1 — Colete casas anunciadas no bairro**
-Pesquise casas ${finalidadeLabel} em ${bairro}, ${cidade}-GO nos portais:
-• vivareal.com.br → busque "casa ${bairro} ${cidade}"
-• zapimoveis.com.br → busque "casa ${bairro} ${cidade} GO"
-• chavesnamao.com.br → "casas ${cidade} GO ${bairro}"
-• olx.com.br → "casa ${bairro} ${cidade} Goiás"
-• 62imoveis.com.br, encontreimoveisanapolis.com.br, mgfimoveis.com.br
+**PASSO 1 — Colete casas em ${cidade}-GO**
+Pesquise casas ${finalidadeLabel} em ${bairro} e região em ${cidade}-GO nos portais:
+• vivareal.com.br → busque "casa ${bairro} ${cidade}" e "casa ${cidade} Goiás"
+• zapimoveis.com.br → busque "casa ${bairro} ${cidade} GO" e "casa à venda ${cidade} GO"
+• chavesnamao.com.br → "casas ${cidade} GO" filtrado por bairro "${bairro}"
+• olx.com.br → "casa ${bairro} ${cidade} Goiás" e "casa ${cidade} Goiás"
+• 62imoveis.com.br → casas em ${cidade}, bairro ${bairro}
+• encontreimoveisanapolis.com.br → casas em ${bairro}
+• mgfimoveis.com.br, dfimoveis.com.br
 
 **PASSO 2 — Para cada casa encontrada:**
-| Área (m²) | Quartos | Preço (R$) | Preço/m² | Estado | Fonte |
-Preço/m² = Preço ÷ Área (calcule individualmente)
+| Área (m²) | Quartos | Preço (R$) | Preço/m² | Bairro | Estado | Fonte |
+Preço/m² = Preço ÷ Área (calcule individualmente para cada anúncio)
 
 **PASSO 3 — Se achar menos de 5 casas em ${bairro}:**
-Amplie para bairros vizinhos: ${vizinhosTexto || 'bairros próximos de perfil similar'}
+Amplie IMEDIATAMENTE para bairros vizinhos e região central de ${cidade}:
+${vizinhosTexto ? `Prioritários: ${vizinhosTexto}` : `Qualquer bairro próximo de perfil similar ao ${bairro}`}
+Continue ampliando até ter no mínimo 5 comparativos.
+
+## PRIORIDADE DE TAMANHO:
+${casaGrande
+  ? `Esta é uma casa grande (${metragem}m²). Priorize casas entre ${faixaCasaMin}m² e ${faixaCasaMax}m². Casas muito pequenas (< ${faixaCasaMin}m²) têm preço/m² muito diferente — inclua-as apenas se não houver outras opções.`
+  : `Priorize casas entre ${faixaCasaMin}m² e ${faixaCasaMax}m² para comparação mais precisa. Aceite qualquer tamanho se não houver suficientes.`
+}
 
 ## REFERÊNCIA DE ESTADO:
 ${conservacao === 'novo' ? 'Priorize casas NOVAS ou recém-construídas' : conservacao === 'bom' ? 'Priorize casas em BOM ESTADO (5-15 anos)' : 'Priorize casas USADAS ou que precisam de reforma'}
-Mas registre TODOS os anúncios encontrados.
+Mas registre TODOS os anúncios encontrados — não descarte nenhum.
 
-## REGRAS:
-- SOMENTE ${cidade}-GO (Goiás, Brasil)
-- NUNCA invente preços — use apenas anúncios reais
-- SOMENTE casas — ignore apartamentos, terrenos, comerciais
-- RETORNE TODOS OS COMPARATIVOS — não filtre nada (o sistema filtra depois)
-- Mínimo 3, máximo 15 anúncios`;
+## REGRAS ABSOLUTAS:
+- SOMENTE ${cidade}-GO (estado de Goiás, Brasil) — ignore outras cidades
+- NUNCA invente preços — use apenas anúncios reais e atuais
+- SOMENTE casas construídas — ignore apartamentos, terrenos, comerciais
+- RETORNE TODOS OS COMPARATIVOS ENCONTRADOS — o sistema faz a filtragem
+- Mínimo 5, máximo 15 anúncios
+- Se não achar 5 no bairro, amplie para a cidade inteira`;
 
   } else {
     // ─── LÓGICA PARA COMERCIAL / OUTROS ───────────────────────
@@ -544,9 +570,12 @@ RETORNE SOMENTE um JSON válido neste formato:
         resultado.anunciosAnalisados = precosValidos.length;
       }
     }
-    // Mantém todos os comparativos para calcular a média do m² da região
-    // (mesmo metodologia dos terrenos — quanto mais amostras, melhor a média)
-    // Filtro de outliers apenas para valores absurdos (>60% da mediana)
+    // Filtro de relevância: remove imóveis de tamanho muito diferente (apartamentos e casas)
+    // Exemplo: casa de 60m² não deve influenciar o preço/m² de uma casa de 390m²
+    if ((tipo === 'apartamento' || tipo === 'casa') && metragem > 0) {
+      resultado = filtrarRelevanciaApartamento(resultado, metragem, quartos, tipo);
+    }
+    // Filtro de outliers para valores extremos (após filtro de relevância)
     resultado = filtrarOutliersComparativos(resultado);
     const analise = {
       precoMedioM2: Math.round(resultado.precoMedioM2),
@@ -606,6 +635,9 @@ Retorne SOMENTE JSON: {"comparativos":[{"area":N,"preco":N,"precoM2":N,"fonte":"
 
     if (retryResult && retryResult.precoMedioM2 > 0) {
       const citations = retryResp.data.citations || [];
+      if ((tipo === 'apartamento' || tipo === 'casa') && metragem > 0) {
+        retryResult = filtrarRelevanciaApartamento(retryResult, metragem, quartos, tipo);
+      }
       retryResult = filtrarOutliersComparativos(retryResult);
       const analise = {
         precoMedioM2: Math.round(retryResult.precoMedioM2),
