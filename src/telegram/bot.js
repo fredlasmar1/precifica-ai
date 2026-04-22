@@ -66,8 +66,13 @@ async function handleTelegram(req, res) {
           await enviar(chatId, msg);
         }
       } catch (err) {
-        console.error('[Historico] Erro:', err.message);
-        await enviar(chatId, '❌ Erro ao buscar histórico. Tente de novo.');
+        console.error('[Historico] Erro completo:', err.message, err.code);
+        // Tabela pode não existir ainda — mostra mensagem amigável
+        if (err.code === '42P01') {
+          await enviar(chatId, '📋 O histórico ainda está sendo configurado. Gere um laudo primeiro e tente novamente.');
+        } else {
+          await enviar(chatId, '❌ Erro ao buscar histórico: ' + err.message);
+        }
       }
       return;
     }
