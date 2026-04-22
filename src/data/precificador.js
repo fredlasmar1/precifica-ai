@@ -269,6 +269,31 @@ async function calcularPreco(dadosImovel) {
     console.log(`[Precificador] Fator escala terreno ${metragem}m²: ×${fatorEscala} → R$ ${precoM2Final}/m²`);
   }
 
+  // ─── Ajuste por estado de conservação (casas e apartamentos) ──────────────
+  // Uma casa "para reformar" no Centro vale o lote, não a construção
+  // Mercado de Anápolis: reforma total pode reduzir 25-35% do valor de mercado
+  if ((tipo === 'casa' || tipo === 'apartamento') && conservacao) {
+    let fatorConservacao = 1.0;
+    let descConservacao = null;
+    if (conservacao === 'reformar') {
+      // Casa para reformar: desconto reflete custo de obra + menor demanda
+      // No Centro, casas antigas (valor de lote) já têm isso embutido nos anúncios
+      // mas a média do Perplexity tende a incluir casas em estado médio
+      fatorConservacao = 0.75;
+      descConservacao = '-25% estado de conservação (necessita reforma)';
+    } else if (conservacao === 'bom') {
+      fatorConservacao = 1.0; // sem ajuste — é o estado "padrão" dos comparativos
+    } else if (conservacao === 'novo') {
+      fatorConservacao = 1.12;
+      descConservacao = '+12% imóvel novo ou recém-construído';
+    }
+    if (fatorConservacao !== 1.0) {
+      precoM2Final = Math.round(precoM2Final * fatorConservacao);
+      if (descConservacao) ajustesDescricao.push(descConservacao);
+      console.log(`[Precificador] Ajuste conservação (${conservacao}): ×${fatorConservacao} → R$ ${precoM2Final}/m²`);
+    }
+  }
+
   // Ajuste baseado no perfil OpenStreetMap
   // REGRAS:
   // - Score OSM < 30: área pouco mapeada no OSM (não significa isolada de verdade) → ignora

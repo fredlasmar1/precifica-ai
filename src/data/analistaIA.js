@@ -161,6 +161,54 @@ function filtrarRelevanciaApartamento(resultado, metragemRef, quartosRef, tipo =
   };
 }
 
+/**
+ * Filtra comparativos cujo bairro informado tem padrão de preço incompatível
+ * com o bairro avaliado. Usa BAIRROS (bairros.js) para verificar multiplicador.
+ * Remove bairros cujo mult difere mais de 0.25 do bairro avaliado.
+ * Nunca deixa o resultado vazio — se todos forem filtrados, mantm original.
+ */
+function filtrarComparativosPorBairro(resultado, bairroRef) {
+  if (!resultado?.comparativos || resultado.comparativos.length < 2) return resultado;
+  const { BAIRROS } = require('./bairros');
+  const bairroKey = (bairroRef || '').toLowerCase().trim();
+  const multRef = BAIRROS[bairroKey]?.mult;
+  if (!multRef) return resultado; // bairro desconhecido, não filtra
+
+  const descartados = [];
+  const filtrados = resultado.comparativos.filter(c => {
+    // Se o comparativo não tem campo bairro, mantém
+    const bComp = (c.bairro || '').toLowerCase().trim();
+    if (!bComp) return true;
+    const multComp = BAIRROS[bComp]?.mult;
+    if (!multComp) return true; // bairro desconhecido, não descarta
+    const diff = Math.abs(multComp - multRef);
+    if (diff > 0.25) {
+      descartados.push(`${bComp} (mult=${multComp} vs ref=${multRef}, diff=${diff.toFixed(2)})`);
+      return false;
+    }
+    return true;
+  });
+
+  if (descartados.length > 0) {
+    console.log(`[FiltroBairro] Descartados por padrão diferente: ${descartados.join('; ')}`);
+  }
+
+  // Só aplica se sobrar pelo menos 2 (evita esvaziar resultado)
+  if (filtrados.length < 2) return resultado;
+
+  const precosValidos = filtrados.map(c => c.precoM2).filter(p => p > 0);
+  if (precosValidos.length === 0) return resultado;
+  const soma = precosValidos.reduce((a, b) => a + b, 0);
+  return {
+    ...resultado,
+    comparativos: filtrados,
+    precoMedioM2: Math.round(soma / precosValidos.length),
+    faixaMinM2: Math.min(...precosValidos),
+    faixaMaxM2: Math.max(...precosValidos),
+    anunciosAnalisados: filtrados.length
+  };
+}
+
 async function estimarPrecoComIA(dadosImovel) {
   const { tipo, finalidade, cidade, bairro, endereco, condominio, metragem, quartos, vagas, diferenciais, conservacao, geoInfo, contextoGuru } = dadosImovel;
 
@@ -299,7 +347,18 @@ Média do m² = (preço/m² do lote 1 + preço/m² do lote 2 + ... + preço/m² 
 - Aceite qualquer tamanho de lote — o que importa é o preço/m² da região
 - Registre a fonte (nome do site) de cada anúncio
 
-## RETORNE o JSON com os lotes coletados e a média calculada:`;
+## RETORNE o JSON com os lotes coletados e a média calculada:
+{
+  "comparativos": [
+    {"area": número_m2, "preco": número_reais, "precoM2": número, "bairro": "nome do bairro", "fonte": "nome do site", "detalhe": "breve descrição"}
+  ],
+  "precoMedioM2": número (média dos preço/m² de todos os lotes),
+  "faixaMinM2": número, "faixaMaxM2": número,
+  "anunciosAnalisados": número,
+  "confianca": "alta" se 5+ lotes, "media" se 3-4, "baixa" se menos,
+  "raciocinio": "resumo dos lotes encontrados"
+}
+IMPORTANTE: campo "bairro" em cada comparativo é obrigatório.`;
 
   } else if (isApto) {
     // ─── LÓGICA PARA APARTAMENTOS ─────────────────────────────
@@ -380,9 +439,10 @@ Pesquise casas ${finalidadeLabel} em ${bairro} e região em ${cidade}-GO nos por
 Preço/m² = Preço ÷ Área (calcule individualmente para cada anúncio)
 
 **PASSO 3 — Se achar menos de 5 casas em ${bairro}:**
-Amplie IMEDIATAMENTE para bairros vizinhos e região central de ${cidade}:
-${vizinhosTexto ? `Prioritários: ${vizinhosTexto}` : `Qualquer bairro próximo de perfil similar ao ${bairro}`}
-Continue ampliando até ter no mínimo 5 comparativos.
+Amplie para bairros SIMILARES de ${cidade}-GO — mesmo padrão construtivo e faixa de preço:
+${vizinhosTexto ? `Prioritários: ${vizinhosTexto}` : `Bairros próximos de perfil similar ao ${bairro}`}
+⚠️ NÃO MISTURE bairros de padrão muito diferente. Exemplo: casas do Centro (bairro antigo) NÃO devem ser comparadas com casas de condomínios novos ou bairros premium.
+Se necessário, aceite bairros de padrão similar até encontrar 5 comparativos.
 
 ## PRIORIDADE DE TAMANHO:
 ${casaGrande
@@ -390,9 +450,14 @@ ${casaGrande
   : `Priorize casas entre ${faixaCasaMin}m² e ${faixaCasaMax}m² para comparação mais precisa. Aceite qualquer tamanho se não houver suficientes.`
 }
 
-## REFERÊNCIA DE ESTADO:
-${conservacao === 'novo' ? 'Priorize casas NOVAS ou recém-construídas' : conservacao === 'bom' ? 'Priorize casas em BOM ESTADO (5-15 anos)' : 'Priorize casas USADAS ou que precisam de reforma'}
-Mas registre TODOS os anúncios encontrados — não descarte nenhum.
+## ESTADO DE CONSERVAÇÃO:
+${conservacao === 'novo'
+  ? 'Esta é uma casa NOVA. Priorize casas novas ou recém-construídas (até 5 anos). Aceite casas em bom estado se não houver novas suficientes.'
+  : conservacao === 'bom'
+    ? 'Esta é uma casa em BOM ESTADO (5-15 anos, conservada). Priorize casas bem mantidas. Aceite novas ou usadas se necessário.'
+    : `Esta é uma casa ANTIGA ou que PRECISA DE REFORMA. Priorize casas velhas, com bids de reforma, ou antigas do bairro ${bairro}. Se não houver, aceite casas usadas em geral — o sistema aplica desconto de reforma separadamente.`
+}
+Registre TODOS os anúncios encontrados — não descarte nenhum.
 
 ## REGRAS ABSOLUTAS:
 - SOMENTE ${cidade}-GO (estado de Goiás, Brasil) — ignore outras cidades
@@ -468,7 +533,7 @@ ${contextoLocal}
 RETORNE SOMENTE um JSON válido neste formato:
 {
   "comparativos": [
-    {"area": número_m2, "preco": número_reais, "precoM2": número, "quartos": número_ou_null, "fonte": "nome do site", "detalhe": "breve descrição"}
+    {"area": número_m2, "preco": número_reais, "precoM2": número, "quartos": número_ou_null, "bairro": "nome do bairro exato", "fonte": "nome do site", "detalhe": "breve descrição"}
   ],
   "precoMedioM2": número (média simples de TODOS os preço/m² — NÃO descarte nenhum valor, retorne todos os comparativos encontrados),
   "faixaMinM2": número (menor preço/m² encontrado),
@@ -476,7 +541,8 @@ RETORNE SOMENTE um JSON válido neste formato:
   "anunciosAnalisados": número,
   "confianca": "alta" se achou 5+ imóveis com filtros exatos, "media" se achou 3-4, "baixa" se menos,
   "raciocinio": "resumo dos anúncios encontrados, com preços e fontes"
-}`;
+}
+IMPORTANTE: o campo "bairro" em cada comparativo deve conter o nome exato do bairro do anúncio (ex: "Centro", "Anápolis City", "Vila Brasil"). NÃO omita esse campo.`;
 
   try {
     console.log(`[Perplexity] Pesquisando preços reais: ${tipo} ${finalidade} ${bairro}, ${cidade}...`);
@@ -570,6 +636,11 @@ RETORNE SOMENTE um JSON válido neste formato:
         resultado.anunciosAnalisados = precosValidos.length;
       }
     }
+    // Filtro de bairro: remove comparativos de bairros com padrão muito diferente do avaliado
+    // Evita que Perplexity misture bairros premium com bairros antigos/populares
+    // Exemplo: casa do Centro não deve comparar com Residencial Verona ou Anápolis City
+    resultado = filtrarComparativosPorBairro(resultado, bairro);
+
     // Filtro de relevância: remove imóveis de tamanho muito diferente (apartamentos e casas)
     // Exemplo: casa de 60m² não deve influenciar o preço/m² de uma casa de 390m²
     if ((tipo === 'apartamento' || tipo === 'casa') && metragem > 0) {
@@ -608,7 +679,7 @@ RETORNE SOMENTE um JSON válido neste formato:
 
 ${isTerreno ? 'SOMENTE lotes vazios, NÃO inclua casas ou imóveis construídos.' : ''}
 
-Retorne SOMENTE JSON: {"comparativos":[{"area":N,"preco":N,"precoM2":N,"fonte":"site","detalhe":"desc"}],"precoMedioM2":N (média simples de TODOS — não filtre nada),"faixaMinM2":N,"faixaMaxM2":N,"anunciosAnalisados":N,"confianca":"alta|media|baixa","raciocinio":"resumo"}`;
+Retorne SOMENTE JSON: {"comparativos":[{"area":N,"preco":N,"precoM2":N,"bairro":"nome bairro","fonte":"site","detalhe":"desc"}],"precoMedioM2":N (média simples de TODOS — não filtre nada),"faixaMinM2":N,"faixaMaxM2":N,"anunciosAnalisados":N,"confianca":"alta|media|baixa","raciocinio":"resumo"}`;
 
     const retryResp = await axios.post('https://api.perplexity.ai/chat/completions', {
       model: 'sonar',
@@ -635,6 +706,7 @@ Retorne SOMENTE JSON: {"comparativos":[{"area":N,"preco":N,"precoM2":N,"fonte":"
 
     if (retryResult && retryResult.precoMedioM2 > 0) {
       const citations = retryResp.data.citations || [];
+      retryResult = filtrarComparativosPorBairro(retryResult, bairro);
       if ((tipo === 'apartamento' || tipo === 'casa') && metragem > 0) {
         retryResult = filtrarRelevanciaApartamento(retryResult, metragem, quartos, tipo);
       }
