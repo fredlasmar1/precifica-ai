@@ -103,6 +103,25 @@ async function inicializar() {
       );
 
     `);
+    // Tabela de histórico de laudos por usuário
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS historico_laudos (
+        id SERIAL PRIMARY KEY,
+        telegram_id VARCHAR(50) NOT NULL,
+        tipo VARCHAR(50),
+        finalidade VARCHAR(20),
+        cidade VARCHAR(100),
+        bairro VARCHAR(150),
+        metragem DECIMAL,
+        quartos INTEGER,
+        preco_recomendado DECIMAL,
+        preco_m2 DECIMAL,
+        confianca VARCHAR(20),
+        laudo_texto TEXT,
+        gerado_em TIMESTAMP DEFAULT NOW()
+      )
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_historico_telegram ON historico_laudos(telegram_id, gerado_em DESC)`);
     console.log('[DB] Tabelas inicializadas com sucesso');
   } catch (err) {
     console.error('[DB] Erro ao inicializar:', err.message);
@@ -189,6 +208,32 @@ async function invalidarPreco(cidade, bairro, tipo, finalidade, condominio) {
   console.log(`[DB] Cache invalidado: ${tipo}/${finalidade} em ${bairro}, ${cidade}${condominio ? ' (' + condominio + ')' : ''}`);
 }
 
+async function salvarHistorico(telegramId, dados, resultado, laudoTexto) {
+  const { tipo, finalidade, cidade, bairro, metragem, quartos } = dados;
+  const { precoRecomendado, precoM2Imovel, confiancaFonte } = resultado;
+  await pool.query(
+    `INSERT INTO historico_laudos
+      (telegram_id, tipo, finalidade, cidade, bairro, metragem, quartos,
+       preco_recomendado, preco_m2, confianca, laudo_texto)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+    [telegramId, tipo, finalidade, cidade, bairro, metragem, quartos || 0,
+     precoRecomendado, precoM2Imovel, confiancaFonte || 'baixa', laudoTexto]
+  );
+}
+
+async function buscarHistorico(telegramId, limite = 5) {
+  const result = await pool.query(
+    `SELECT tipo, finalidade, cidade, bairro, metragem, quartos,
+            preco_recomendado, preco_m2, confianca, gerado_em
+     FROM historico_laudos
+     WHERE telegram_id = $1
+     ORDER BY gerado_em DESC
+     LIMIT $2`,
+    [telegramId, limite]
+  );
+  return result.rows;
+}
+
 // ─── Operações de Avaliações ─────────────────────────────────────
 
 async function salvarAvaliacao(dados) {
@@ -252,7 +297,7 @@ async function stats() {
 module.exports = {
   pool, inicializar,
   salvarBairro, buscarBairro, listarBairros,
-  salvarPreco, buscarPreco, invalidarPreco,
+  salvarPreco, buscarPreco, invalidarPreco, salvarHistorico, buscarHistorico,
   salvarAvaliacao, salvarFeedback,
   salvarConhecimentoCidade, buscarConhecimentoCidade,
   stats

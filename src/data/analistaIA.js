@@ -338,27 +338,80 @@ Mas registre TODOS os anúncios encontrados para calcular a média geral do bair
 - O sistema fará a filtragem estatística depois — sua tarefa é coletar dados brutos
 - Calcule: Média = soma(preço/m² de cada anúncio) ÷ N`;
 
+  } else if (isCasa) {
+    // ─── LÓGICA PARA CASAS ────────────────────────────────────
+    prompt = `Você é um pesquisador de mercado imobiliário. Preciso calcular o PREÇO MÉDIO DO METRO QUADRADO de casas ${finalidadeLabel} em ${bairro}, ${cidade}-GO.
+
+## CASA AVALIADA:
+- Localização: ${bairro}, ${cidade}-GO${endereco ? ` (${endereco})` : ''}
+- Área: ${metragem}m² | ${quartos} quartos | ${vagas} vaga(s)
+- Estado: ${conservacao}
+- Diferenciais: ${difsTexto}
+
+## MÉTODO (siga exatamente):
+
+**PASSO 1 — Colete casas anunciadas no bairro**
+Pesquise casas ${finalidadeLabel} em ${bairro}, ${cidade}-GO nos portais:
+• vivareal.com.br → busque "casa ${bairro} ${cidade}"
+• zapimoveis.com.br → busque "casa ${bairro} ${cidade} GO"
+• chavesnamao.com.br → "casas ${cidade} GO ${bairro}"
+• olx.com.br → "casa ${bairro} ${cidade} Goiás"
+• 62imoveis.com.br, encontreimoveisanapolis.com.br, mgfimoveis.com.br
+
+**PASSO 2 — Para cada casa encontrada:**
+| Área (m²) | Quartos | Preço (R$) | Preço/m² | Estado | Fonte |
+Preço/m² = Preço ÷ Área (calcule individualmente)
+
+**PASSO 3 — Se achar menos de 5 casas em ${bairro}:**
+Amplie para bairros vizinhos: ${vizinhosTexto || 'bairros próximos de perfil similar'}
+
+## REFERÊNCIA DE ESTADO:
+${conservacao === 'novo' ? 'Priorize casas NOVAS ou recém-construídas' : conservacao === 'bom' ? 'Priorize casas em BOM ESTADO (5-15 anos)' : 'Priorize casas USADAS ou que precisam de reforma'}
+Mas registre TODOS os anúncios encontrados.
+
+## REGRAS:
+- SOMENTE ${cidade}-GO (Goiás, Brasil)
+- NUNCA invente preços — use apenas anúncios reais
+- SOMENTE casas — ignore apartamentos, terrenos, comerciais
+- RETORNE TODOS OS COMPARATIVOS — não filtre nada (o sistema filtra depois)
+- Mínimo 3, máximo 15 anúncios`;
+
   } else {
-    // ─── LÓGICA PARA CASAS E OUTROS ──────────────────────────
-    // Casas: buscar preço/m² do bairro, separando por categoria
-    prompt = `Preciso descobrir o PREÇO MÉDIO DO METRO QUADRADO de ${tipo}s ${finalidadeLabel} no bairro ${bairro}, ${cidade}-GO (estado de Goiás, Brasil).
+    // ─── LÓGICA PARA COMERCIAL / OUTROS ───────────────────────
+    const tipoComercialLabel = tipo === 'comercial' ? 'imóvel comercial' : tipo;
+    const subtipo = diferenciais?.find(d => /sala|loja|galpão|galp|pavilh/i.test(d)) || tipo;
+    prompt = `Você é um pesquisador de mercado imobiliário. Preciso calcular o PREÇO MÉDIO DO METRO QUADRADO de imóveis comerciais ${finalidadeLabel} em ${bairro}, ${cidade}-GO.
 
-IMÓVEL QUE ESTOU AVALIANDO: ${tipo}, ${metragem}m², ${quartos} quartos, ${vagas} vagas, estado: ${conservacao}
-Diferenciais: ${difsTexto}
+## IMÓVEL AVALIADO:
+- Tipo: ${subtipo} (comercial)
+- Localização: ${bairro}, ${cidade}-GO${endereco ? ` (${endereco})` : ''}
+- Área: ${metragem}m²
+- Diferenciais: ${difsTexto}
 
-COMO PESQUISAR:
-1. Busque ${tipo}s ${finalidadeLabel} no bairro ${bairro} em ${cidade}-GO
-2. Aceite ${tipo}s de QUALQUER tamanho — o que importa é o preço por m² do bairro
-3. Para cada anúncio: preço ÷ área = preço/m²
-4. SEPARE por categoria: NOVOS, SEMI-NOVOS/BOM ESTADO, USADOS/PARA REFORMA
-5. Calcule a média de preço/m² para cada categoria
-6. Busque entre 5 e 10 anúncios
-7. Se não achar no ${bairro}, busque vizinhos${geoInfo?.bairrosProximos?.length ? ` (${geoInfo.bairrosProximos.join(', ')})` : ''}
-8. ${conservacao === 'novo' ? 'Use NOVOS como referência' : conservacao === 'bom' ? 'Use SEMI-NOVOS como referência' : 'Use USADOS como referência'}
+## MÉTODO (siga exatamente):
 
-ATENÇÃO:
-- A cidade é ${cidade} no estado de GOIÁS (GO)
-- SOMENTE ${tipo}s, não misture com outros tipos`;
+**PASSO 1 — Colete imóveis comerciais anunciados**
+Pesquise ${finalidadeLabel === 'para venda' ? 'salas/lojas/imóveis comerciais à venda' : 'salas/lojas/imóveis comerciais para alugar'} em ${bairro}, ${cidade}-GO:
+• vivareal.com.br → busque "sala comercial ${bairro} ${cidade}" e "loja ${bairro} ${cidade}"
+• zapimoveis.com.br → "comercial ${bairro} ${cidade} GO"
+• olx.com.br → "sala comercial ${cidade} ${bairro}"
+• 62imoveis.com.br, encontreimoveisanapolis.com.br
+• Para galpões: olx.com.br → "galpão ${cidade} ${bairro}", zapimoveis.com.br → "galpão ${cidade}"
+
+**PASSO 2 — Para cada imóvel encontrado:**
+| Tipo | Área (m²) | Preço (R$) | Preço/m² | Localização | Fonte |
+Preço/m² = Preço ÷ Área
+
+**PASSO 3 — Se achar menos de 3 em ${bairro}:**
+Amplie para bairros vizinhos ou regiões comerciais próximas: ${vizinhosTexto || 'bairros próximos'}
+Para imóveis comerciais é normal buscar em raio maior (até 3km)
+
+## REGRAS:
+- SOMENTE ${cidade}-GO (Goiás, Brasil)
+- NUNCA invente preços
+- RETORNE TODOS OS COMPARATIVOS — não filtre nada
+- Mínimo 3, máximo 15 anúncios
+- Aceite qualquer tamanho — o que importa é o preço/m² da região comercial`;
   }
 
   // Parte comum do prompt
