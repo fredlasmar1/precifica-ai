@@ -672,6 +672,7 @@ IMPORTANTE: o campo "bairro" em cada comparativo deve conter o nome exato do bai
         casa:         { min: 500, max: 30000 },
         apartamento:  { min: 800, max: 30000 },
         comercial:    { min: 200, max: 30000 },
+        rural:        { min: 1,   max: 500   }, // rural em R$/m² — chácara R$400k/alq = ~R$8/m²
         default:      { min: 100, max: 50000 }
       },
       aluguel: {
@@ -679,6 +680,7 @@ IMPORTANTE: o campo "bairro" em cada comparativo deve conter o nome exato do bai
         casa:         { min: 5,   max: 200 },
         apartamento:  { min: 8,   max: 200 },
         comercial:    { min: 5,   max: 300 },
+        rural:        { min: 0.001, max: 5  }, // rural aluguel em R$/m²/mês
         default:      { min: 1,   max: 300 }
       }
     };
@@ -691,23 +693,40 @@ IMPORTANTE: o campo "bairro" em cada comparativo deve conter o nome exato do bai
     // Extrai fontes citadas pela Perplexity (se disponíveis)
     const citations = response.data.citations || [];
 
-    // Recalcula precoMedioM2 a partir dos comparativos brutos (média simples dos preço/m²)
-    // Garante que a média é sempre: soma(precoM2 de cada lote) ÷ N
-    // independente do que o modelo calculou
+    // Recalcula médias a partir dos comparativos brutos
     if (resultado.comparativos && resultado.comparativos.length > 0) {
-      const precosValidos = resultado.comparativos
-        .map(c => Number(c.precoM2))
-        .filter(p => p > 0);
-      if (precosValidos.length > 0) {
-        const somaM2 = precosValidos.reduce((acc, p) => acc + p, 0);
-        const mediaRecalculada = Math.round(somaM2 / precosValidos.length);
-        if (Math.abs(mediaRecalculada - resultado.precoMedioM2) > 50) {
-          console.log(`[Precificador] Recalculo média: modelo=${resultado.precoMedioM2} → correto=${mediaRecalculada} (${precosValidos.length} amostras)`);
+      if (tipo === 'rural') {
+        // Rural: recalcula precoMedioAlq e deriva precoMedioM2
+        const precosAlqValidos = resultado.comparativos
+          .map(c => Number(c.precoAlq))
+          .filter(p => p > 0);
+        if (precosAlqValidos.length > 0) {
+          const somaAlq = precosAlqValidos.reduce((acc, p) => acc + p, 0);
+          resultado.precoMedioAlq = Math.round(somaAlq / precosAlqValidos.length);
+          resultado.precoMedioM2 = Math.round(resultado.precoMedioAlq / 48400);
+          resultado.faixaMinAlq = Math.min(...precosAlqValidos);
+          resultado.faixaMaxAlq = Math.max(...precosAlqValidos);
+          resultado.faixaMinM2 = Math.round(resultado.faixaMinAlq / 48400);
+          resultado.faixaMaxM2 = Math.round(resultado.faixaMaxAlq / 48400);
+          resultado.anunciosAnalisados = precosAlqValidos.length;
+          console.log(`[Rural] precoMedioAlq=${resultado.precoMedioAlq} → precoMedioM2=${resultado.precoMedioM2}`);
         }
-        resultado.precoMedioM2 = mediaRecalculada;
-        resultado.faixaMinM2 = Math.min(...precosValidos);
-        resultado.faixaMaxM2 = Math.max(...precosValidos);
-        resultado.anunciosAnalisados = precosValidos.length;
+      } else {
+        // Urbano: recalcula precoMedioM2 a partir dos comparativos brutos
+        const precosValidos = resultado.comparativos
+          .map(c => Number(c.precoM2))
+          .filter(p => p > 0);
+        if (precosValidos.length > 0) {
+          const somaM2 = precosValidos.reduce((acc, p) => acc + p, 0);
+          const mediaRecalculada = Math.round(somaM2 / precosValidos.length);
+          if (Math.abs(mediaRecalculada - resultado.precoMedioM2) > 50) {
+            console.log(`[Precificador] Recalculo média: modelo=${resultado.precoMedioM2} → correto=${mediaRecalculada} (${precosValidos.length} amostras)`);
+          }
+          resultado.precoMedioM2 = mediaRecalculada;
+          resultado.faixaMinM2 = Math.min(...precosValidos);
+          resultado.faixaMaxM2 = Math.max(...precosValidos);
+          resultado.anunciosAnalisados = precosValidos.length;
+        }
       }
     }
     // Filtro de bairro: remove comparativos de bairros com padrão muito diferente do avaliado
@@ -778,7 +797,11 @@ Retorne SOMENTE JSON: {"comparativos":[{"area":N,"preco":N,"precoM2":N,"bairro":
       retryResult = repararJSON(retryJson);
     }
 
-    if (retryResult && retryResult.precoMedioM2 > 0) {
+    if (retryResult && (retryResult.precoMedioM2 > 0 || retryResult.precoMedioAlq > 0)) {
+      // Rural: derivar precoMedioM2 de precoMedioAlq se necessário
+      if (tipo === 'rural' && retryResult.precoMedioAlq > 0 && !retryResult.precoMedioM2) {
+        retryResult.precoMedioM2 = Math.round(retryResult.precoMedioAlq / 48400);
+      }
       const citations = retryResp.data.citations || [];
       retryResult = filtrarComparativosPorBairro(retryResult, bairro);
       if ((tipo === 'apartamento' || tipo === 'casa') && metragem > 0) {
