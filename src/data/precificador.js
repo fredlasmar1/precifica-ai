@@ -198,6 +198,7 @@ async function calcularPreco(dadosImovel) {
           casa:        3500,  // R$/m² médio de casa em Anápolis
           apartamento: 5500,  // R$/m² médio de apartamento em Anápolis
           comercial:   4000,  // R$/m² médio de comercial em Anápolis
+          rural:       9,     // R$/m² base rural = ~R$435k/alq (chácara beira asfalto, estruturada)
           default:     3000
         },
         aluguel: {
@@ -205,18 +206,19 @@ async function calcularPreco(dadosImovel) {
           casa:        18,
           apartamento: 25,
           comercial:   22,
+          rural:       0.04, // R$/m²/mês rural (~R$1.940/mês por alqueire)
           default:     18
         }
       },
       'anápolis': null, // alias — resolvido abaixo
       'goiania': {
-        venda: { terreno: 1200, casa: 5000, apartamento: 7000, comercial: 5500, default: 4500 },
-        aluguel: { terreno: 4, casa: 25, apartamento: 35, comercial: 30, default: 25 }
+        venda: { terreno: 1200, casa: 5000, apartamento: 7000, comercial: 5500, rural: 12, default: 4500 },
+        aluguel: { terreno: 4, casa: 25, apartamento: 35, comercial: 30, rural: 0.05, default: 25 }
       },
       'goiânia': null, // alias
       'default': {
-        venda: { terreno: 600, casa: 2500, apartamento: 4000, comercial: 3000, default: 2000 },
-        aluguel: { terreno: 2, casa: 14, apartamento: 22, comercial: 18, default: 14 }
+        venda: { terreno: 600, casa: 2500, apartamento: 4000, comercial: 3000, rural: 6, default: 2000 },
+        aluguel: { terreno: 2, casa: 14, apartamento: 22, comercial: 18, rural: 0.025, default: 14 }
       }
     };
     // Resolve aliases
@@ -254,6 +256,80 @@ async function calcularPreco(dadosImovel) {
 
   let precoM2Final = precoM2Base;
   let ajustesDescricao = ['Preço baseado em amostragem de mercado'];
+
+  // ─── Ajustes específicos para RURAL ─────────────────────────────────────────
+  // Modelo: preço base rural em R$/m² (compatível com o sistema)
+  // 1 alqueire goiano = 48.400 m² | Preço base = R$9/m² ≈ R$435.600/alq (chácara estruturada)
+  if (tipo === 'rural') {
+    const { subTipoRural, areaAlqueires, margemAsfalto, acessoAsfalto, temAgua, temEnergia, benfeitorias } = dadosImovel || {};
+    const areaAlq = areaAlqueires || (metragem / 48400);
+
+    // ── Fator por subtipo (chácara menor = mais caro/alq que fazenda)
+    let fatorSubtipo = 1.0;
+    let descSubtipo = '';
+    if (subTipoRural === 'chacara') {
+      fatorSubtipo = 1.0; // base calibrada para chácara
+      descSubtipo = 'Chácara (até 5 alq)';
+    } else if (subTipoRural === 'sitio') {
+      fatorSubtipo = 0.80;
+      descSubtipo = 'Sítio (5-20 alq): -20% vs chácara';
+    } else if (subTipoRural === 'fazenda') {
+      fatorSubtipo = 0.55;
+      descSubtipo = 'Fazenda (20+ alq): -45% escala';
+    }
+    // Escala progressiva por área (chácaras menores valem mais/alq)
+    if (areaAlq <= 2) fatorSubtipo *= 1.15;      // micro-chácara, liquidez alta
+    else if (areaAlq <= 5) fatorSubtipo *= 1.0;   // chácara padrão
+    else if (areaAlq <= 15) fatorSubtipo *= 0.85; // sítio pequeno
+    else if (areaAlq <= 40) fatorSubtipo *= 0.70; // sítio/fazenda média
+    else fatorSubtipo *= 0.55;                     // fazenda grande
+
+    precoM2Final = Math.round(precoM2Final * fatorSubtipo);
+    if (descSubtipo) ajustesDescricao.push(descSubtipo);
+
+    // ── Fator de acesso (mais impactante no rural)
+    if (margemAsfalto === true) {
+      // Beira de asfalto: sem estrada de chão, liquidez imediata, prêmio máximo
+      precoM2Final = Math.round(precoM2Final * 1.30);
+      ajustesDescricao.push('+30% beira de asfalto (acesso direto pela rodovia)');
+      console.log(`[Rural] Margem asfalto: +30% → R$ ${precoM2Final}/m²`);
+    } else if (acessoAsfalto === true) {
+      // Acesso pelo asfalto mas não beira — ex: porteira a 500m da rod.
+      precoM2Final = Math.round(precoM2Final * 1.10);
+      ajustesDescricao.push('+10% acesso pelo asfalto');
+    }
+    // Sem asfalto: sem ajuste positivo (é o padrão mínimo)
+
+    // ── Água
+    if (temAgua === true) {
+      precoM2Final = Math.round(precoM2Final * 1.12);
+      ajustesDescricao.push('+12% água disponível (nascente/poço/córrego)');
+    }
+
+    // ── Energia elétrica
+    if (temEnergia === true) {
+      precoM2Final = Math.round(precoM2Final * 1.05);
+      ajustesDescricao.push('+5% energia elétrica');
+    }
+
+    // ── Benfeitorias
+    const benfs = Array.isArray(benfeitorias) ? benfeitorias.map(b => b.toLowerCase()) : [];
+    let fatorBenf = 1.0;
+    const benfsDesc = [];
+    if (benfs.some(b => b.includes('casa sede') || b.includes('casa principal'))) { fatorBenf *= 1.08; benfsDesc.push('casa sede'); }
+    if (benfs.some(b => b.includes('peão') || b.includes('caseiro') || b.includes('funcionário'))) { fatorBenf *= 1.04; benfsDesc.push('casa do peão'); }
+    if (benfs.some(b => b.includes('curral') || b.includes('brete') || b.includes('embarcador'))) { fatorBenf *= 1.03; benfsDesc.push('curral'); }
+    if (benfs.some(b => b.includes('galpão') || b.includes('galp'))) { fatorBenf *= 1.03; benfsDesc.push('galpão'); }
+    if (benfs.some(b => b.includes('pasto formado') || b.includes('braquiária') || b.includes('brachiaria'))) { fatorBenf *= 1.05; benfsDesc.push('pasto formado'); }
+    if (benfs.some(b => b.includes('piscina'))) { fatorBenf *= 1.06; benfsDesc.push('piscina'); }
+    if (benfs.some(b => b.includes('represa') || b.includes('lago') || b.includes('açude'))) { fatorBenf *= 1.04; benfsDesc.push('represa/lago'); }
+    if (fatorBenf > 1.0) {
+      precoM2Final = Math.round(precoM2Final * fatorBenf);
+      ajustesDescricao.push(`+${Math.round((fatorBenf - 1) * 100)}% benfeitorias (${benfsDesc.join(', ')})`);
+    }
+
+    console.log(`[Rural] Preço final após ajustes rurais: R$ ${precoM2Final}/m² = R$ ${Math.round(precoM2Final * metragem).toLocaleString('pt-BR')}/total`);
+  }
 
   // Fator de escala para terrenos grandes
   // Realidade do mercado: quanto maior o terreno, menor o preço/m²

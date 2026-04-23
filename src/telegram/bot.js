@@ -300,23 +300,60 @@ function gerarLaudo(dados, resultado) {
     fontesConsultadas, analiseIA, localizacao
   } = resultado;
 
-  const tipoLabel = tipo.charAt(0).toUpperCase() + tipo.slice(1);
+  const isRural = tipo === 'rural';
+  const { subTipoRural, areaAlqueires, margemAsfalto, acessoAsfalto, temAgua, temEnergia, benfeitorias, rodoviaReferencia } = dados;
+
+  // Label do tipo
+  const subLabel = subTipoRural ? (subTipoRural.charAt(0).toUpperCase() + subTipoRural.slice(1)) : 'Rural';
+  const tipoLabel = isRural ? subLabel : (tipo.charAt(0).toUpperCase() + tipo.slice(1));
   const finalidadeLabel = finalidade === 'aluguel' ? 'Aluguel' : 'Venda';
+
+  // Área em alqueires e hectares para rural
+  const areaAlq = areaAlqueires || (metragem / 48400);
+  const areaHa = (areaAlq * 4.84).toFixed(1);
+  const areaLabel = isRural
+    ? `${areaAlq} alqueire${areaAlq !== 1 ? 's' : ''} goiano${areaAlq !== 1 ? 's' : ''} (${areaHa} ha)`
+    : `${metragem}m²`;
+
+  // Emoji do tipo
+  const emojiTipo = isRural
+    ? (subTipoRural === 'fazenda' ? '🌾' : subTipoRural === 'sitio' ? '🌿' : '🏡')
+    : '🏠';
 
   let laudo = `📊 *LAUDO DE PRECIFICAÇÃO*\n`;
   laudo += `━━━━━━━━━━━━━━━━━━━━━\n`;
-  laudo += `🏠 ${tipoLabel} • ${finalidadeLabel}\n`;
+  laudo += `${emojiTipo} ${tipoLabel} • ${finalidadeLabel}\n`;
   laudo += endereco ? `📍 ${endereco}, ${bairro} - ${cidade}/GO\n` : `📍 ${bairro}, ${cidade} - GO\n`;
-  laudo += `📐 ${metragem}m² • ${quartos} quartos • ${vagas} vaga(s)\n\n`;
+
+  if (isRural) {
+    laudo += `📐 ${areaLabel}\n`;
+    const acessoStr = margemAsfalto ? 'Beira de asfalto' : acessoAsfalto ? 'Acesso pelo asfalto' : 'Acesso por chão';
+    if (rodoviaReferencia) laudo += `🛣️ ${rodoviaReferencia} • ${acessoStr}\n`;
+    else laudo += `🛣️ ${acessoStr}\n`;
+    const infraStr = [temAgua ? '💧 Água' : null, temEnergia ? '⚡ Energia' : null].filter(Boolean).join(' • ');
+    if (infraStr) laudo += `${infraStr}\n`;
+    if (Array.isArray(benfeitorias) && benfeitorias.length > 0) laudo += `🏗️ ${benfeitorias.join(', ')}\n`;
+    laudo += '\n';
+  } else {
+    laudo += `📐 ${areaLabel} • ${quartos} quartos • ${vagas} vaga(s)\n\n`;
+  }
 
   laudo += `💰 *Faixa de Preço Sugerida:*\n`;
   laudo += `• Mínimo: *${formatarReais(precoMinimo)}*\n`;
   laudo += `• Recomendado: *${formatarReais(precoRecomendado)}*\n`;
   laudo += `• Máximo: *${formatarReais(precoMaximo)}*\n\n`;
 
-  laudo += `📊 *Preço por m²:*\n`;
-  laudo += `• Referência de mercado: ${formatarReais(precoM2Mercado)}/m²\n`;
-  laudo += `• Este imóvel (ajustado): ${formatarReais(precoM2Imovel)}/m²\n\n`;
+  if (isRural) {
+    const precoAlqMercado = Math.round(precoM2Mercado * 48400);
+    const precoAlqImovel = Math.round(precoM2Imovel * 48400);
+    laudo += `📊 *Preço por alqueire:*\n`;
+    laudo += `• Referência de mercado: *${formatarReais(precoAlqMercado)}/alq*\n`;
+    laudo += `• Esta propriedade (ajustada): *${formatarReais(precoAlqImovel)}/alq*\n\n`;
+  } else {
+    laudo += `📊 *Preço por m²:*\n`;
+    laudo += `• Referência de mercado: ${formatarReais(precoM2Mercado)}/m²\n`;
+    laudo += `• Este imóvel (ajustado): ${formatarReais(precoM2Imovel)}/m²\n\n`;
+  }
 
   laudo += `⚡ *Liquidez:*\n`;
   laudo += `• ${indiceLiquidez}\n`;
@@ -326,7 +363,12 @@ function gerarLaudo(dados, resultado) {
     laudo += `🔎 *Comparativos de mercado:*\n`;
     if (analiseIA.comparativos && analiseIA.comparativos.length > 0) {
       analiseIA.comparativos.slice(0, 7).forEach((c, i) => {
-        laudo += `  ${i + 1}. ${c.area}m² • ${formatarReais(c.preco)} (${formatarReais(c.precoM2)}/m²)\n`;
+        if (isRural && c.areaAlq) {
+          const precoAlqComp = Math.round(c.precoAlq || (c.preco / c.areaAlq));
+          laudo += `  ${i + 1}. ${c.areaAlq} alq (${(c.areaAlq * 4.84).toFixed(1)} ha) • ${formatarReais(c.preco)} (${formatarReais(precoAlqComp)}/alq)\n`;
+        } else {
+          laudo += `  ${i + 1}. ${c.area}m² • ${formatarReais(c.preco)} (${formatarReais(c.precoM2)}/m²)\n`;
+        }
         if (c.detalhe) laudo += `     ${c.detalhe}\n`;
         if (c.fonte) {
           // Monta link clicável se for um domínio reconhecível
@@ -340,7 +382,11 @@ function gerarLaudo(dados, resultado) {
         }
       });
       laudo += `\n📊 *Resultado da pesquisa:*\n`;
-      laudo += `• Média: *${formatarReais(analiseIA.precoMedioM2)}/m²*\n`;
+      if (isRural && analiseIA.precoMedioAlq) {
+        laudo += `• Média: *${formatarReais(analiseIA.precoMedioAlq)}/alq*\n`;
+      } else {
+        laudo += `• Média: *${formatarReais(analiseIA.precoMedioM2)}/m²*\n`;
+      }
       laudo += `• Faixa: ${analiseIA.faixaM2}\n`;
       laudo += `• ${analiseIA.anunciosAnalisados} anúncios comparáveis\n`;
       laudo += `• Confiança: ${analiseIA.confianca}\n`;

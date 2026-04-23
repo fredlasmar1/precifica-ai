@@ -53,17 +53,25 @@ A última mensagem do usuário tem prioridade absoluta.
 
 Formato exato:
 {
-  "tipo": "casa|apartamento|terreno|comercial",
+  "tipo": "casa|apartamento|terreno|comercial|rural",
   "finalidade": "venda|aluguel",
   "cidade": "nome da cidade",
-  "bairro": "nome do bairro EXATAMENTE como o usuário informou",
-  "endereco": "rua e número se informado, ou null se não informado",
-  "condominio": "nome do condomínio ou edifício se informado (ex: Residencial Araujoville, Edifício Solar), ou null",
-  "metragem": número,
+  "bairro": "nome do bairro ou localidade EXATAMENTE como o usuário informou",
+  "endereco": "rua, rodovia ou referência se informado, ou null se não informado",
+  "condominio": "nome do condomínio ou edifício se informado, ou null",
+  "metragem": número (em m² — converta alqueires goianos: 1 alq = 48400m², ex: 3.5 alq = 169400),
   "quartos": número,
   "vagas": número,
   "diferenciais": ["item1", "item2"],
-  "conservacao": "novo|bom|reformar"
+  "conservacao": "novo|bom|reformar",
+  "subTipoRural": "chacara|sitio|fazenda|null (chacara: ate 5 alq, sitio: 5-20 alq, fazenda: acima de 20 alq)",
+  "areaAlqueires": número ou null (alqueires goianos informados pelo usuário),
+  "acessoAsfalto": true|false (se tem acesso direto pelo asfalto),
+  "margemAsfalto": true|false (se a propriedade BEIRA a rodovia/asfalto, sem estrada de chão entre a propriedade e o asfalto),
+  "temAgua": true|false (nascente, poço, córrego ou represa),
+  "temEnergia": true|false (energia elétrica),
+  "benfeitorias": ["casa sede", "casa do peão", "curral", "galpao", "piscina", "pomar", "pasto formado", "represa"] (liste as mencionadas),
+  "rodoviaReferencia": "nome da rodovia se margeia asfalto, ex: GO-415, BR-153, ou null"
 }`
       },
       ...historyLimpo

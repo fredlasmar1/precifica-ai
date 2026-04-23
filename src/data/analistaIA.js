@@ -285,6 +285,7 @@ async function estimarPrecoComIA(dadosImovel) {
   const isTerreno = tipo === 'terreno';
   const isCasa = tipo === 'casa';
   const isApto = tipo === 'apartamento';
+  const isRural = tipo === 'rural';
 
   let descricaoTipo;
   if (isTerreno) {
@@ -466,6 +467,79 @@ Registre TODOS os anúncios encontrados — não descarte nenhum.
 - RETORNE TODOS OS COMPARATIVOS ENCONTRADOS — o sistema faz a filtragem
 - Mínimo 5, máximo 15 anúncios
 - Se não achar 5 no bairro, amplie para a cidade inteira`;
+
+  } else if (isRural) {
+    // ─── LÓGICA PARA RURAL (chácara, sítio, fazenda) ──────────
+    const { subTipoRural, areaAlqueires, acessoAsfalto, margemAsfalto, temAgua, temEnergia, benfeitorias, rodoviaReferencia } = dadosImovel;
+
+    const areaHa = areaAlqueires ? (areaAlqueires * 4.84).toFixed(1) : (metragem / 10000).toFixed(1);
+    const alqLabel = areaAlqueires ? `${areaAlqueires} alqueires (${areaHa} ha)` : `${areaHa} ha`;
+    const subLabel = subTipoRural || 'propriedade rural';
+    const rodovia = rodoviaReferencia ? `na ${rodoviaReferencia}` : `em ${cidade}-GO`;
+    const acessoLabel = margemAsfalto ? 'beira de asfalto (sem estrada de chão)' : acessoAsfalto ? 'acesso pelo asfalto' : 'estrada de chão';
+    const benfeitoriasTexto = Array.isArray(benfeitorias) && benfeitorias.length > 0 ? benfeitorias.join(', ') : 'não informadas';
+
+    prompt = `Você é um pesquisador especializado em mercado imobiliário RURAL. Preciso calcular o PREÇO MÉDIO POR ALQUEIRE de ${subLabel}s à venda em ${cidade}-GO e região, especialmente próximo a ${rodoviaReferencia || 'rodovias locais'}.
+
+## PROPRIEDADE AVALIADA:
+- Tipo: ${subLabel}
+- Localização: ${cidade}-GO${rodoviaReferencia ? `, ${rodoviaReferencia}` : ''}
+- Área: ${alqLabel}
+- Acesso: ${acessoLabel}
+- Água: ${temAgua ? 'sim (poço/nascente/córrego/represa)' : 'não informado'}
+- Energia: ${temEnergia ? 'sim' : 'não informado'}
+- Benfeitorias: ${benfeitoriasTexto}
+
+## MÉTODO (siga exatamente):
+
+**PASSO 1 — Colete propriedades rurais anunciadas**
+Pesquise ${subLabel}s à venda em ${cidade}-GO e cidades próximas (Goianápolis, Abadiânia, Nerópolis, Campo Limpo de Goiás) nos portais:
+• zapimoveis.com.br → busque "${subLabel} venda ${cidade} GO"
+• olx.com.br → busque "${subLabel} ${cidade} Goiás venda"
+• chavesnamao.com.br → busque "${subLabel} ${cidade} GO"
+• ruralpecuaria.com.br → busque "${subLabel} ${cidade} Goiás"
+• fazendaaberta.com.br → busque propriedades em ${cidade} e entorno
+• 62imoveis.com.br → rural em ${cidade}-GO
+• credruralimoveis.com.br, mgfimoveis.com.br
+
+**PASSO 2 — Para cada propriedade encontrada:**
+| Área (alq) | Área (ha) | Preço (R$) | Preço/alq | Acesso | Água | Benfeitorias | Localização | Fonte |
+Preço/alq = Preço ÷ alqueires (1 alq goiano = 4,84 ha = 48.400 m²)
+Se a área estiver em m² ou ha, converta: m²÷48400 = alqueires; ha÷4,84 = alqueires
+
+**PASSO 3 — Se achar menos de 4 propriedades em ${cidade}:**
+Amplie para municípios vizinhos: Goianápolis, Abadiânia, Nerópolis, Campo Limpo de Goiás, Silvânia, Anápolis
+Priorize propriedades com perfil similar (${subLabel}, ${acessoLabel})
+
+## FOCO DE BUSCA:
+${margemAsfalto
+  ? `PRIORIDADE MÁXIMA: propriedades que BEIRAM O ASFALTO (GO-415, BR-153, BR-060, GO-330 ou outras rodovias). Beira de asfalto sem chão tem prêmio significativo no mercado rural goiano.`
+  : acessoAsfalto
+    ? `Priorize propriedades com acesso pelo asfalto.`
+    : `Aceite qualquer tipo de acesso.`
+}
+Tipo prioritário: ${subLabel}s${areaAlqueires ? ` de tamanho similar (${Math.max(1, areaAlqueires - 5)} a ${areaAlqueires + 10} alqueires)` : ''}
+
+## REGRAS ABSOLUTAS:
+- SOMENTE Goiás (região de Anápolis/Goiânia) — ignore outros estados
+- NUNCA invente preços — use apenas anúncios reais
+- SOMENTE propriedades rurais — ignore urbanas
+- Converta todas as áreas para alqueires no resultado
+- Mínimo 4, máximo 12 comparativos
+
+RETORNE SOMENTE um JSON válido:
+{
+  "comparativos": [
+    {"areaAlq": número, "areaHa": número, "preco": número, "precoAlq": número, "precoM2": número (preço÷área_m²), "acesso": "asfalto|chão", "agua": true/false, "benfeitorias": "resumo", "bairro": "município/localização", "fonte": "site", "detalhe": "descrição"}
+  ],
+  "precoMedioAlq": número (média simples de todos preço/alq),
+  "precoMedioM2": número (precoMedioAlq ÷ 48400 para compatibilidade),
+  "faixaMinAlq": número, "faixaMaxAlq": número,
+  "faixaMinM2": número, "faixaMaxM2": número,
+  "anunciosAnalisados": número,
+  "confianca": "alta" se 5+ comparativos, "media" se 3-4, "baixa" se menos,
+  "raciocinio": "resumo dos anúncios encontrados, preços por alqueire, perfil de acesso"
+}`;
 
   } else {
     // ─── LÓGICA PARA COMERCIAL / OUTROS ───────────────────────
