@@ -323,7 +323,13 @@ function gerarLaudo(dados, resultado) {
   let laudo = `📊 *LAUDO DE PRECIFICAÇÃO*\n`;
   laudo += `━━━━━━━━━━━━━━━━━━━━━\n`;
   laudo += `${emojiTipo} ${tipoLabel} • ${finalidadeLabel}\n`;
-  laudo += endereco ? `📍 ${endereco}, ${bairro} - ${cidade}/GO\n` : `📍 ${bairro}, ${cidade} - GO\n`;
+  const bairroLabel = bairro && bairro !== 'null' && bairro !== null ? bairro : null;
+  if (isRural) {
+    const localRef = rodoviaReferencia || bairroLabel || cidade;
+    laudo += `📍 ${localRef}, ${cidade} - GO\n`;
+  } else {
+    laudo += endereco ? `📍 ${endereco}, ${bairroLabel || cidade} - ${cidade}/GO\n` : `📍 ${bairroLabel || cidade}, ${cidade} - GO\n`;
+  }
 
   if (isRural) {
     laudo += `📐 ${areaLabel}\n`;
@@ -344,8 +350,9 @@ function gerarLaudo(dados, resultado) {
   laudo += `• Máximo: *${formatarReais(precoMaximo)}*\n\n`;
 
   if (isRural) {
-    const precoAlqMercado = Math.round(precoM2Mercado * 48400);
-    const precoAlqImovel = Math.round(precoM2Imovel * 48400);
+    // Usar precoAlq do precificador (já calculado em R$/alq corretamente)
+    const precoAlqMercado = resultado.precoAlqMercado || Math.round(precoM2Mercado * 48400);
+    const precoAlqImovel  = resultado.precoAlqImovel  || Math.round(precoM2Imovel  * 48400);
     laudo += `📊 *Preço por alqueire:*\n`;
     laudo += `• Referência de mercado: *${formatarReais(precoAlqMercado)}/alq*\n`;
     laudo += `• Esta propriedade (ajustada): *${formatarReais(precoAlqImovel)}/alq*\n\n`;

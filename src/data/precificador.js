@@ -435,7 +435,23 @@ async function calcularPreco(dadosImovel) {
 
   // ─── Resultado final ───────────────────────────────────────────
 
-  const precoRecomendado = Math.round(precoM2Final * metragem);
+  // Para rural: calcular preço total em alqueires (não m²)
+  // precoM2Final rural está em R$/m² (ex: R$10/m² = R$484.000/alq)
+  // mas os ajustes rurais (asfalto, água, benfeitorias) foram aplicados sobre precoM2Final
+  // então o total correto = precoM2Final × metragem_m² está CERTO matematicamente,
+  // mas o precoM2Final acumulou fatores que o tornaram muito alto.
+  // A correção: para rural, usar precoAlqFinal × areaAlqueires
+  let precoRecomendado;
+  if (tipo === 'rural') {
+    const { areaAlqueires } = dadosImovel || {};
+    const areaAlq = areaAlqueires || (metragem / 48400);
+    // precoM2Final em R$/m² → converter para R$/alq para exibição e total
+    const precoAlqFinal = Math.round(precoM2Final * 48400);
+    precoRecomendado = Math.round(precoAlqFinal * areaAlq);
+    console.log(`[Rural] precoM2Final=${precoM2Final}/m² → precoAlqFinal=${precoAlqFinal.toLocaleString('pt-BR')}/alq × ${areaAlq} alq = R$${precoRecomendado.toLocaleString('pt-BR')}`);
+  } else {
+    precoRecomendado = Math.round(precoM2Final * metragem);
+  }
   const precoMinimo = Math.round(precoRecomendado * 0.92);
   const precoMaximo = Math.round(precoRecomendado * 1.08);
   const liquidez = estimarLiquidez(finalidade, precoM2Final, precoM2Mercado);
@@ -457,6 +473,8 @@ async function calcularPreco(dadosImovel) {
   return {
     precoMinimo, precoRecomendado, precoMaximo,
     precoM2Mercado, precoM2Imovel: precoM2Final,
+    precoAlqMercado: tipo === 'rural' ? Math.round(precoM2Mercado * 48400) : null,
+    precoAlqImovel:  tipo === 'rural' ? Math.round(precoM2Final   * 48400) : null,
     comparativosEncontrados: comparativos?.totalEncontrados || 0,
     fontesConsultadas: fontes.filter(Boolean),
     tempoEstimadoDias: liquidez.dias,
