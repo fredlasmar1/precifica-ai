@@ -80,10 +80,11 @@ function filtrarOutliersComparativos(resultado) {
 function filtrarRelevanciaApartamento(resultado, metragemRef, quartosRef, tipo = 'apartamento') {
   if (!resultado?.comparativos || resultado.comparativos.length < 2) return resultado;
 
-  // Para casas: limite mais generoso (±70%) pois mercado tem menos imóveis
-  // Para apartamentos: ±50% (mais anúncios disponíveis, comparação mais precisa)
-  const limiteMetragem = tipo === 'casa' ? 0.70 : 0.50;
-  // Filtro de quartos: só aplica para apartamentos (em casas, número de quartos varia muito)
+  // Para casas: filtro assimétrico
+  //   - Casa avaliada pequena/média (<= 250m²): ±70% simétrico
+  //   - Casa avaliada grande (> 250m²): sem mínimo restritivo — aceita qualquer tamanho
+  //     menor (preço/m² do bairro vale para todos); limita superior a +100%
+  // Para apartamentos: ±50% simétrico
   const filtrarQuartos = tipo === 'apartamento';
 
   const descartados = [];
@@ -91,12 +92,31 @@ function filtrarRelevanciaApartamento(resultado, metragemRef, quartosRef, tipo =
     const area = c.area || 0;
     const quartos = c.quartos != null ? c.quartos : null;
 
-    // Filtro de metragem: aceita dentro do limite por tipo
+    // Filtro de metragem por tipo e tamanho
     if (area > 0 && metragemRef > 0) {
-      const desvioArea = Math.abs(area - metragemRef) / metragemRef;
-      if (desvioArea > limiteMetragem) {
-        descartados.push(`${area}m² descartado (desvia ${Math.round(desvioArea*100)}% da metragem de referência ${metragemRef}m²)`);
-        return false;
+      if (tipo === 'casa') {
+        if (metragemRef > 250) {
+          // Casa grande: sem filtro mínimo (bairro tem poucas casas grandes)
+          // Apenas descarta casas absurdamente maiores (>3x a avaliada)
+          if (area > metragemRef * 3) {
+            descartados.push(`${area}m² descartado (${Math.round(area/metragemRef)}x maior que a avaliada de ${metragemRef}m²)`);
+            return false;
+          }
+        } else {
+          // Casa média/pequena: ±70% simétrico
+          const desvioArea = Math.abs(area - metragemRef) / metragemRef;
+          if (desvioArea > 0.70) {
+            descartados.push(`${area}m² descartado (desvia ${Math.round(desvioArea*100)}% da metragem de referência ${metragemRef}m²)`);
+            return false;
+          }
+        }
+      } else {
+        // Apartamento: ±50% simétrico
+        const desvioArea = Math.abs(area - metragemRef) / metragemRef;
+        if (desvioArea > 0.50) {
+          descartados.push(`${area}m² descartado (desvia ${Math.round(desvioArea*100)}% da metragem de referência ${metragemRef}m²)`);
+          return false;
+        }
       }
     }
 
