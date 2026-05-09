@@ -24,7 +24,7 @@ const db = require('./database');
  * A inteligência local complementa com contexto, não com preço fixo.
  */
 async function calcularPreco(dadosImovel) {
-  const { tipo, finalidade, cidade, bairro, endereco, condominio, metragem, quartos, vagas, diferenciais, conservacao } = dadosImovel;
+  const { tipo, finalidade, cidade, bairro, endereco, condominio, metragem, areaLote, quartos, vagas, diferenciais, conservacao } = dadosImovel;
 
   // 1. Validar endereço e analisar rua via Google Maps
   let geoInfo = null;
@@ -297,6 +297,38 @@ async function calcularPreco(dadosImovel) {
     }
   }
 
+  // ─── Ajuste por lote generoso (casas) ───────────────────────────────────────
+  // Um lote grande aumenta o valor percebido: mais quintal, potencial de ampliação,
+  // mais privacidade. Referência: lote padrão Anápolis ~200-300m²
+  if ((tipo === 'casa') && areaLote && areaLote > 0 && metragem > 0) {
+    const taxaOcupacao = metragem / areaLote; // quanto do lote está construído
+    const lotePadrao = 250; // m² de lote padrão para comparação
+    let fatorLote = 1.0;
+    let descLote = null;
+
+    if (areaLote >= 800) {
+      fatorLote = 1.15;
+      descLote = `+15% lote generoso (${areaLote}m²)`;
+    } else if (areaLote >= 500) {
+      fatorLote = 1.10;
+      descLote = `+10% lote amplo (${areaLote}m²)`;
+    } else if (areaLote >= 350) {
+      fatorLote = 1.05;
+      descLote = `+5% lote acima do padrão (${areaLote}m²)`;
+    }
+    // Lote abaixo de 200m²: desconto leve
+    else if (areaLote < 150) {
+      fatorLote = 0.95;
+      descLote = `-5% lote pequeno (${areaLote}m²)`;
+    }
+
+    if (fatorLote !== 1.0) {
+      precoM2Final = Math.round(precoM2Final * fatorLote);
+      if (descLote) ajustesDescricao.push(descLote);
+      console.log(`[Precificador] Ajuste lote ${areaLote}m²: ×${fatorLote} → R$ ${precoM2Final}/m²`);
+    }
+  }
+
   // Ajuste baseado no perfil OpenStreetMap
   // REGRAS:
   // - Score OSM < 30: área pouco mapeada no OSM (não significa isolada de verdade) → ignora
@@ -451,7 +483,7 @@ async function calcularPreco(dadosImovel) {
   // Salva avaliação no histórico
   try {
     await db.salvarAvaliacao({
-      cidade, bairro, endereco, tipo, finalidade, metragem, quartos, vagas, conservacao,
+      cidade, bairro, endereco, tipo, finalidade, metragem, areaLote, quartos, vagas, conservacao,
       diferenciais: Array.isArray(diferenciais) ? diferenciais : [],
       preco_m2_mercado: precoM2Mercado, preco_m2_ajustado: precoM2Final,
       preco_recomendado: precoRecomendado, preco_minimo: precoMinimo, preco_maximo: precoMaximo,

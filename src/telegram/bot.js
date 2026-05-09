@@ -291,7 +291,7 @@ function splitMessage(text, maxLen) {
  * Gera laudo formatado para Telegram (Markdown)
  */
 function gerarLaudo(dados, resultado) {
-  const { tipo, finalidade, cidade, bairro, endereco, metragem, quartos, vagas } = dados;
+  const { tipo, finalidade, cidade, bairro, endereco, metragem, areaLote, quartos, vagas } = dados;
   const {
     precoMinimo, precoRecomendado, precoMaximo, geoInfo, perfilGuru,
     precoM2Mercado, precoM2Imovel,
@@ -313,7 +313,9 @@ function gerarLaudo(dados, resultado) {
   const areaHa = (areaAlq * 4.84).toFixed(1);
   const areaLabel = isRural
     ? `${areaAlq} alqueire${areaAlq !== 1 ? 's' : ''} goiano${areaAlq !== 1 ? 's' : ''} (${areaHa} ha)`
-    : `${metragem}m²`;
+    : (areaLote && areaLote > 0 && (tipo === 'casa')
+        ? `${metragem}m² construídos • Lote ${areaLote}m²`
+        : `${metragem}m²`);
 
   // Emoji do tipo
   const emojiTipo = isRural

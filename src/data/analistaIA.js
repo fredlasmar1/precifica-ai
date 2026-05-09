@@ -230,7 +230,7 @@ function filtrarComparativosPorBairro(resultado, bairroRef) {
 }
 
 async function estimarPrecoComIA(dadosImovel) {
-  const { tipo, finalidade, cidade, bairro, endereco, condominio, metragem, quartos, vagas, diferenciais, conservacao, geoInfo, contextoGuru } = dadosImovel;
+  const { tipo, finalidade, cidade, bairro, endereco, condominio, metragem, areaLote, quartos, vagas, diferenciais, conservacao, geoInfo, contextoGuru } = dadosImovel;
 
   const apiKey = process.env.PERPLEXITY_API_KEY;
   if (!apiKey) {
@@ -439,7 +439,8 @@ Mas registre TODOS os anúncios encontrados para calcular a média geral do bair
 
 ## CASA AVALIADA:
 - Localização: ${bairro}, ${cidade}-GO${endereco ? ` (${endereco})` : ''}
-- Área: ${metragem}m² | ${quartos} quartos | ${vagas} vaga(s)
+- Área construída: ${metragem}m² | ${quartos} quartos | ${vagas} vaga(s)${areaLote ? `
+- Lote: ${areaLote}m²` : ''}
 - Estado: ${conservacao}
 - Diferenciais: ${difsTexto}
 
@@ -456,8 +457,8 @@ Pesquise casas ${finalidadeLabel} em ${bairro} e região em ${cidade}-GO nos por
 • mgfimoveis.com.br, dfimoveis.com.br
 
 **PASSO 2 — Para cada casa encontrada:**
-| Área (m²) | Quartos | Preço (R$) | Preço/m² | Bairro | Estado | Fonte |
-Preço/m² = Preço ÷ Área (calcule individualmente para cada anúncio)
+| Área construída (m²) | Quartos | Preço (R$) | Preço/m² | Bairro | Estado | Fonte |
+Preço/m² = Preço ÷ Área CONSTRUÍDA (não o lote). Use sempre a área construída/útil do anúncio.
 
 **PASSO 3 — Se achar menos de 5 casas em ${bairro}:**
 Amplie para bairros SIMILARES de ${cidade}-GO — mesmo padrão construtivo e faixa de preço:
