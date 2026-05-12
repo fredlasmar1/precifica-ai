@@ -4,6 +4,7 @@ const path = require('path');
 const { handleWebhook } = require('./whatsapp/webhook');
 const { handleTelegram } = require('./telegram/bot');
 const chatRoutes = require('./routes/chat');
+const estimateRoutes = require('./routes/estimate');
 
 const app = express();
 app.use(express.json());
@@ -13,6 +14,9 @@ app.use(express.static(path.join(__dirname, '../public')));
 
 // Rotas da API de chat (interface web)
 app.use('/api', chatRoutes);
+
+// API REST autenticada para consumidores externos (ex: Bens Gestão)
+app.use('/api', estimateRoutes);
 
 // Webhook do WhatsApp (Evolution API)
 app.post('/webhook', handleWebhook);
