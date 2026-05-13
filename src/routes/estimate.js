@@ -2,10 +2,6 @@ const express = require('express')
 const router = express.Router()
 const { calcularPreco } = require('../data/precificador')
 
-/**
- * Autenticação simples via header X-API-Key.
- * Bens Gestão (e outros consumidores externos) chamam com essa chave.
- */
 function requireApiKey(req, res, next) {
   const expected = process.env.API_KEY
   if (!expected) {
@@ -20,35 +16,7 @@ function requireApiKey(req, res, next) {
 
 /**
  * POST /api/estimate
- *
- * Body esperado:
- * {
- *   tipo: 'casa'|'apartamento'|'terreno'|'comercial',
- *   finalidade: 'venda'|'aluguel',
- *   cidade: 'Anápolis',
- *   bairro: 'Jundiaí',
- *   endereco: 'Rua X, 123',
- *   metragem: 120,
- *   areaLote?: 250,
- *   quartos?: 3,
- *   vagas?: 2,
- *   conservacao?: 'novo'|'bom'|'regular',
- *   diferenciais?: ['piscina','varanda'],
- *   condominio?: 'Ed. Corporate Center'
- * }
- *
- * Resposta (200):
- * {
- *   precoM2: number,
- *   valorEstimado: number,
- *   faixaMin: number,
- *   faixaMax: number,
- *   confianca: 'alta'|'media'|'baixa',
- *   fonte: string,
- *   comparativos: Array<{...}>,
- *   analise: { raciocinio, perfilBairro, contextoGuru },
- *   dadosImovel: {...}
- * }
+ * Recebe dados estruturados do imóvel e devolve laudo de mercado.
  */
 router.post('/estimate', requireApiKey, async (req, res) => {
   const dados = req.body || {}
@@ -56,11 +24,11 @@ router.post('/estimate', requireApiKey, async (req, res) => {
   if (!dados.tipo || !dados.cidade || !dados.bairro) {
     return res
       .status(400)
-      .json({ error: 'Campos obrigatórios: tipo, cidade, bairro (mínimo)' })
+      .json({ error: 'Campos obrigatórios: tipo, cidade, bairro' })
   }
 
   try {
-    const resultado = await calcularPreco({
+    const r = await calcularPreco({
       tipo: dados.tipo,
       finalidade: dados.finalidade || 'venda',
       cidade: dados.cidade,
@@ -75,23 +43,36 @@ router.post('/estimate', requireApiKey, async (req, res) => {
       conservacao: dados.conservacao || null,
     })
 
-    if (resultado.erro) {
-      return res.status(422).json({ error: resultado.mensagem || 'Falha ao calcular preço' })
+    if (r?.erro) {
+      return res.status(422).json({ error: r.mensagem || 'Falha ao calcular preço' })
     }
 
+    // Normaliza saída do motor para formato estável da API.
     res.json({
-      precoM2: resultado.precoM2 ?? resultado.precoM2Base ?? null,
-      valorEstimado: resultado.valorEstimado ?? resultado.valorTotal ?? null,
-      faixaMin: resultado.faixaMin ?? null,
-      faixaMax: resultado.faixaMax ?? null,
-      confianca: resultado.confianca ?? null,
-      fonte: resultado.fontePrincipal ?? resultado.fonte ?? null,
-      comparativos: resultado.comparativos ?? [],
+      precoM2: r.precoM2Imovel ?? null,
+      precoM2Mercado: r.precoM2Mercado ?? null,
+      valorEstimado: r.precoRecomendado ?? null,
+      faixaMin: r.precoMinimo ?? null,
+      faixaMax: r.precoMaximo ?? null,
+      confianca: r.analiseIA?.confianca ?? r.confiancaFonte ?? null,
+      fonte: Array.isArray(r.fontesConsultadas) ? r.fontesConsultadas.filter(Boolean).join(', ') : null,
+      anunciosAnalisados: r.analiseIA?.anunciosAnalisados ?? r.comparativosEncontrados ?? 0,
+      comparativos: r.analiseIA?.comparativos ?? [],
+      ajustesAplicados: r.ajustesAplicados ?? [],
+      tempoEstimadoDias: r.tempoEstimadoDias ?? null,
+      indiceLiquidez: r.indiceLiquidez ?? null,
       analise: {
-        raciocinio: resultado.raciocinio ?? null,
-        perfilBairro: resultado.perfilBairro ?? null,
-        contextoGuru: resultado.contextoGuru ?? null,
+        raciocinio: r.analiseIA?.raciocinio ?? null,
+        faixaM2: r.analiseIA?.faixaM2 ?? null,
+        citacoes: r.analiseIA?.citacoes ?? [],
       },
+      geo: r.geoInfo
+        ? {
+            enderecoValidado: r.geoInfo.enderecoValidado ?? null,
+            bairrosVizinhos: r.geoInfo.bairrosVizinhos ?? [],
+            distanciaCentroKm: r.geoInfo.distanciaCentroKm ?? null,
+          }
+        : null,
       dadosImovel: dados,
     })
   } catch (err) {
