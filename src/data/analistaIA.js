@@ -187,6 +187,71 @@ function filtrarRelevanciaApartamento(resultado, metragemRef, quartosRef, tipo =
  * Remove bairros cujo mult difere mais de 0.25 do bairro avaliado.
  * Nunca deixa o resultado vazio — se todos forem filtrados, mantm original.
  */
+/**
+ * Filtra comparativos comerciais por relevância:
+ * - Metragem dentro de ±50% do imóvel avaliado (mais restritivo que apto pq sub-tipos
+ *   misturados destroem o preço/m²)
+ * - Detecta e descarta anúncios poluentes: coworking, diária, salas virtuais, escritórios
+ *   compartilhados — fontes/detalhes com essas palavras
+ * - Nunca esvazia: se sobrar menos de 2, relaxa pra ±80%
+ */
+function filtrarRelevanciaComercial(resultado, metragemRef) {
+  if (!resultado?.comparativos || resultado.comparativos.length < 2) return resultado
+  if (!metragemRef || metragemRef <= 0) return resultado
+
+  const padraoPoluente = /coworking|cowork|virtual|compartilh|por\s+(hora|dia|diári|semana)|temporári|day\s*use/i
+  const descartados = []
+  const filtrados = resultado.comparativos.filter(c => {
+    const txt = `${c.detalhe || ''} ${c.fonte || ''} ${c.tipo || ''}`.trim()
+    if (padraoPoluente.test(txt)) {
+      descartados.push(`${c.area || '?'}m² descartado (poluente: ${txt.match(padraoPoluente)?.[0]})`)
+      return false
+    }
+    const area = c.area || 0
+    if (area > 0) {
+      const desvio = Math.abs(area - metragemRef) / metragemRef
+      if (desvio > 0.5) {
+        descartados.push(`${area}m² descartado (desvia ${Math.round(desvio * 100)}% de ${metragemRef}m²)`)
+        return false
+      }
+    }
+    return true
+  })
+
+  if (descartados.length > 0) {
+    console.log(`[RelevânciaComercial] ${descartados.length} descartado(s):`)
+    descartados.forEach(d => console.log(`  ↳ ${d}`))
+  }
+
+  // Relax: se sobrou menos de 2, aumenta tolerância pra ±80% (mantém o filtro de poluente)
+  let final = filtrados
+  if (final.length < 2) {
+    final = resultado.comparativos.filter(c => {
+      const txt = `${c.detalhe || ''} ${c.fonte || ''} ${c.tipo || ''}`.trim()
+      if (padraoPoluente.test(txt)) return false
+      const area = c.area || 0
+      if (area > 0 && Math.abs(area - metragemRef) / metragemRef > 0.8) return false
+      return true
+    })
+    if (final.length === 0) return resultado // mantém original
+    console.log('[RelevânciaComercial] Relaxado para ±80%')
+  }
+
+  const precos = final.map(c => c.precoM2).filter(p => p > 0)
+  if (precos.length === 0) return resultado
+  const soma = precos.reduce((a, b) => a + b, 0)
+  return {
+    ...resultado,
+    comparativos: final,
+    precoMedioM2: Math.round(soma / precos.length),
+    faixaMinM2: Math.min(...precos),
+    faixaMaxM2: Math.max(...precos),
+    anunciosAnalisados: final.length,
+    raciocinio: (resultado.raciocinio || '')
+      + (descartados.length > 0 ? ` (${descartados.length} comparativo(s) fora do perfil comercial descartado(s))` : ''),
+  }
+}
+
 function filtrarComparativosPorBairro(resultado, bairroRef) {
   if (!resultado?.comparativos || resultado.comparativos.length < 2) return resultado;
   const { BAIRROS } = require('./bairros');
@@ -563,41 +628,72 @@ RETORNE SOMENTE um JSON válido:
 }`;
 
   } else {
-    // ─── LÓGICA PARA COMERCIAL / OUTROS ───────────────────────
-    const tipoComercialLabel = tipo === 'comercial' ? 'imóvel comercial' : tipo;
-    const subtipo = diferenciais?.find(d => /sala|loja|galpão|galp|pavilh/i.test(d)) || tipo;
-    prompt = `Você é um pesquisador de mercado imobiliário. Preciso calcular o PREÇO MÉDIO DO METRO QUADRADO de imóveis comerciais ${finalidadeLabel} em ${bairro}, ${cidade}-GO.
+    // ─── LÓGICA PARA COMERCIAL ────────────────────────────────
+    // Detecta sub-tipo a partir dos diferenciais (ou cai em "sala/loja" como default).
+    const subtipoMatch = (diferenciais || []).find(d => /sala|loja|galpão|galp|pavilh|laje|conjunto|andar|ponto/i.test(d))
+      || (condominio && /galp/i.test(condominio) ? 'galpão' : null)
+      || 'sala/loja comercial';
+    const ehGalpao = /galp|pavilh/i.test(subtipoMatch);
+    const ehLaje = /laje|andar/i.test(subtipoMatch);
+    const minMet = Math.max(20, Math.round(metragem * 0.6));
+    const maxMet = Math.round(metragem * 1.4);
+
+    prompt = `Você é um pesquisador de mercado imobiliário COMERCIAL em ${cidade}-GO. Preciso calcular o PREÇO MÉDIO DO METRO QUADRADO para ${finalidadeLabel === 'para ALUGAR' ? 'ALUGUEL MENSAL TRADICIONAL (contrato fixo, não temporário)' : 'VENDA'} de imóveis comerciais em ${bairro}.
 
 ## IMÓVEL AVALIADO:
-- Tipo: ${subtipo} (comercial)
-- Localização: ${bairro}, ${cidade}-GO${endereco ? ` (${endereco})` : ''}
+- Sub-tipo: ${subtipoMatch}
+- Localização: ${bairro}, ${cidade}-GO${endereco ? ` (${endereco})` : ''}${condominio ? `\n- Edifício/condomínio: ${condominio}` : ''}
 - Área: ${metragem}m²
+- Estado: ${conservacao || 'não informado'}
 - Diferenciais: ${difsTexto}
 
-## MÉTODO (siga exatamente):
+## MÉTODO (siga estritamente):
 
-**PASSO 1 — Colete imóveis comerciais anunciados**
-Pesquise ${finalidadeLabel === 'para venda' ? 'salas/lojas/imóveis comerciais à venda' : 'salas/lojas/imóveis comerciais para alugar'} em ${bairro}, ${cidade}-GO:
-• vivareal.com.br → busque "sala comercial ${bairro} ${cidade}" e "loja ${bairro} ${cidade}"
-• zapimoveis.com.br → "comercial ${bairro} ${cidade} GO"
+**PASSO 1 — Pesquise anúncios reais em ${cidade}-GO**
+${ehGalpao ? `Foque em GALPÕES / PAVILHÕES industriais ou comerciais. Sites:
+• vivareal.com.br → "galpão ${bairro} ${cidade}"
+• zapimoveis.com.br → "galpão ${cidade} GO"
+• olx.com.br → "galpão ${cidade} Goiás"
+• 62imoveis.com.br, encontreimoveisanapolis.com.br`
+: ehLaje ? `Foque em LAJES CORPORATIVAS / ANDARES INTEIROS. Sites:
+• vivareal.com.br → "laje corporativa ${cidade}"
+• zapimoveis.com.br → "andar corporativo ${bairro} ${cidade}"
+• 62imoveis.com.br`
+: `Foque em SALAS COMERCIAIS, LOJAS, PONTOS COMERCIAIS de aluguel mensal tradicional. Sites:
+• vivareal.com.br → "sala comercial ${bairro} ${cidade}" e "loja ${bairro} ${cidade}"
+• zapimoveis.com.br → "sala comercial ${cidade} GO ${bairro}"
 • olx.com.br → "sala comercial ${cidade} ${bairro}"
-• 62imoveis.com.br, encontreimoveisanapolis.com.br
-• Para galpões: olx.com.br → "galpão ${cidade} ${bairro}", zapimoveis.com.br → "galpão ${cidade}"
+• 62imoveis.com.br → bairro ${bairro}
+• encontreimoveisanapolis.com.br`}
 
-**PASSO 2 — Para cada imóvel encontrado:**
-| Tipo | Área (m²) | Preço (R$) | Preço/m² | Localização | Fonte |
-Preço/m² = Preço ÷ Área
+**PASSO 2 — Anote cada anúncio em tabela:**
+| Sub-tipo | Área (m²) | Preço mensal (R$) | Preço/m² | Bairro | Fonte/URL |
+Preço/m² = Preço ÷ Área. Calcule individualmente, não acredite no número que o anúncio mostra.
 
-**PASSO 3 — Se achar menos de 3 em ${bairro}:**
-Amplie para bairros vizinhos ou regiões comerciais próximas: ${vizinhosTexto || 'bairros próximos'}
-Para imóveis comerciais é normal buscar em raio maior (até 3km)
+**PASSO 3 — Se achar menos de 5 no bairro:**
+Amplie SOMENTE para bairros vizinhos de perfil COMERCIAL similar (não pegue zonas residenciais nobres pq elas têm aluguel comercial superestimado): ${vizinhosTexto || 'bairros próximos de mesmo padrão comercial'}.
 
-## REGRAS:
+## EXCLUA OBRIGATORIAMENTE (anúncios poluentes):
+- ❌ Coworking, salas virtuais, escritórios compartilhados
+- ❌ Aluguel por diária, semanal, ou temporada
+- ❌ Salas de reunião (cobrança por hora)
+- ❌ Sub-tipo MUITO diferente do avaliado: ${ehGalpao ? 'ignore salas/lojas pequenas' : ehLaje ? 'ignore salas pequenas e lojas de rua' : 'ignore galpões industriais e lajes corporativas inteiras'}
+- ❌ Imóveis em condomínios/shoppings premium quando o avaliado é em prédio comum (e vice-versa)
+- ❌ Anúncios sem área (m²) declarada
+- ❌ Anúncios fora de ${cidade}-GO
+
+## PRIORIZE (em ordem):
+1. Mesmo sub-tipo (${subtipoMatch}) E metragem entre ${minMet}m² e ${maxMet}m² (±40% do avaliado)
+2. Mesmo sub-tipo, qualquer metragem dentro do bairro
+3. Sub-tipo compatível em bairros vizinhos comerciais
+
+## REGRAS ABSOLUTAS:
 - SOMENTE ${cidade}-GO (Goiás, Brasil)
-- NUNCA invente preços
-- RETORNE TODOS OS COMPARATIVOS — não filtre nada
-- Mínimo 3, máximo 15 anúncios
-- Aceite qualquer tamanho — o que importa é o preço/m² da região comercial`;
+- SOMENTE aluguel mensal tradicional (contrato fixo)
+- NUNCA invente — apenas anúncios reais com URL rastreável
+- Mínimo 3, máximo 12 anúncios
+- RETORNE TODOS os comparativos coletados (o sistema filtra outliers depois). Não filtre você.
+- Informe a metragem real do anúncio — se o anúncio não declarar, NÃO inclua`;
   }
 
   // Parte comum do prompt
@@ -760,6 +856,10 @@ IMPORTANTE: o campo "bairro" em cada comparativo deve conter o nome exato do bai
     if ((tipo === 'apartamento' || tipo === 'casa') && metragem > 0) {
       resultado = filtrarRelevanciaApartamento(resultado, metragem, quartos, tipo);
     }
+    // Comercial: descarta coworking/diária e metragem muito diferente
+    if (tipo === 'comercial' && metragem > 0) {
+      resultado = filtrarRelevanciaComercial(resultado, metragem);
+    }
     // Filtro de outliers para valores extremos (após filtro de relevância)
     resultado = filtrarOutliersComparativos(resultado);
     const analise = {
@@ -827,6 +927,9 @@ Retorne SOMENTE JSON: {"comparativos":[{"area":N,"preco":N,"precoM2":N,"bairro":
       retryResult = filtrarComparativosPorBairro(retryResult, bairro);
       if ((tipo === 'apartamento' || tipo === 'casa') && metragem > 0) {
         retryResult = filtrarRelevanciaApartamento(retryResult, metragem, quartos, tipo);
+      }
+      if (tipo === 'comercial' && metragem > 0) {
+        retryResult = filtrarRelevanciaComercial(retryResult, metragem);
       }
       retryResult = filtrarOutliersComparativos(retryResult);
       const analise = {
