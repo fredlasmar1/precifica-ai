@@ -779,7 +779,13 @@ IMPORTANTE: o campo "bairro" em cada comparativo deve conter o nome exato do bai
     // Validação de sanidade
     if (!resultado.precoMedioM2 || resultado.precoMedioM2 <= 0) {
       console.warn('[Perplexity] Resposta inválida:', resultado);
-      return null;
+      throw new Error('precoMedioM2 inválido — forçando retry');
+    }
+
+    // Sem comparativos = Perplexity inventou a média sem buscar anúncios reais — retry
+    if (!resultado.comparativos || resultado.comparativos.length === 0) {
+      console.warn('[Perplexity] 0 comparativos retornados — forçando retry para buscar anúncios reais');
+      throw new Error('0 comparativos — forçando retry');
     }
 
     // Faixas de sanidade por tipo — terrenos podem ter m² bem abaixo de casas/aptos
@@ -887,11 +893,16 @@ IMPORTANTE: o campo "bairro" em cada comparativo deve conter o nome exato do bai
   try {
     console.log('[Perplexity] Retry com prompt simplificado...');
 
-    const promptSimples = `Pesquise anúncios REAIS de ${isTerreno ? 'terrenos/lotes vazios (SEM construção)' : tipo + 's'} ${finalidadeLabel} no bairro ${bairro}, ${cidade}-GO (estado de Goiás, Brasil).
+    // Para terrenos grandes: no retry, aceitar qualquer tamanho (calcular preço/m² de qualquer lote da região)
+    const retryAreaFiltro = isTerreno && metragem > 1000
+      ? '' // sem filtro de área — queremos o preço/m² do bairro, não lotes do mesmo tamanho
+      : `Área entre ${metMin}m² e ${metMax}m².`;
 
-Área entre ${metMin}m² e ${metMax}m². Busque em OLX, ZAP, VivaReal, 62imóveis, Chaves na Mão.
+    const promptSimples = `Pesquise anúncios REAIS de ${isTerreno ? 'terrenos/lotes vazios (SEM construção)' : tipo + 's'} ${finalidadeLabel} no bairro ${bairro} e região de ${cidade}-GO (estado de Goiás, Brasil).
 
-${isTerreno ? 'SOMENTE lotes vazios, NÃO inclua casas ou imóveis construídos.' : ''}
+${retryAreaFiltro} Busque em OLX, ZAP Imóveis, VivaReal, 62imóveis, Chaves na Mão, encontreimoveisanapolis.com.br.
+
+${isTerreno ? 'SOMENTE lotes vazios. NÃO inclua casas ou imóveis construídos. Se não achar em ' + bairro + ', amplie para bairros vizinhos de ' + cidade + '.' : ''}
 
 Retorne SOMENTE JSON: {"comparativos":[{"area":N,"preco":N,"precoM2":N,"bairro":"nome bairro","fonte":"site","detalhe":"desc"}],"precoMedioM2":N (média simples de TODOS — não filtre nada),"faixaMinM2":N,"faixaMaxM2":N,"anunciosAnalisados":N,"confianca":"alta|media|baixa","raciocinio":"resumo"}`;
 
