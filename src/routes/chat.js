@@ -95,6 +95,62 @@ router.delete('/chat/:sessionId', (req, res) => {
   res.json({ ok: true });
 });
 
+/**
+ * POST /api/avaliar
+ * Avaliação direta via formulário do site (campos estruturados, sem auth).
+ * Pula a coleta conversacional do LLM e chama o MESMO motor (calcularPreco)
+ * e o MESMO laudo formatado usados pelo chat e pelo Telegram.
+ */
+router.post('/avaliar', async (req, res) => {
+  const b = req.body || {};
+
+  const tipo = String(b.tipo || '').trim().toLowerCase();
+  const finalidade = String(b.finalidade || 'venda').trim().toLowerCase();
+  const cidade = String(b.cidade || '').trim();
+  const bairro = String(b.bairro || '').trim();
+  const metragem = b.metragem != null && b.metragem !== '' ? Number(b.metragem) : null;
+  const areaLote = b.areaLote != null && b.areaLote !== '' ? Number(b.areaLote) : null;
+
+  const faltando = [];
+  if (!tipo) faltando.push('tipo');
+  if (!cidade) faltando.push('cidade');
+  if (!bairro) faltando.push('bairro');
+  if ((!metragem || metragem <= 0) && (!areaLote || areaLote <= 0)) faltando.push('metragem');
+  if (faltando.length) {
+    return res.status(400).json({ error: `Preencha: ${faltando.join(', ')}.` });
+  }
+
+  const dadosImovel = {
+    tipo,
+    finalidade: finalidade === 'aluguel' ? 'aluguel' : 'venda',
+    cidade,
+    bairro,
+    endereco: String(b.endereco || '').trim() || null,
+    condominio: String(b.condominio || '').trim() || null,
+    metragem,
+    areaLote,
+    quartos: b.quartos != null && b.quartos !== '' ? Number(b.quartos) : null,
+    vagas: b.vagas != null && b.vagas !== '' ? Number(b.vagas) : null,
+    diferenciais: String(b.diferenciais || '').trim(),
+    conservacao: String(b.conservacao || 'bom').trim().toLowerCase()
+  };
+
+  try {
+    const resultado = await calcularPreco(dadosImovel);
+    if (resultado.erro) {
+      return res.status(422).json({ error: resultado.mensagem });
+    }
+    const laudo = gerarLaudo(dadosImovel, resultado);
+    return res.json({ type: 'laudo', response: laudo, dados: dadosImovel, resultado });
+  } catch (err) {
+    console.error('[Avaliar API] Erro:', err);
+    return res.status(500).json({
+      error: '⚠️ Tive um problema técnico ao avaliar. Tente novamente em instantes.',
+      debug: err.message
+    });
+  }
+});
+
 function gerarLaudo(dados, resultado) {
   const { tipo, finalidade, cidade, bairro, endereco, metragem, quartos, vagas } = dados;
   const {
