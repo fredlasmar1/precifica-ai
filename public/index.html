@@ -3,191 +3,261 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>PrecificaAI — Avaliação Imobiliária (Goiás)</title>
+  <title>Precifica Aí · by Bens — Avaliação Imobiliária Inteligente</title>
+  <link rel="icon" type="image/png" href="/favicon.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
   <style>
     :root {
-      --bg: #0f1923;
-      --panel: #16212c;
-      --panel2: #1b2733;
-      --line: #26384a;
-      --green: #25d366;
-      --green-d: #128c7e;
-      --text: #e8eaed;
-      --muted: #8a9bb0;
-      --field: #22303d;
+      --blue: #013EF8;
+      --blue-d: #022fc4;
+      --blue-700: #0233d6;
+      --blue-tint: #eef3ff;
+      --blue-tint2: #e0e9ff;
+      --ink: #0e1729;
+      --navy: #121a27;
+      --muted: #5a6a86;
+      --muted2: #8a98b3;
+      --bg: #f5f8fe;
+      --card: #ffffff;
+      --line: #e4ebf6;
+      --line2: #d6e0f0;
+      --cream: #fffef2;
+      --ok: #12b76a;
+      --warn: #f79009;
+      --danger: #e23b3b;
+      --shadow: 0 1px 2px rgba(16,23,41,.04), 0 12px 32px -12px rgba(1,62,248,.14);
+      --shadow-sm: 0 1px 3px rgba(16,23,41,.06);
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     html, body { height: 100%; }
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: radial-gradient(1200px 600px at 70% -10%, #1c3a2e 0%, var(--bg) 55%);
-      color: var(--text);
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(900px 500px at 88% -8%, rgba(1,62,248,.10), transparent 60%),
+        radial-gradient(700px 480px at -6% 8%, rgba(1,62,248,.06), transparent 55%),
+        var(--bg);
       min-height: 100vh;
-      display: flex;
-      flex-direction: column;
+      display: flex; flex-direction: column;
+      -webkit-font-smoothing: antialiased;
     }
 
-    /* ---------- Top bar ---------- */
-    .topbar {
-      display: flex; align-items: center; gap: 14px;
-      padding: 14px 28px;
+    /* ---------------- Top nav ---------------- */
+    .nav {
+      position: sticky; top: 0; z-index: 20;
+      display: flex; align-items: center; gap: 16px;
+      padding: 14px 32px;
+      background: rgba(255,255,255,.82);
+      backdrop-filter: saturate(180%) blur(12px);
       border-bottom: 1px solid var(--line);
-      background: rgba(13,21,28,0.6);
-      backdrop-filter: blur(6px);
     }
-    .logo {
-      width: 44px; height: 44px; border-radius: 12px;
-      background: linear-gradient(135deg, var(--green), var(--green-d));
-      display: flex; align-items: center; justify-content: center;
-      font-size: 22px; flex-shrink: 0;
+    .brand { display: flex; align-items: center; gap: 13px; }
+    .brand img { height: 46px; width: auto; display: block; }
+    .brand .divider { width: 1px; height: 34px; background: var(--line2); margin: 0 2px; }
+    .brand .titles h1 {
+      font-size: 19px; font-weight: 800; letter-spacing: -.5px; line-height: 1.05;
+      color: var(--ink);
     }
-    .brand h1 { font-size: 18px; font-weight: 700; letter-spacing: .2px; }
-    .brand span { font-size: 12.5px; color: var(--green); }
-    .topbar .spacer { margin-left: auto; }
-    .badge {
-      font-size: 12px; color: var(--muted);
-      border: 1px solid var(--line); border-radius: 20px;
-      padding: 5px 12px;
+    .brand .titles .by {
+      display: inline-flex; align-items: center; gap: 5px;
+      font-size: 11.5px; font-weight: 600; color: var(--muted);
+      margin-top: 3px;
     }
+    .brand .titles .by b { color: var(--blue); font-weight: 700; }
+    .nav .spacer { margin-left: auto; }
+    .nav .pill {
+      display: inline-flex; align-items: center; gap: 7px;
+      font-size: 12.5px; font-weight: 600; color: var(--blue-700);
+      background: var(--blue-tint); border: 1px solid var(--blue-tint2);
+      padding: 7px 14px; border-radius: 100px;
+    }
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 3px rgba(18,183,106,.18); }
 
-    /* ---------- Layout ---------- */
+    /* ---------------- Hero ---------------- */
+    .hero { padding: 30px 32px 6px; max-width: 1320px; width: 100%; margin: 0 auto; }
+    .hero h2 {
+      font-size: 30px; font-weight: 800; letter-spacing: -.8px; line-height: 1.12;
+    }
+    .hero h2 .accent { color: var(--blue); }
+    .hero p { margin-top: 8px; color: var(--muted); font-size: 15px; max-width: 640px; line-height: 1.55; }
+    .trust { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+    .chip {
+      display: inline-flex; align-items: center; gap: 6px;
+      font-size: 12.5px; font-weight: 600; color: var(--ink);
+      background: var(--card); border: 1px solid var(--line);
+      padding: 7px 13px; border-radius: 100px; box-shadow: var(--shadow-sm);
+    }
+    .chip svg { width: 14px; height: 14px; color: var(--blue); }
+
+    /* ---------------- Layout ---------------- */
     .wrap {
-      flex: 1; width: 100%; max-width: 1280px;
-      margin: 0 auto; padding: 24px 28px 40px;
-      display: grid; grid-template-columns: minmax(380px, 460px) 1fr;
-      gap: 24px; align-items: start;
+      flex: 1; width: 100%; max-width: 1320px; margin: 0 auto;
+      padding: 22px 32px 48px;
+      display: grid; grid-template-columns: minmax(400px, 480px) 1fr; gap: 26px;
+      align-items: start;
     }
-    .card {
-      background: var(--panel); border: 1px solid var(--line);
-      border-radius: 16px; overflow: hidden;
-    }
+    .card { background: var(--card); border: 1px solid var(--line); border-radius: 22px; box-shadow: var(--shadow); overflow: hidden; }
 
-    /* ---------- Tabs ---------- */
-    .tabs { display: flex; border-bottom: 1px solid var(--line); }
+    /* ---------------- Tabs ---------------- */
+    .tabs { display: flex; gap: 6px; padding: 12px 12px 0; border-bottom: 1px solid var(--line); }
     .tab {
-      flex: 1; padding: 14px 16px; text-align: center;
-      font-size: 14px; font-weight: 600; color: var(--muted);
+      flex: 1; padding: 12px 14px; text-align: center;
+      font-size: 14px; font-weight: 700; color: var(--muted);
       cursor: pointer; background: transparent; border: none;
-      border-bottom: 2px solid transparent; transition: all .15s;
+      border-radius: 12px 12px 0 0; position: relative; transition: color .15s;
     }
-    .tab:hover { color: var(--text); }
-    .tab.active { color: var(--green); border-bottom-color: var(--green); background: rgba(37,211,102,.06); }
-
+    .tab:hover { color: var(--ink); }
+    .tab.active { color: var(--blue); }
+    .tab.active::after {
+      content: ''; position: absolute; left: 14px; right: 14px; bottom: -1px; height: 3px;
+      background: var(--blue); border-radius: 3px;
+    }
     .pane { display: none; }
     .pane.active { display: block; }
 
-    /* ---------- Form ---------- */
-    form { padding: 20px; }
+    /* ---------------- Form ---------------- */
+    form { padding: 22px; }
     .row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
-    .field { margin-bottom: 14px; }
+    .field { margin-bottom: 15px; }
     .field.full { grid-column: 1 / -1; }
-    label { display: block; font-size: 12.5px; color: var(--muted); margin-bottom: 6px; font-weight: 600; }
+    label { display: block; font-size: 12.5px; color: var(--ink); margin-bottom: 7px; font-weight: 600; }
+    label .opt { color: var(--muted2); font-weight: 500; }
     input, select, textarea {
-      width: 100%; background: var(--field); border: 1px solid var(--line);
-      border-radius: 10px; color: var(--text); font-size: 14px;
-      padding: 11px 12px; outline: none; font-family: inherit; transition: border .15s;
+      width: 100%; background: #fbfcff; border: 1.5px solid var(--line2);
+      border-radius: 12px; color: var(--ink); font-size: 14.5px; font-family: inherit;
+      padding: 12px 13px; outline: none; transition: border .15s, box-shadow .15s;
     }
-    input:focus, select:focus, textarea:focus { border-color: var(--green); }
-    select { appearance: none; cursor: pointer; }
-    textarea { resize: vertical; min-height: 54px; }
+    input::placeholder, textarea::placeholder { color: var(--muted2); }
+    input:focus, select:focus, textarea:focus { border-color: var(--blue); box-shadow: 0 0 0 4px rgba(1,62,248,.12); background: #fff; }
+    select { appearance: none; cursor: pointer;
+      background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%235a6a86' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>");
+      background-repeat: no-repeat; background-position: right 13px center; padding-right: 36px;
+    }
+    textarea { resize: vertical; min-height: 56px; }
     .btn-primary {
-      width: 100%; margin-top: 6px; padding: 13px;
-      background: linear-gradient(135deg, var(--green), var(--green-d));
-      color: #06231a; font-weight: 700; font-size: 15px;
-      border: none; border-radius: 11px; cursor: pointer; transition: filter .15s;
+      width: 100%; margin-top: 4px; padding: 14px;
+      background: var(--blue); color: #fff; font-weight: 700; font-size: 15px;
+      border: none; border-radius: 13px; cursor: pointer;
+      display: flex; align-items: center; justify-content: center; gap: 9px;
+      box-shadow: 0 8px 20px -6px rgba(1,62,248,.45); transition: background .15s, transform .05s, box-shadow .15s;
     }
-    .btn-primary:hover { filter: brightness(1.08); }
-    .btn-primary:disabled { filter: grayscale(.6) brightness(.7); cursor: not-allowed; }
-    .hint { font-size: 11.5px; color: var(--muted); margin-top: 10px; text-align: center; }
+    .btn-primary:hover { background: var(--blue-d); box-shadow: 0 10px 26px -6px rgba(1,62,248,.5); }
+    .btn-primary:active { transform: translateY(1px); }
+    .btn-primary:disabled { background: var(--muted2); box-shadow: none; cursor: not-allowed; }
+    .btn-primary svg { width: 18px; height: 18px; }
+    .hint { font-size: 11.5px; color: var(--muted); margin-top: 12px; text-align: center; }
 
-    /* ---------- Chat ---------- */
+    /* ---------------- Chat ---------------- */
     .chat-thread {
-      height: 420px; overflow-y: auto; padding: 16px;
-      display: flex; flex-direction: column; gap: 10px;
-      background: #0f1820;
+      height: 440px; overflow-y: auto; padding: 18px;
+      display: flex; flex-direction: column; gap: 11px; background: #fbfcff;
     }
-    .chat-thread::-webkit-scrollbar { width: 6px; }
-    .chat-thread::-webkit-scrollbar-thumb { background: var(--line); border-radius: 6px; }
+    .chat-thread::-webkit-scrollbar { width: 7px; }
+    .chat-thread::-webkit-scrollbar-thumb { background: var(--line2); border-radius: 7px; }
     .msg {
-      max-width: 88%; padding: 10px 13px; border-radius: 12px;
+      max-width: 86%; padding: 11px 14px; border-radius: 16px;
       font-size: 14px; line-height: 1.5; white-space: pre-wrap; word-break: break-word;
       animation: fadeIn .2s ease;
     }
     @keyframes fadeIn { from { opacity:0; transform: translateY(6px);} to {opacity:1; transform: translateY(0);} }
-    .msg.user { background: #075c4b; align-self: flex-end; border-bottom-right-radius: 4px; }
-    .msg.agent { background: #202c33; align-self: flex-start; border-bottom-left-radius: 4px; }
-    .msg strong, .msg b { color: var(--green); }
-    .chat-input { display: flex; gap: 10px; padding: 12px; border-top: 1px solid var(--line); background: var(--panel2); }
-    .chat-input textarea { min-height: 44px; max-height: 120px; }
+    .msg.user { background: var(--blue); color: #fff; align-self: flex-end; border-bottom-right-radius: 5px; }
+    .msg.agent { background: #fff; color: var(--ink); align-self: flex-start; border: 1px solid var(--line); border-bottom-left-radius: 5px; }
+    .msg.agent strong, .msg.agent b { color: var(--blue); }
+    .chat-input { display: flex; gap: 10px; padding: 14px; border-top: 1px solid var(--line); background: #fff; }
+    .chat-input textarea { min-height: 46px; max-height: 120px; border-radius: 13px; }
     .send {
-      width: 46px; height: 46px; flex-shrink: 0; border: none; border-radius: 50%;
-      background: var(--green); cursor: pointer; display: flex; align-items: center; justify-content: center;
+      width: 48px; height: 48px; flex-shrink: 0; border: none; border-radius: 14px;
+      background: var(--blue); cursor: pointer; display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 6px 16px -5px rgba(1,62,248,.5); transition: background .15s;
     }
-    .send:hover { background: #1da851; }
-    .send:disabled { background: var(--line); cursor: not-allowed; }
-    .send svg { width: 18px; height: 18px; fill: #06231a; }
+    .send:hover { background: var(--blue-d); }
+    .send:disabled { background: var(--muted2); box-shadow: none; cursor: not-allowed; }
+    .send svg { width: 19px; height: 19px; fill: #fff; }
 
-    /* ---------- Result panel ---------- */
-    .result {
-      background: var(--panel); border: 1px solid var(--line);
-      border-radius: 16px; min-height: 540px; padding: 0;
-      display: flex; flex-direction: column;
-    }
+    /* ---------------- Result panel ---------------- */
+    .result { background: var(--card); border: 1px solid var(--line); border-radius: 22px; box-shadow: var(--shadow);
+      min-height: 600px; display: flex; flex-direction: column; overflow: hidden; }
     .result-head {
-      padding: 16px 22px; border-bottom: 1px solid var(--line);
-      display: flex; align-items: center; gap: 10px;
+      padding: 18px 24px; border-bottom: 1px solid var(--line);
+      display: flex; align-items: center; gap: 11px;
+      background: linear-gradient(180deg, #fbfcff, #fff);
     }
-    .result-head h2 { font-size: 15px; font-weight: 700; }
-    .result-head .tag { margin-left: auto; font-size: 11.5px; color: var(--muted); }
+    .result-head .ic { width: 34px; height: 34px; border-radius: 10px; background: var(--blue-tint); color: var(--blue);
+      display: flex; align-items: center; justify-content: center; }
+    .result-head .ic svg { width: 18px; height: 18px; }
+    .result-head h2 { font-size: 15.5px; font-weight: 800; letter-spacing: -.3px; }
+    .result-head .tag { margin-left: auto; font-size: 11.5px; font-weight: 600; color: var(--muted);
+      background: #f1f4fb; border: 1px solid var(--line); padding: 5px 11px; border-radius: 100px; }
     .laudo {
-      flex: 1; padding: 22px 26px; overflow-y: auto;
-      white-space: pre-wrap; word-break: break-word;
-      font-size: 14.5px; line-height: 1.6;
+      flex: 1; padding: 26px 30px; overflow-y: auto;
+      white-space: pre-wrap; word-break: break-word; font-size: 14.5px; line-height: 1.62; color: #1e293b;
     }
-    .laudo strong, .laudo b { color: var(--green); }
-    .laudo a { color: #5fb0ff; }
+    .laudo strong, .laudo b { color: var(--blue); font-weight: 700; }
+    .laudo a { color: var(--blue); text-decoration: none; border-bottom: 1px solid var(--blue-tint2); }
+    .laudo a:hover { border-bottom-color: var(--blue); }
     .empty {
-      flex: 1; display: flex; flex-direction: column;
-      align-items: center; justify-content: center; text-align: center;
-      color: var(--muted); padding: 40px; gap: 14px;
+      flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+      text-align: center; color: var(--muted); padding: 48px; gap: 18px;
     }
-    .empty .big { font-size: 46px; opacity: .5; }
-    .spinner {
-      flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; color: var(--muted);
-    }
-    .spinner .ring {
-      width: 42px; height: 42px; border: 3px solid var(--line);
-      border-top-color: var(--green); border-radius: 50%; animation: spin 1s linear infinite;
-    }
+    .empty .logo-ghost { width: 92px; height: auto; opacity: .14; }
+    .empty .ttl { font-size: 16px; font-weight: 700; color: var(--ink); }
+    .empty .sub { font-size: 13.5px; max-width: 280px; line-height: 1.5; }
+    .spinner { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; color: var(--muted); padding: 40px; text-align: center; }
+    .spinner .ring { width: 46px; height: 46px; border: 3.5px solid var(--blue-tint2); border-top-color: var(--blue); border-radius: 50%; animation: spin 1s linear infinite; }
+    .spinner .s-ttl { font-weight: 700; color: var(--ink); font-size: 15px; }
     @keyframes spin { to { transform: rotate(360deg); } }
+    .err-box { color: var(--danger); }
 
-    .err { color: #ff6b6b; }
+    /* ---------------- Footer ---------------- */
+    .foot { text-align: center; padding: 22px; color: var(--muted2); font-size: 12px; border-top: 1px solid var(--line); }
+    .foot b { color: var(--blue); font-weight: 700; }
 
-    /* ---------- Responsive ---------- */
-    @media (max-width: 900px) {
-      .wrap { grid-template-columns: 1fr; padding: 16px; }
-      .result { min-height: 360px; }
-      .chat-thread { height: 320px; }
+    /* ---------------- Responsive ---------------- */
+    @media (max-width: 940px) {
+      .wrap { grid-template-columns: 1fr; padding: 18px; }
+      .hero { padding: 22px 18px 0; }
+      .hero h2 { font-size: 24px; }
+      .nav { padding: 12px 18px; }
+      .result { min-height: 420px; }
+      .chat-thread { height: 340px; }
+      .brand img { height: 40px; }
     }
   </style>
 </head>
 <body>
-  <div class="topbar">
-    <div class="logo">🏠</div>
+  <!-- NAV -->
+  <nav class="nav">
     <div class="brand">
-      <h1>PrecificaAI</h1>
-      <span>● Avaliação imobiliária — Goiás</span>
+      <img src="/bens-logo.png" alt="Bens" />
+      <div class="divider"></div>
+      <div class="titles">
+        <h1>Precifica Aí</h1>
+        <span class="by">by <b>Bens</b> · Inteligência Imobiliária</span>
+      </div>
     </div>
     <div class="spacer"></div>
-    <div class="badge">Dados reais de mercado • IBGE • Mapa</div>
-  </div>
+    <div class="pill"><span class="dot"></span> Online · Goiás</div>
+  </nav>
+
+  <!-- HERO -->
+  <section class="hero">
+    <h2>Avalie qualquer imóvel em segundos com <span class="accent">dados reais de mercado</span>.</h2>
+    <p>Preencha o formulário ou converse com o agente. Cruzamos anúncios reais, dados do IBGE e mapeamento de bairro para entregar uma faixa de preço fundamentada.</p>
+    <div class="trust">
+      <span class="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 21l-4.35-4.35"/><circle cx="11" cy="11" r="7"/></svg> Pesquisa de mercado ao vivo</span>
+      <span class="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21V7l8-4v18M19 21V11l-6-4"/></svg> Base IBGE + perfil do bairro</span>
+      <span class="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3 7h7l-5.5 4.5L18 21l-6-4-6 4 1.5-7.5L2 9h7z"/></svg> Faixa, liquidez e comparativos</span>
+    </div>
+  </section>
 
   <div class="wrap">
-    <!-- ESQUERDA: entrada (abas) -->
+    <!-- ESQUERDA: entrada -->
     <div class="card">
       <div class="tabs">
         <button class="tab active" id="tab-form" onclick="switchTab('form')">📋 Formulário</button>
-        <button class="tab" id="tab-chat" onclick="switchTab('chat')">💬 Chat</button>
+        <button class="tab" id="tab-chat" onclick="switchTab('chat')">💬 Conversar</button>
       </div>
 
       <!-- Formulário -->
@@ -224,7 +294,7 @@
           </div>
 
           <div class="field full">
-            <label>Endereço / rua <span style="font-weight:400">(opcional, melhora a precisão)</span></label>
+            <label>Endereço / rua <span class="opt">(opcional, melhora a precisão)</span></label>
             <input id="f-endereco" placeholder="Ex: Rua 7, nº 100" />
           </div>
 
@@ -256,11 +326,14 @@
           </div>
 
           <div class="field full">
-            <label>Diferenciais <span style="font-weight:400">(opcional)</span></label>
+            <label>Diferenciais <span class="opt">(opcional)</span></label>
             <textarea id="f-diferenciais" placeholder="Ex: varanda gourmet, suíte, andar alto, vista livre..."></textarea>
           </div>
 
-          <button class="btn-primary" id="btn-avaliar" type="submit">Avaliar imóvel →</button>
+          <button class="btn-primary" id="btn-avaliar" type="submit">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 21l-4.35-4.35"/><circle cx="11" cy="11" r="7"/></svg>
+            Avaliar imóvel
+          </button>
           <div class="hint">A pesquisa de mercado pode levar de 20 a 60 segundos.</div>
         </form>
       </div>
@@ -281,35 +354,42 @@
     <!-- DIREITA: resultado -->
     <div class="result">
       <div class="result-head">
-        <h2>📊 Laudo de Precificação</h2>
+        <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l3-3 3 3 4-5"/></svg></div>
+        <h2>Laudo de Precificação</h2>
         <span class="tag" id="result-tag">aguardando</span>
       </div>
       <div id="result-body">
         <div class="empty" id="result-empty">
-          <div class="big">🏠</div>
-          <div>Preencha o formulário ao lado<br>ou converse pelo chat<br>para gerar o laudo do imóvel.</div>
+          <img class="logo-ghost" src="/bens-logo.png" alt="" />
+          <div>
+            <div class="ttl">Pronto para avaliar</div>
+            <div class="sub">Preencha o formulário ou converse pelo chat para gerar o laudo completo do imóvel.</div>
+          </div>
         </div>
       </div>
     </div>
   </div>
 
+  <footer class="foot">
+    Precifica Aí — desenvolvido por <b>Bens</b> · Inteligência Imobiliária · Goiás &nbsp;|&nbsp;
+    Laudo por amostragem, sem valor de documento oficial.
+  </footer>
+
   <script>
     const sessionId = 'web_' + Math.random().toString(36).substring(2, 10);
     let busy = false;
 
-    // ---------- Tabs ----------
     function switchTab(which) {
       document.getElementById('tab-form').classList.toggle('active', which === 'form');
       document.getElementById('tab-chat').classList.toggle('active', which === 'chat');
       document.getElementById('pane-form').classList.toggle('active', which === 'form');
       document.getElementById('pane-chat').classList.toggle('active', which === 'chat');
       if (which === 'chat' && !document.getElementById('thread').dataset.init) {
-        addMsg('agent', 'Olá! Sou o *PrecificaAI* 🏠\nDescreva o imóvel (tipo, cidade, bairro, m², quartos, vagas, estado) que eu pesquiso o mercado e gero o laudo.');
+        addMsg('agent', 'Olá! Sou o *Precifica Aí* 🏠\nDescreva o imóvel (tipo, cidade, bairro, m², quartos, vagas, estado) que eu pesquiso o mercado e gero o laudo.');
         document.getElementById('thread').dataset.init = '1';
       }
     }
 
-    // ---------- Formatação ----------
     function fmt(text) {
       return text
         .replace(/&/g, '&amp;').replace(/</g, '&lt;')
@@ -318,14 +398,13 @@
         .replace(/_(.*?)_/g, '<em>$1</em>');
     }
 
-    // ---------- Result panel ----------
     function showSpinner(msg) {
       document.getElementById('result-tag').textContent = 'consultando…';
       document.getElementById('result-body').innerHTML =
-        '<div class="spinner"><div class="ring"></div><div>' + (msg || 'Consultando o mercado imobiliário…') + '</div></div>';
+        '<div class="spinner"><div class="ring"></div><div><div class="s-ttl">Consultando o mercado…</div><div style="margin-top:6px">' + (msg || '') + '</div></div></div>';
     }
     function showLaudo(text) {
-      document.getElementById('result-tag').textContent = 'concluído';
+      document.getElementById('result-tag').textContent = '✓ concluído';
       const div = document.createElement('div');
       div.className = 'laudo';
       div.innerHTML = fmt(text);
@@ -336,10 +415,9 @@
     function showError(text) {
       document.getElementById('result-tag').textContent = 'erro';
       document.getElementById('result-body').innerHTML =
-        '<div class="empty err"><div class="big">⚠️</div><div>' + fmt(text) + '</div></div>';
+        '<div class="empty err-box"><div style="font-size:42px">⚠️</div><div class="sub">' + fmt(text) + '</div></div>';
     }
 
-    // ---------- Formulário ----------
     async function avaliarForm(e) {
       e.preventDefault();
       if (busy) return;
@@ -378,7 +456,6 @@
       }
     }
 
-    // ---------- Chat ----------
     function addMsg(type, text) {
       const t = document.getElementById('thread');
       const div = document.createElement('div');
@@ -406,8 +483,6 @@
         const data = await res.json();
         placeholder.remove();
         if (data.error) { addMsg('agent', '❌ ' + data.error); return; }
-
-        // Resposta conversacional vai pro chat; laudo vai pro painel ao lado
         if (data.type === 'laudo') {
           addMsg('agent', '✅ Laudo gerado — veja no painel ao lado.');
           showLaudo(data.response);
