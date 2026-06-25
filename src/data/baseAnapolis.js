@@ -19,16 +19,18 @@
  */
 
 const { getMultiplicadorBairro } = require('./bairros');
+const { PGV_TERRENO_VENAL } = require('./pgvAnapolis');
 
 // ── Constantes de calibração (ajustáveis) ────────────────────────────
 const ALUGUEL_YIELD_MES = 0.0042;  // 0,42%/mês do valor de venda (yield bruto interior GO)
-const LOTE_FRACAO = 0.16;          // terreno ≈ 16% do R$/m² construído da região
+const LOTE_FRACAO = 0.16;          // terreno ≈ 16% do R$/m² construído (fallback sem PGV)
+const PGV_FATOR_MERCADO = 2.1;     // venal (ITBI) × isto ≈ valor de mercado do terreno
 const BASE_DERIVADA_M2 = 4000;     // base p/ bairros fora da EBM = mult × isto.
                                    // Calibrado p/ que bairros NÃO listados na EBM (fora do top-10)
                                    // fiquem abaixo do piso EBM (4.400) salvo mult claramente premium.
 
 const VENDA_MIN = 2200, VENDA_MAX = 9500;   // limites sãos de R$/m² construído (venda)
-const LOTE_MIN = 250,  LOTE_MAX = 2200;     // limites sãos de R$/m² de terreno
+const LOTE_MIN = 250,  LOTE_MAX = 3500;     // limites sãos de R$/m² de terreno
 
 // ── ÂNCORA OFICIAL DE VENDA (EBM / Aderni-GO) — R$/m² construído ──────
 const EBM_VENDA_M2 = {
@@ -89,10 +91,41 @@ function getBaseAluguel(cidade, bairro) {
 }
 
 /**
- * Âncora de LOTE/TERRENO (R$/m² de terreno) — fração do R$/m² construído.
- * Estimativa inicial; deve ser calibrada com anúncios reais de terreno.
+ * Normaliza p/ casar com as chaves do PGV (sem acento, sem prefixo de bairro).
+ */
+function normPgv(s) {
+  return norm(s).replace(/\b(bairro|loteamento|condominio|residencial|conjunto|jardim|vila|parque|setor)\b/g, '')
+    .replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Valor VENAL de terreno (R$/m²) do PGV oficial da Prefeitura para o bairro.
+ * Tenta match exato e depois "contém" (maior chave que casa).
+ */
+function pgvVenal(bairro) {
+  const k = normPgv(bairro);
+  if (!k) return null;
+  if (PGV_TERRENO_VENAL[k]) return PGV_TERRENO_VENAL[k];
+  let melhor = null, melhorLen = 0;
+  for (const key of Object.keys(PGV_TERRENO_VENAL)) {
+    if (key.length < 4) continue;
+    if ((k.includes(key) || key.includes(k)) && key.length > melhorLen) {
+      melhor = PGV_TERRENO_VENAL[key]; melhorLen = key.length;
+    }
+  }
+  return melhor;
+}
+
+/**
+ * Âncora de LOTE/TERRENO (R$/m²) — base oficial da Prefeitura (PGV venal ITBI)
+ * convertida para mercado. Fallback: fração do R$/m² construído.
  */
 function getBaseLote(cidade, bairro) {
+  const venal = pgvVenal(bairro);
+  if (venal > 0) {
+    const m2 = clamp(Math.round(venal * PGV_FATOR_MERCADO), LOTE_MIN, LOTE_MAX);
+    return { m2, fonte: `Prefeitura/PGV (venal R$ ${venal}/m² × ${PGV_FATOR_MERCADO})`, confianca: 'alta', venal };
+  }
   const venda = getBaseVenda(cidade, bairro);
   const m2 = clamp(Math.round(venda.m2 * LOTE_FRACAO), LOTE_MIN, LOTE_MAX);
   return { m2, fonte: 'estimado (fração do construído) — calibrar', confianca: 'baixa' };

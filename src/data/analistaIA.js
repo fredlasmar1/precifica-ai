@@ -739,7 +739,7 @@ IMPORTANTE: o campo "bairro" em cada comparativo deve conter o nome exato do bai
     console.log(`[Perplexity] Pesquisando preços reais: ${tipo} ${finalidade} ${bairro}, ${cidade}...`);
 
     const response = await axios.post('https://api.perplexity.ai/chat/completions', {
-      model: 'sonar',
+      model: 'sonar-pro',
       messages: [
         {
           role: 'system',
@@ -932,7 +932,7 @@ ${isTerreno ? 'SOMENTE lotes vazios. NÃO inclua casas ou imóveis construídos.
 Retorne SOMENTE JSON: {"comparativos":[{"area":N,"preco":N,"precoM2":N,"bairro":"nome bairro","fonte":"site","detalhe":"desc"}],"precoMedioM2":N (média simples de TODOS — não filtre nada),"faixaMinM2":N,"faixaMaxM2":N,"anunciosAnalisados":N,"confianca":"alta|media|baixa","raciocinio":"resumo"}`;
 
     const retryResp = await axios.post('https://api.perplexity.ai/chat/completions', {
-      model: 'sonar',
+      model: 'sonar-pro',
       messages: [
         { role: 'system', content: 'Pesquisador imobiliário. Retorne SOMENTE JSON válido, curto e direto.' },
         { role: 'user', content: promptSimples }
