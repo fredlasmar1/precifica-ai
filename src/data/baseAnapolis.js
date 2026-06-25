@@ -23,7 +23,9 @@ const { getMultiplicadorBairro } = require('./bairros');
 // ── Constantes de calibração (ajustáveis) ────────────────────────────
 const ALUGUEL_YIELD_MES = 0.0042;  // 0,42%/mês do valor de venda (yield bruto interior GO)
 const LOTE_FRACAO = 0.16;          // terreno ≈ 16% do R$/m² construído da região
-const BASE_DERIVADA_M2 = 4600;     // base p/ bairros fora da EBM = mult × isto (calibrado p/ reproduzir EBM)
+const BASE_DERIVADA_M2 = 4000;     // base p/ bairros fora da EBM = mult × isto.
+                                   // Calibrado p/ que bairros NÃO listados na EBM (fora do top-10)
+                                   // fiquem abaixo do piso EBM (4.400) salvo mult claramente premium.
 
 const VENDA_MIN = 2200, VENDA_MAX = 9500;   // limites sãos de R$/m² construído (venda)
 const LOTE_MIN = 250,  LOTE_MAX = 2200;     // limites sãos de R$/m² de terreno
