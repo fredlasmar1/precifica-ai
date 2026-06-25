@@ -2,6 +2,7 @@ const { buscarComparativos } = require('./portais');
 const { getMultiplicadorBairro, getBairrosVizinhos } = require('./bairros');
 // Google Places removido — OSM é mais preciso e não inventa dados
 const { estimarPrecoComIA } = require('./analistaIA');
+const { getAncora } = require('./baseAnapolis');
 const { validarEndereco } = require('./geoValidacao');
 const { perfilarLocal, gerarContextoGuru } = require('./guruAnapolis');
 const db = require('./database');
@@ -250,12 +251,47 @@ async function calcularPreco(dadosImovel) {
     };
   }
 
+  // ─── ÂNCORA DE CALIBRAÇÃO (EBM/Aderni-GO) ───────────────────────
+  // Mantém o preço dentro da realidade do bairro. A amostra de mercado manda
+  // quando é robusta; quando é fraca, fabricada ou destoa, puxa para a âncora.
+  let notaCalibracao = null;
+  let ancoraInfo = null;
+  try {
+    const ancora = getAncora(tipo, finalidade, cidade, bairro);
+    if (ancora && ancora.m2 > 0) {
+      ancoraInfo = ancora;
+      const amostras = analiseIA?.anunciosAnalisados || comparativos?.totalEncontrados || 0;
+      const mercadoBruto = precoM2Base;
+      // peso do mercado conforme nº de amostras reais e confiança da fonte
+      let wMercado;
+      if (confiancaFonte === 'baixa')  wMercado = 0.25;
+      else if (amostras >= 5)          wMercado = 0.80;
+      else if (amostras >= 3)          wMercado = 0.60;
+      else                             wMercado = 0.40;
+
+      const combinado = Math.round(wMercado * mercadoBruto + (1 - wMercado) * ancora.m2);
+      const piso = Math.round(ancora.m2 * 0.65);
+      const teto = Math.round(ancora.m2 * 1.35);
+      const ancorado = Math.max(piso, Math.min(teto, combinado));
+      const desvio = Math.abs(mercadoBruto - ancora.m2) / ancora.m2;
+
+      if (ancorado !== mercadoBruto) {
+        console.log(`[Ancora] ${tipo}/${finalidade} ${bairro}: mercado R$${mercadoBruto} × base R$${ancora.m2} (${ancora.fonte}, w=${wMercado}, ${amostras} amostras) → R$${ancorado}`);
+        precoM2Base = ancorado;
+        notaCalibracao = desvio > 0.30
+          ? `Calibrado pela base do bairro (R$ ${ancora.m2.toLocaleString('pt-BR')}/m² · ${ancora.fonte}) — amostra de mercado indicava R$ ${mercadoBruto.toLocaleString('pt-BR')}/m²`
+          : `Ajustado com a base do bairro (${ancora.fonte})`;
+      }
+    }
+  } catch (e) { console.warn('[Ancora] erro:', e.message); }
+
   const precoM2Mercado = precoM2Base;
 
   // ─── Ajuste por análise da rua ──────────────────────────────────
 
   let precoM2Final = precoM2Base;
   let ajustesDescricao = ['Preço baseado em amostragem de mercado'];
+  if (notaCalibracao) ajustesDescricao.push(notaCalibracao);
 
 
   // Fator de escala para terrenos grandes

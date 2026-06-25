@@ -868,6 +868,31 @@ IMPORTANTE: o campo "bairro" em cada comparativo deve conter o nome exato do bai
     }
     // Filtro de outliers para valores extremos (após filtro de relevância)
     resultado = filtrarOutliersComparativos(resultado);
+
+    // ─── DETECTOR DE FABRICAÇÃO ──────────────────────────────────────
+    // Anúncio real nunca dá R$/m² idêntico em todos os comparativos.
+    // Se a dispersão é ~0 (ex: tudo 2.500/m²), a IA inventou os números:
+    // rebaixa a confiança para 'baixa' → o precificador puxa pra âncora EBM.
+    const m2arr = (resultado.comparativos || []).map(c => Number(c.precoM2)).filter(p => p > 0);
+    if (m2arr.length >= 3) {
+      const minM2 = Math.min(...m2arr), maxM2 = Math.max(...m2arr);
+      const dispersao = maxM2 > 0 ? (maxM2 - minM2) / maxM2 : 0;
+      if (dispersao < 0.015) {
+        console.warn(`[Perplexity] ⚠️ Fabricação suspeita: dispersão de R$/m² = ${(dispersao * 100).toFixed(2)}% em ${m2arr.length} comps (todos ≈ R$${minM2}/m²). Confiança → baixa.`);
+        resultado.confianca = 'baixa';
+        resultado.fabricacaoSuspeita = true;
+      }
+    }
+    // Marca comparativos que se assumiram "estimados" (não são anúncio real)
+    if (Array.isArray(resultado.comparativos)) {
+      const estimados = resultado.comparativos.filter(c =>
+        /estimad|aproximad|similar|baseado/i.test(c.detalhe || '')).length;
+      if (estimados > 0 && estimados >= resultado.comparativos.length / 2) {
+        console.warn(`[Perplexity] ⚠️ ${estimados}/${resultado.comparativos.length} comps marcados como estimados — confiança → baixa.`);
+        resultado.confianca = 'baixa';
+      }
+    }
+
     const analise = {
       precoMedioM2: Math.round(resultado.precoMedioM2),
       faixaMinM2: Math.round(resultado.faixaMinM2 || resultado.precoMedioM2 * 0.85),
