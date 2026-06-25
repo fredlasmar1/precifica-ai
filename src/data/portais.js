@@ -33,12 +33,11 @@ async function buscarComparativos(dados) {
   const cached = cache.get(cacheKey);
   if (cached) return cached;
 
-  // Busca em todos os portais ao mesmo tempo
+  // Busca real via ScraperAPI. VivaReal é a fonte mais rica (JSON-LD com 30
+  // anúncios reais por página). OLX/ZAP/Imovelweb ficam disponíveis mas
+  // desativados por ora (parsers antigos + economia de créditos do proxy).
   const resultados = await Promise.allSettled([
-    buscarOLX(dados),
-    buscarVivaReal(dados),
-    buscarZAP(dados),
-    buscarImovelweb(dados)
+    buscarVivaReal(dados)
   ]);
 
   // Combina imóveis de todos que retornaram
@@ -57,7 +56,7 @@ async function buscarComparativos(dados) {
     return null; // sem dados — precificador vai usar GPT-4o
   }
 
-  const resultado = montarResultado(todosImoveis, fontesUsadas);
+  const resultado = montarResultado(todosImoveis, fontesUsadas, dados);
   cache.set(cacheKey, resultado);
   return resultado;
 }
@@ -159,44 +158,26 @@ async function buscarVivaReal(dados) {
   try {
     const { tipo, finalidade, cidade, bairro } = dados;
 
+    // Slugs de tipo no padrão atual do VivaReal (/.../bairros/<bairro>/<tipo>/)
     const tipoMap = {
-      'casa': 'casas',
-      'apartamento': 'apartamentos',
-      'terreno': 'terrenos',
-      'comercial': 'comercial'
+      'casa': 'casa_residencial',
+      'apartamento': 'apartamento_residencial',
+      'terreno': 'lote-terreno_residencial',
+      'comercial': 'conjunto-comercial-sala_comercial'
     };
-    const tipoSlug = tipoMap[tipo] || 'imoveis';
+    const tipoSlug = tipoMap[tipo] || 'casa_residencial';
     const finalidadeSlug = finalidade === 'aluguel' ? 'aluguel' : 'venda';
     const cidadeSlug = slugify(cidade);
     const bairroSlug = slugify(bairro);
 
-    // VivaReal pertence ao mesmo grupo do ZAP (Grupo OLX/ZAP)
-    const url = `https://www.vivareal.com.br/${finalidadeSlug}/goias/${cidadeSlug}/${bairroSlug}/${tipoSlug}/`;
+    const url = `https://www.vivareal.com.br/${finalidadeSlug}/goias/${cidadeSlug}/bairros/${bairroSlug}/${tipoSlug}/`;
 
     const html = await fetchHtml(url, 'VivaReal');
-    const imoveis = [];
 
-    // VivaReal também é Next.js
-    const nextData = extrairNextDataGenerico(html);
-    if (nextData) {
-      const candidatos = [
-        nextData?.props?.pageProps?.fetchListing?.search?.result?.listings,
-        nextData?.props?.pageProps?.listings,
-        nextData?.props?.pageProps?.searchResult?.listings
-      ];
-      const listings = candidatos.find(l => Array.isArray(l) && l.length > 0);
-      if (listings) {
-        for (const item of listings.slice(0, 20)) {
-          const listing = item.listing || item;
-          const pricingInfo = (listing.pricingInfos && listing.pricingInfos[0]) || listing.pricingInfo || {};
-          const preco = parseFloat(pricingInfo.price || pricingInfo.rentalTotalPrice || 0);
-          const area = parseFloat(listing.usableAreas?.[0] || listing.totalAreas?.[0] || 0);
-          if (preco && preco > 10000) {
-            imoveis.push({ preco: Math.round(preco), area: area || null, precoM2: area ? Math.round(preco / area) : null });
-          }
-          if (imoveis.length >= 10) break;
-        }
-      }
+    // Extrai anúncios reais do JSON-LD (ItemList de House/Apartment)
+    let imoveis = extrairListingsVivaRealJsonLD(html);
+    if (imoveis.length > 0) {
+      console.log(`[VivaReal] ${imoveis.length} anúncios reais extraídos (JSON-LD)`);
     }
 
     // Fallback HTML
@@ -433,23 +414,81 @@ function extrairAreaTexto(texto) {
   return null;
 }
 
-function montarResultado(imoveis, fontes) {
-  const precos = imoveis.map(i => i.preco).filter(Boolean);
-  const precosM2 = imoveis.map(i => i.precoM2).filter(Boolean);
+/**
+ * Extrai anúncios reais do JSON-LD do VivaReal (ItemList de House/Apartment).
+ * Cada item traz área e quartos no name e o preço na URL (...260m2-venda-RS650000-id...).
+ */
+function extrairListingsVivaRealJsonLD(html) {
+  const imoveis = [];
+  const re = /<script[^>]*application\/ld\+json[^>]*>([\s\S]*?)<\/script>/gi;
+  let m;
+  while ((m = re.exec(html)) !== null) {
+    let data;
+    try { data = JSON.parse(m[1].trim()); } catch { continue; }
+    const lists = Array.isArray(data) ? data : [data];
+    for (const d of lists) {
+      if (!d || d['@type'] !== 'ItemList' || !Array.isArray(d.itemListElement)) continue;
+      for (const el of d.itemListElement) {
+        const item = el.item || {};
+        const name = item.name || '';
+        const url = item.url || '';
+        const ma = name.match(/(\d+)\s*m²/) || url.match(/(\d+)m2/);
+        const mp = url.match(/RS(\d+)/i) || name.match(/R\$\s?([\d.]+)/);
+        const mq = name.match(/(\d+)\s*quartos?/i);
+        if (!ma || !mp) continue;
+        const area = parseInt(ma[1], 10);
+        const preco = parseInt(String(mp[1]).replace(/\./g, ''), 10);
+        if (area > 0 && preco > 10000) {
+          imoveis.push({
+            preco, area, precoM2: Math.round(preco / area),
+            quartos: mq ? parseInt(mq[1], 10) : null,
+            url, fonte: 'VivaReal'
+          });
+        }
+      }
+    }
+  }
+  return imoveis;
+}
 
-  // Remove outliers (abaixo de P10 e acima de P90) para média mais realista
+function mediana(arr) {
+  if (!arr || !arr.length) return null;
+  const s = [...arr].sort((a, b) => a - b);
+  const mid = Math.floor(s.length / 2);
+  return s.length % 2 ? s[mid] : Math.round((s[mid - 1] + s[mid]) / 2);
+}
+
+function montarResultado(imoveis, fontes, dados = {}) {
+  const { metragem, tipo } = dados;
+  let usados = imoveis.filter(i => i.precoM2 > 0);
+
+  // Filtro por área similar ao imóvel avaliado (amostragem comparável)
+  if (metragem > 0 && usados.length >= 5) {
+    let sim;
+    if (tipo === 'casa' && metragem > 250) {
+      // casa grande: aceita casas até 3x maiores e qualquer menor do bairro
+      sim = usados.filter(i => !i.area || i.area <= metragem * 3);
+    } else {
+      sim = usados.filter(i => !i.area || Math.abs(i.area - metragem) / metragem <= 0.6);
+    }
+    if (sim.length >= 4) usados = sim;
+  }
+
+  const precos = usados.map(i => i.preco).filter(Boolean);
+  const precosM2 = usados.map(i => i.precoM2).filter(Boolean);
   const precosM2Filtrados = removerOutliers(precosM2);
+  const base = precosM2Filtrados.length >= 3 ? precosM2Filtrados : precosM2;
 
   return {
-    fonte: fontes.join(' + '),
-    totalEncontrados: imoveis.length,
-    precoMinimo: Math.min(...precos),
-    precoMaximo: Math.max(...precos),
-    precoMedio: Math.round(precos.reduce((a, b) => a + b, 0) / precos.length),
-    precoMedioM2: precosM2Filtrados.length > 0
-      ? Math.round(precosM2Filtrados.reduce((a, b) => a + b, 0) / precosM2Filtrados.length)
-      : (precosM2.length > 0 ? Math.round(precosM2.reduce((a, b) => a + b, 0) / precosM2.length) : null),
-    imoveis: imoveis.slice(0, 10),
+    fonte: [...new Set(fontes)].join(' + '),
+    totalEncontrados: usados.length,
+    precoMinimo: precos.length ? Math.min(...precos) : null,
+    precoMaximo: precos.length ? Math.max(...precos) : null,
+    precoMedio: precos.length ? Math.round(precos.reduce((a, b) => a + b, 0) / precos.length) : null,
+    precoMedioM2: mediana(base),   // MEDIANA (robusta a outlier), não média
+    faixaMinM2: base.length ? Math.min(...base) : null,
+    faixaMaxM2: base.length ? Math.max(...base) : null,
+    imoveis: usados.slice(0, 12),
     isEstimativa: false
   };
 }

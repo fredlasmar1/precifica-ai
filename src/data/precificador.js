@@ -133,15 +133,33 @@ async function calcularPreco(dadosImovel) {
     console.warn('[Precificador] Erro ao buscar cache DB:', err.message);
   }
 
-  // Prioridade 2: Portais diretos
+  // Prioridade 2: Portais diretos (scraping real verificado — VivaReal via ScraperAPI)
   if (!precoM2Base && comparativos?.precoMedioM2) {
     precoM2Base = comparativos.precoMedioM2;
     fontePrincipal = comparativos.fonte;
-    confiancaFonte = 'alta';
-    console.log(`[Precificador] Portais: R$ ${precoM2Base}/m²`);
-    // Salva no DB
+    const n = comparativos.totalEncontrados || 0;
+    confiancaFonte = n >= 5 ? 'alta' : n >= 3 ? 'media' : 'baixa';
+    console.log(`[Precificador] Portais (real): R$ ${precoM2Base}/m² — ${n} anúncios verificados (${confiancaFonte})`);
+
+    // Monta analiseIA a partir dos anúncios REAIS para o laudo mostrar os comparativos
+    analiseIA = {
+      precoMedioM2: comparativos.precoMedioM2,
+      faixaMinM2: comparativos.faixaMinM2 || comparativos.precoMedioM2,
+      faixaMaxM2: comparativos.faixaMaxM2 || comparativos.precoMedioM2,
+      anunciosAnalisados: n,
+      comparativos: (comparativos.imoveis || []).map(i => ({
+        area: i.area, preco: i.preco, precoM2: i.precoM2, quartos: i.quartos,
+        bairro, fonte: i.fonte || comparativos.fonte,
+        detalhe: `${i.area || '?'}m²${i.quartos ? ` • ${i.quartos}q` : ''} — anúncio real`
+      })),
+      confianca: confiancaFonte,
+      raciocinio: `${n} anúncios reais coletados via scraping (${comparativos.fonte}); preço/m² pela MEDIANA dos anúncios.`,
+      fonte: `Anúncios reais — ${comparativos.fonte}`,
+      citacoes: (comparativos.imoveis || []).map(i => i.url).filter(Boolean).slice(0, 5)
+    };
+
     try {
-      await db.salvarPreco({ cidade, bairro, tipo, finalidade, condominio, preco_m2: precoM2Base, faixa_min: comparativos.precoMinimo, faixa_max: comparativos.precoMaximo, amostras: comparativos.totalEncontrados, confianca: 'alta', fonte: comparativos.fonte, comparativos: comparativos.imoveis });
+      await db.salvarPreco({ cidade, bairro, tipo, finalidade, condominio, preco_m2: precoM2Base, faixa_min: comparativos.precoMinimo, faixa_max: comparativos.precoMaximo, amostras: n, confianca: confiancaFonte, fonte: comparativos.fonte, comparativos: comparativos.imoveis });
     } catch {}
   }
 
