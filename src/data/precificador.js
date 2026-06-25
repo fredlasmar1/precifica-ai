@@ -280,17 +280,27 @@ async function calcularPreco(dadosImovel) {
       ancoraInfo = ancora;
       const amostras = analiseIA?.anunciosAnalisados || comparativos?.totalEncontrados || 0;
       const mercadoBruto = precoM2Base;
-      // peso do mercado conforme nº de amostras reais e confiança da fonte
-      let wMercado;
-      if (confiancaFonte === 'baixa')  wMercado = 0.25;
-      else if (amostras >= 5)          wMercado = 0.80;
-      else if (amostras >= 3)          wMercado = 0.60;
-      else                             wMercado = 0.40;
+      const dadosReaisFortes = confiancaFonte === 'alta' && amostras >= 10;
 
-      const combinado = Math.round(wMercado * mercadoBruto + (1 - wMercado) * ancora.m2);
-      const piso = Math.round(ancora.m2 * 0.65);
-      const teto = Math.round(ancora.m2 * 1.35);
-      const ancorado = Math.max(piso, Math.min(teto, combinado));
+      let ancorado;
+      if (dadosReaisFortes) {
+        // Muitos anúncios REAIS verificados → confia no mercado; a âncora só
+        // evita absurdo (banda larga ±50/60%), não puxa o valor.
+        const piso = Math.round(ancora.m2 * 0.5);
+        const teto = Math.round(ancora.m2 * 1.6);
+        ancorado = Math.max(piso, Math.min(teto, mercadoBruto));
+      } else {
+        // Dado fraco/fabricado → blend ponderado, banda estreita ±40%.
+        let wMercado;
+        if (confiancaFonte === 'baixa')  wMercado = 0.25;
+        else if (amostras >= 5)          wMercado = 0.70;
+        else if (amostras >= 3)          wMercado = 0.55;
+        else                             wMercado = 0.40;
+        const combinado = Math.round(wMercado * mercadoBruto + (1 - wMercado) * ancora.m2);
+        const piso = Math.round(ancora.m2 * 0.6);
+        const teto = Math.round(ancora.m2 * 1.4);
+        ancorado = Math.max(piso, Math.min(teto, combinado));
+      }
       const desvio = Math.abs(mercadoBruto - ancora.m2) / ancora.m2;
 
       if (ancorado !== mercadoBruto) {
