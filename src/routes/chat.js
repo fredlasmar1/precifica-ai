@@ -151,6 +151,46 @@ router.post('/avaliar', async (req, res) => {
   }
 });
 
+/**
+ * POST /api/ponto-comercial
+ * Buscador inteligente comercial: dado endereço + ramo do cliente, avalia
+ * concorrência, geradores de movimento e demanda → veredito de ponto comercial.
+ */
+router.post('/ponto-comercial', async (req, res) => {
+  const b = req.body || {};
+  const cidade = String(b.cidade || 'Anápolis').trim();
+  const bairro = String(b.bairro || '').trim();
+  const endereco = String(b.endereco || '').trim();
+  const ramo = String(b.ramo || '').trim();
+
+  if (!bairro || !ramo) {
+    return res.status(400).json({ error: 'Informe o bairro e o ramo do cliente (ex: farmácia, academia).' });
+  }
+
+  try {
+    const { validarEndereco } = require('../data/geoValidacao');
+    const { perfilarLocal } = require('../data/guruAnapolis');
+    const { analisarPontoComercial, formatarRelatorioComercial } = require('../data/pontoComercial');
+
+    const geo = await validarEndereco(cidade, bairro, endereco);
+    if (!geo || !geo.valido) {
+      return res.status(422).json({ error: 'Não consegui localizar esse endereço/bairro em Goiás. Confira e tente de novo.' });
+    }
+
+    let perfilGuru = null;
+    try { perfilGuru = await perfilarLocal(cidade, bairro, geo.lat, geo.lng); } catch {}
+
+    const analise = await analisarPontoComercial(geo.lat, geo.lng, ramo, { cidade, bairro, perfilGuru });
+    if (analise.erro) return res.status(422).json({ error: analise.erro });
+
+    const texto = formatarRelatorioComercial(analise);
+    return res.json({ type: 'comercial', response: texto, analise });
+  } catch (err) {
+    console.error('[PontoComercial API] Erro:', err);
+    return res.status(500).json({ error: '⚠️ Erro ao analisar o ponto comercial. Tente novamente.', debug: err.message });
+  }
+});
+
 function gerarLaudo(dados, resultado) {
   const { tipo, finalidade, cidade, bairro, endereco, metragem, quartos, vagas } = dados;
   const {

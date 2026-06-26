@@ -253,7 +253,8 @@
     <!-- ESQUERDA: entrada -->
     <div class="card">
       <div class="tabs">
-        <button class="tab active" id="tab-form" onclick="switchTab('form')">📋 Formulário</button>
+        <button class="tab active" id="tab-form" onclick="switchTab('form')">📋 Avaliar</button>
+        <button class="tab" id="tab-comercial" onclick="switchTab('comercial')">🏪 Ponto Comercial</button>
         <button class="tab" id="tab-chat" onclick="switchTab('chat')">💬 Conversar</button>
       </div>
 
@@ -346,13 +347,42 @@
           </button>
         </div>
       </div>
+
+      <!-- Ponto Comercial -->
+      <div class="pane" id="pane-comercial">
+        <form onsubmit="analisarPonto(event)">
+          <div class="field full">
+            <label>Ramo do cliente <span class="opt">(o que ele vende/faz)</span></label>
+            <input id="p-ramo" placeholder="Ex: farmácia, academia, padaria, pet shop, restaurante" />
+          </div>
+          <div class="row">
+            <div class="field">
+              <label>Cidade</label>
+              <input id="p-cidade" value="Anápolis" />
+            </div>
+            <div class="field">
+              <label>Bairro</label>
+              <input id="p-bairro" placeholder="Ex: Jundiaí" />
+            </div>
+          </div>
+          <div class="field full">
+            <label>Endereço / rua <span class="opt">(opcional, deixa a análise mais precisa)</span></label>
+            <input id="p-endereco" placeholder="Ex: Av. Brasil, 1000" />
+          </div>
+          <button class="btn-primary" id="btn-ponto" type="submit">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 21l-4.35-4.35"/><circle cx="11" cy="11" r="7"/></svg>
+            Analisar ponto comercial
+          </button>
+          <div class="hint">Mostra concorrentes reais, fluxo de pessoas e veredito do ponto.</div>
+        </form>
+      </div>
     </div>
 
     <!-- DIREITA: resultado -->
     <div class="result">
       <div class="result-head">
         <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l3-3 3 3 4-5"/></svg></div>
-        <h2>Laudo de Precificação</h2>
+        <h2 id="result-title">Laudo de Precificação</h2>
         <span class="tag" id="result-tag">aguardando</span>
       </div>
       <div id="result-body">
@@ -377,10 +407,12 @@
     let busy = false;
 
     function switchTab(which) {
-      document.getElementById('tab-form').classList.toggle('active', which === 'form');
-      document.getElementById('tab-chat').classList.toggle('active', which === 'chat');
-      document.getElementById('pane-form').classList.toggle('active', which === 'form');
-      document.getElementById('pane-chat').classList.toggle('active', which === 'chat');
+      for (const t of ['form', 'chat', 'comercial']) {
+        document.getElementById('tab-' + t).classList.toggle('active', which === t);
+        document.getElementById('pane-' + t).classList.toggle('active', which === t);
+      }
+      const head = document.getElementById('result-title');
+      if (head) head.textContent = which === 'comercial' ? 'Análise de Ponto Comercial' : 'Laudo de Precificação';
       if (which === 'chat' && !document.getElementById('thread').dataset.init) {
         addMsg('agent', 'Olá! Sou o *Precifica Aí* 🏠\nDescreva o imóvel (tipo, cidade, bairro, m², quartos, vagas, estado) que eu pesquiso o mercado e gero o laudo.');
         document.getElementById('thread').dataset.init = '1';
@@ -450,6 +482,38 @@
       } finally {
         busy = false;
         document.getElementById('btn-avaliar').disabled = false;
+      }
+    }
+
+    async function analisarPonto(e) {
+      e.preventDefault();
+      if (busy) return;
+      const payload = {
+        ramo: document.getElementById('p-ramo').value.trim(),
+        cidade: document.getElementById('p-cidade').value.trim(),
+        bairro: document.getElementById('p-bairro').value.trim(),
+        endereco: document.getElementById('p-endereco').value.trim()
+      };
+      if (!payload.ramo || !payload.bairro) {
+        showError('Preencha o *ramo do cliente* e o *bairro*.');
+        return;
+      }
+      busy = true;
+      document.getElementById('btn-ponto').disabled = true;
+      showSpinner('Buscando concorrentes e geradores de movimento na região…');
+      try {
+        const res = await fetch('/api/ponto-comercial', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (data.error) showError(data.error);
+        else showLaudo(data.response);
+      } catch (err) {
+        showError('Erro de conexão. Tente novamente.');
+      } finally {
+        busy = false;
+        document.getElementById('btn-ponto').disabled = false;
       }
     }
 
