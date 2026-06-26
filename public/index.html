@@ -213,6 +213,28 @@
     .foot { text-align: center; padding: 22px; color: var(--muted2); font-size: 12px; border-top: 1px solid var(--line); }
     .foot b { color: var(--blue); font-weight: 700; }
 
+    /* Busca "melhor bairro" */
+    .searchbox { padding: 18px 20px 6px; }
+    .searchbox > label { display:block; font-size: 13px; font-weight: 700; color: var(--ink); margin-bottom: 8px; }
+    .searchrow { display: flex; gap: 8px; }
+    .searchrow input { flex: 1; }
+    .btn-search {
+      flex-shrink: 0; padding: 0 18px; border: none; border-radius: 12px;
+      background: var(--blue); color: #fff; font-weight: 700; font-size: 14px; cursor: pointer;
+      box-shadow: 0 6px 16px -6px rgba(1,62,248,.5);
+    }
+    .btn-search:hover { background: var(--blue-d); }
+    .btn-search:disabled { background: var(--muted2); box-shadow: none; cursor: not-allowed; }
+    .ou-sep { text-align: center; margin: 14px 20px 2px; position: relative; }
+    .ou-sep::before { content:''; position:absolute; top:50%; left:0; right:0; height:1px; background: var(--line); }
+    .ou-sep span { position: relative; background: var(--card); padding: 0 12px; color: var(--muted2); font-size: 12px; }
+    /* Mapa de concorrentes no laudo */
+    .laudo-map { width: 100%; border-radius: 14px; border: 1px solid var(--line); margin-bottom: 16px; display: block; }
+    /* Indicador de uso */
+    .uso-chip { font-size: 11px; color: var(--muted2); }
+    .uso-chip b { color: var(--ink); font-weight: 600; }
+    .uso-chip.alerta b { color: var(--warn); }
+
     /* ---------------- Responsive ---------------- */
     @media (max-width: 940px) {
       .wrap { grid-template-columns: 1fr; padding: 18px; }
@@ -350,6 +372,15 @@
 
       <!-- Ponto Comercial -->
       <div class="pane" id="pane-comercial">
+        <div class="searchbox">
+          <label>🔎 Pergunte: qual o melhor bairro para o negócio?</label>
+          <div class="searchrow">
+            <input id="q-pergunta" placeholder="Ex: quero abrir uma barbearia em Anápolis, qual o melhor bairro?"
+                   onkeydown="if(event.key==='Enter'){event.preventDefault();perguntarBairro();}" />
+            <button type="button" class="btn-search" id="btn-pergunta" onclick="perguntarBairro()">Buscar</button>
+          </div>
+        </div>
+        <div class="ou-sep"><span>ou analise um ponto específico</span></div>
         <form onsubmit="analisarPonto(event)">
           <div class="field full">
             <label>Ramo do cliente <span class="opt">(o que ele vende/faz)</span></label>
@@ -399,12 +430,21 @@
 
   <footer class="foot">
     Precifica Aí — desenvolvido por <b>Bens</b> · Inteligência Imobiliária · Goiás &nbsp;|&nbsp;
-    Laudo por amostragem, sem valor de documento oficial.
+    Laudo por amostragem, sem valor de documento oficial.<span id="uso-chip" class="uso-chip"></span>
   </footer>
 
   <script>
     const sessionId = 'web_' + Math.random().toString(36).substring(2, 10);
     let busy = false;
+
+    // Indicador de uso (custos) no rodapé
+    fetch('/api/uso').then(r => r.json()).then(u => {
+      if (u.scraperapi && !u.scraperapi.erro) {
+        const c = document.getElementById('uso-chip');
+        c.innerHTML = ` &nbsp;|&nbsp; Scraping: <b>${u.scraperapi.pct}%</b> usado (${u.scraperapi.restam} restantes/mês)`;
+        if (u.alertas && u.alertas.length) c.classList.add('alerta');
+      }
+    }).catch(() => {});
 
     function switchTab(which) {
       for (const t of ['form', 'chat', 'comercial']) {
@@ -432,11 +472,11 @@
       document.getElementById('result-body').innerHTML =
         '<div class="spinner"><div class="ring"></div><div><div class="s-ttl">Consultando o mercado…</div><div style="margin-top:6px">' + (msg || '') + '</div></div></div>';
     }
-    function showLaudo(text) {
+    function showLaudo(text, mapUrl) {
       document.getElementById('result-tag').textContent = '✓ concluído';
       const div = document.createElement('div');
       div.className = 'laudo';
-      div.innerHTML = fmt(text);
+      div.innerHTML = (mapUrl ? `<img class="laudo-map" src="${mapUrl}" alt="Mapa dos concorrentes">` : '') + fmt(text);
       const body = document.getElementById('result-body');
       body.innerHTML = '';
       body.appendChild(div);
@@ -508,12 +548,35 @@
         });
         const data = await res.json();
         if (data.error) showError(data.error);
-        else showLaudo(data.response);
+        else showLaudo(data.response, data.analise && data.analise.mapaDataUri);
       } catch (err) {
         showError('Erro de conexão. Tente novamente.');
       } finally {
         busy = false;
         document.getElementById('btn-ponto').disabled = false;
+      }
+    }
+
+    async function perguntarBairro() {
+      if (busy) return;
+      const pergunta = document.getElementById('q-pergunta').value.trim();
+      if (!pergunta) return;
+      busy = true;
+      document.getElementById('btn-pergunta').disabled = true;
+      showSpinner('Varrendo os bairros de Anápolis para o seu negócio…');
+      try {
+        const res = await fetch('/api/melhor-bairro', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pergunta })
+        });
+        const data = await res.json();
+        if (data.error) showError(data.error);
+        else showLaudo(data.response);
+      } catch (err) {
+        showError('Erro de conexão. Tente novamente.');
+      } finally {
+        busy = false;
+        document.getElementById('btn-pergunta').disabled = false;
       }
     }
 

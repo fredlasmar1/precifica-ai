@@ -52,7 +52,7 @@ async function placesNearby({ lat, lng, keyword, radius }) {
   }
 }
 
-/** Conta e resume concorrentes do ramo (nome, nota, nº avaliações). */
+/** Conta e resume concorrentes do ramo (nome, nota, nº avaliações, coords). */
 function resumirConcorrentes(results) {
   const reais = results.filter(r => r.business_status !== 'CLOSED_PERMANENTLY');
   const comNota = reais.filter(r => r.rating > 0);
@@ -63,7 +63,50 @@ function resumirConcorrentes(results) {
     .sort((a, b) => (b.user_ratings_total || 0) - (a.user_ratings_total || 0))
     .slice(0, 6)
     .map(r => ({ nome: r.name, nota: r.rating || null, avaliacoes: r.user_ratings_total || 0 }));
-  return { total: reais.length, notaMedia, top };
+  const pontos = reais
+    .map(r => r.geometry?.location)
+    .filter(l => l && l.lat && l.lng)
+    .slice(0, 15)
+    .map(l => [l.lat, l.lng]);
+  return { total: reais.length, notaMedia, top, pontos };
+}
+
+/** Mapa estático (Google) com o ponto do imóvel (azul) e concorrentes (vermelho). */
+async function gerarMapaEstatico(center, pontos) {
+  const apiKey = process.env.GOOGLE_PLACES_API_KEY;
+  if (!apiKey || !center) return null;
+  try {
+    const markers = [
+      `markers=color:0x013EF8|size:mid|${center[0]},${center[1]}`,
+      ...(pontos || []).slice(0, 12).map(p => `markers=color:red|size:small|${p[0]},${p[1]}`)
+    ].join('&');
+    const url = `https://maps.googleapis.com/maps/api/staticmap?center=${center[0]},${center[1]}&zoom=15&size=600x320&scale=2&${markers}&key=${apiKey}`;
+    const { data } = await axios.get(url, { responseType: 'arraybuffer', timeout: 12000 });
+    return `data:image/png;base64,${Buffer.from(data).toString('base64')}`;
+  } catch (err) {
+    console.warn('[Mapa] erro:', err.message);
+    return null;
+  }
+}
+
+/** Extrai o ramo do negócio de uma pergunta em linguagem natural (via IA). */
+async function extrairRamo(pergunta) {
+  const client = getOpenAI();
+  const txt = String(pergunta || '').trim();
+  if (!txt) return null;
+  if (!client) return txt; // sem IA, usa o texto cru
+  try {
+    const r = await client.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: [
+        { role: 'system', content: 'Extraia o ramo/segmento de negócio mencionado. Responda APENAS com o ramo em 1 a 3 palavras, minúsculo, sem pontuação. Se não houver, responda "nenhum".' },
+        { role: 'user', content: txt }
+      ],
+      temperature: 0, max_tokens: 12
+    });
+    const ramo = r.choices[0].message.content.trim().toLowerCase().replace(/[.?!]/g, '');
+    return ramo === 'nenhum' ? null : ramo;
+  } catch { return txt; }
 }
 
 /**
@@ -144,8 +187,13 @@ async function analisarPontoComercial(lat, lng, ramo, ctx = {}) {
     demanda: { populacao, pibPerCapita },
   };
 
-  // Parecer profissional via IA (não bloqueia o resultado se falhar)
-  analise.parecer = await gerarParecerIA(analise);
+  // Parecer (IA) e mapa estático em paralelo — não bloqueiam se falharem
+  const [parecer, mapaDataUri] = await Promise.all([
+    gerarParecerIA(analise),
+    gerarMapaEstatico([lat, lng], conc500.pontos)
+  ]);
+  analise.parecer = parecer;
+  analise.mapaDataUri = mapaDataUri;
 
   return analise;
 }
@@ -225,4 +273,102 @@ function formatarRelatorioComercial(a) {
   return t;
 }
 
-module.exports = { analisarPontoComercial, formatarRelatorioComercial };
+// ─── RECOMENDADOR: "melhor bairro para o seu negócio" ────────────────
+const { getBaseVenda } = require('./baseAnapolis');
+
+const BAIRROS_COORDS = {
+  'Jundiaí': [-16.33371, -48.93792],
+  'Anápolis City': [-16.32657, -48.92784],
+  'Cidade Jardim': [-16.31494, -48.94422],
+  'Bairro JK': [-16.34701, -48.93627],
+  'Jardim Europa': [-16.337, -48.92658],
+  'Maracanã': [-16.31313, -48.95682],
+  'Vila Jaiara': [-16.28508, -48.97136],
+  'Vila Santa Isabel': [-16.306, -48.94674],
+  'Parque Brasília': [-16.32451, -48.91399],
+  'Vila Góis': [-16.33994, -48.95934],
+  'Centro': [-16.32865, -48.95343],
+  'Jardim Alexandrina': [-16.29764, -48.96186],
+  'Vila Brasil': [-16.32726, -48.96879],
+  'Recanto do Sol': [-16.28281, -48.9291],
+};
+
+/** Análise leve de um bairro (2 chamadas Places) para ranquear. */
+async function analiseRapidaBairro(nome, lat, lng, ramo) {
+  const [conc, superm] = await Promise.all([
+    placesNearby({ lat, lng, keyword: ramo, radius: 1000 }),
+    placesNearby({ lat, lng, keyword: 'supermercado mercado', radius: 1000 }),
+  ]);
+  const concorrentes = resumirConcorrentes(conc.results).total;
+  const movimento = resumirConcorrentes(superm.results).total;
+  const renda = getBaseVenda('Anápolis', nome).m2 || 4000; // poder de compra (proxy)
+
+  let score = 50;
+  const fatores = [];
+  if (concorrentes <= 2)       { score += 5;  fatores.push('pouca concorrência (mercado aberto)'); }
+  else if (concorrentes <= 8)  { score += 18; fatores.push('concorrência saudável (demanda validada, sem saturar)'); }
+  else if (concorrentes <= 15) { score += 8;  fatores.push('concorrência moderada'); }
+  else                         { score -= 10; fatores.push('mercado saturado'); }
+
+  score += Math.min(movimento, 8) * 2.5; // movimento/fluxo
+  if (movimento >= 6) fatores.push('alto fluxo comercial');
+
+  if (renda >= 6000)      { score += 12; fatores.push('alto poder de compra'); }
+  else if (renda >= 5000) { score += 8;  fatores.push('bom poder de compra'); }
+  else if (renda >= 4000) { score += 4; }
+
+  return { bairro: nome, score: Math.max(0, Math.min(100, Math.round(score))), concorrentes, movimento, renda, fatores };
+}
+
+/**
+ * Varre os principais bairros de Anápolis e ranqueia os melhores para o ramo.
+ * @param {string} ramo — ramo do negócio (ex: "barbearia")
+ * @returns { ramo, ranking:[...], resposta (texto IA) }
+ */
+async function melhorBairro(ramo) {
+  if (!process.env.GOOGLE_PLACES_API_KEY) return { erro: 'Busca indisponível (Google Places não configurado).' };
+  const ramoLimpo = String(ramo || '').trim();
+  if (!ramoLimpo) return { erro: 'Diga o ramo do negócio (ex: barbearia, padaria, academia).' };
+
+  const entradas = Object.entries(BAIRROS_COORDS);
+  const ranking = (await Promise.all(
+    entradas.map(([nome, [lat, lng]]) => analiseRapidaBairro(nome, lat, lng, ramoLimpo).catch(() => null))
+  )).filter(Boolean).sort((a, b) => b.score - a.score);
+
+  const resposta = await gerarRespostaMelhorBairro(ramoLimpo, ranking);
+  return { ramo: ramoLimpo, ranking, resposta };
+}
+
+async function gerarRespostaMelhorBairro(ramo, ranking) {
+  const client = getOpenAI();
+  const top = ranking.slice(0, 5).map(r => ({ bairro: r.bairro, score: r.score, concorrentes: r.concorrentes, fluxo: r.movimento }));
+  if (!client) return null;
+  try {
+    const r = await client.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: [
+        { role: 'system', content: 'Você é um consultor de pontos comerciais de uma imobiliária corporativa em Anápolis-GO. Responda de forma direta, profissional e prática.' },
+        { role: 'user', content: `Um cliente quer abrir um(a) "${ramo}" em Anápolis e pergunta qual o melhor bairro. Com base neste ranking (score 0-100, nº de concorrentes e fluxo comercial por bairro), responda em 3-5 frases qual(is) bairro(s) recomendar e por quê, citando os 2-3 melhores e uma ressalva prática. Ranking:\n${JSON.stringify(top)}` }
+      ],
+      temperature: 0.5, max_tokens: 300
+    });
+    return r.choices[0].message.content.trim();
+  } catch (err) { console.warn('[MelhorBairro IA] erro:', err.message); return null; }
+}
+
+function formatarMelhorBairro(d) {
+  if (!d || d.erro) return `⚠️ ${d?.erro || 'Não foi possível analisar.'}`;
+  let t = `🏆 *MELHOR BAIRRO PARA: ${d.ramo.toUpperCase()}*\n`;
+  t += `━━━━━━━━━━━━━━━━━━━━━\n`;
+  t += `📍 Anápolis-GO · ${d.ranking.length} bairros analisados\n\n`;
+  if (d.resposta) t += `💬 *Recomendação Bens:*\n${d.resposta}\n\n`;
+  t += `📊 *Ranking:*\n`;
+  d.ranking.forEach((r, i) => {
+    const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`;
+    t += `${medal} *${r.bairro}* — ${r.score}/100  (${r.concorrentes} concorrentes, fluxo ${r.movimento})\n`;
+  });
+  t += `\n_Análise por amostragem (Google Maps). Indicativa, para apoio à decisão._`;
+  return t;
+}
+
+module.exports = { analisarPontoComercial, formatarRelatorioComercial, melhorBairro, formatarMelhorBairro, extrairRamo };

@@ -191,6 +191,48 @@ router.post('/ponto-comercial', async (req, res) => {
   }
 });
 
+/**
+ * POST /api/melhor-bairro
+ * Recomendador: varre os bairros de Anápolis e ranqueia os melhores para o ramo.
+ * Aceita { ramo } direto OU { pergunta } em linguagem natural ("qual o melhor
+ * bairro para uma barbearia?").
+ */
+router.post('/melhor-bairro', async (req, res) => {
+  const b = req.body || {};
+  try {
+    const { melhorBairro, formatarMelhorBairro, extrairRamo } = require('../data/pontoComercial');
+    let ramo = String(b.ramo || '').trim();
+    if (!ramo && b.pergunta) ramo = await extrairRamo(b.pergunta);
+    if (!ramo) return res.status(400).json({ error: 'Não identifiquei o ramo. Ex: "qual o melhor bairro para uma barbearia?"' });
+
+    const d = await melhorBairro(ramo);
+    if (d.erro) return res.status(422).json({ error: d.erro });
+    return res.json({ type: 'melhor-bairro', response: formatarMelhorBairro(d), ramo, ranking: d.ranking });
+  } catch (err) {
+    console.error('[MelhorBairro API] Erro:', err);
+    return res.status(500).json({ error: '⚠️ Erro ao buscar o melhor bairro. Tente novamente.', debug: err.message });
+  }
+});
+
+/**
+ * GET /api/uso — status de consumo das APIs (para monitorar custos).
+ */
+router.get('/uso', async (req, res) => {
+  const axios = require('axios');
+  const out = { scraperapi: null, alertas: [] };
+  try {
+    const k = process.env.SCRAPER_API_KEY;
+    if (k) {
+      const { data } = await axios.get(`http://api.scraperapi.com/account?api_key=${k}`, { timeout: 12000 });
+      const usados = data.requestCount, limite = data.requestLimit, restam = data.creditsLeft;
+      const pct = limite ? Math.round((usados / limite) * 100) : 0;
+      out.scraperapi = { usados, limite, restam, pct };
+      if (restam < limite * 0.1) out.alertas.push(`ScraperAPI: só ${restam} buscas restantes (${pct}% usado)`);
+    }
+  } catch (e) { out.scraperapi = { erro: e.message }; }
+  res.json(out);
+});
+
 function gerarLaudo(dados, resultado) {
   const { tipo, finalidade, cidade, bairro, endereco, metragem, quartos, vagas } = dados;
   const {
