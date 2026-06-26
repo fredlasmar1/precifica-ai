@@ -99,7 +99,7 @@ async function extrairRamo(pergunta) {
     const r = await client.chat.completions.create({
       model: 'gpt-4o-mini',
       messages: [
-        { role: 'system', content: 'Extraia o ramo/segmento de negócio mencionado. Responda APENAS com o ramo em 1 a 3 palavras, minúsculo, sem pontuação. Se não houver, responda "nenhum".' },
+        { role: 'system', content: 'Você recebe a frase de um empreendedor e deve dizer QUAL ramo de comércio/serviço ele quer abrir. Responda só o ramo, 1 a 3 palavras minúsculas, sem pontuação. Ex: "quero abrir uma pizzaria no centro" -> pizzaria. Se não houver ramo, responda nenhum.' },
         { role: 'user', content: txt }
       ],
       temperature: 0, max_tokens: 12
