@@ -1,4 +1,11 @@
 const axios = require('axios');
+const OpenAI = require('openai');
+
+let _openai = null;
+function getOpenAI() {
+  if (!_openai && process.env.OPENAI_API_KEY) _openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  return _openai;
+}
 
 /**
  * ANÁLISE DE PONTO COMERCIAL — "Buscador Inteligente Comercial"
@@ -128,7 +135,7 @@ async function analisarPontoComercial(lat, lng, ramo, ctx = {}) {
   else if (score >= 45) { veredito = 'Ponto regular'; emoji = '🟡'; }
   else                  { veredito = 'Ponto arriscado / saturado'; emoji = '🔴'; }
 
-  return {
+  const analise = {
     ramo: ramoLimpo,
     bairro: ctx.bairro, cidade: ctx.cidade,
     score, veredito, emoji, motivos,
@@ -136,6 +143,42 @@ async function analisarPontoComercial(lat, lng, ramo, ctx = {}) {
     movimento: { score: Math.round(movimentoScore), geradores: geradoresRes.map(g => ({ label: g.label, qtd: g.qtd, capado: g.capado })) },
     demanda: { populacao, pibPerCapita },
   };
+
+  // Parecer profissional via IA (não bloqueia o resultado se falhar)
+  analise.parecer = await gerarParecerIA(analise);
+
+  return analise;
+}
+
+/**
+ * Gera um parecer profissional curto (2-4 frases) via IA a partir dos dados
+ * já calculados. Usa gpt-4o-mini (barato, ~US$0,002/parecer). Falha = null.
+ */
+async function gerarParecerIA(a) {
+  const client = getOpenAI();
+  if (!client) return null;
+  const resumo = {
+    ramo: a.ramo, bairro: a.bairro, score: a.score, veredito: a.veredito,
+    concorrentes_500m: a.concorrencia.em500m.total + (a.concorrencia.capado500 ? '+' : ''),
+    nota_media_concorrencia: a.concorrencia.em500m.notaMedia,
+    geradores_movimento: a.movimento.geradores.map(g => `${g.label}:${g.qtd}`).join(', '),
+    pib_per_capita: a.demanda.pibPerCapita
+  };
+  try {
+    const r = await client.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: [
+        { role: 'system', content: 'Você é um consultor sênior de pontos comerciais de uma imobiliária corporativa em Anápolis-GO. Escreva pareceres objetivos, profissionais e diretos, sem enrolação.' },
+        { role: 'user', content: `Com base nestes dados de análise de ponto, escreva um parecer profissional curto (2 a 4 frases) recomendando ou não o ponto para o ramo do cliente, citando o principal motivo e uma orientação prática (ex: diferenciação, público, localização). Não repita os números crus, interprete-os. Dados:\n${JSON.stringify(resumo)}` }
+      ],
+      temperature: 0.5,
+      max_tokens: 220
+    });
+    return r.choices[0].message.content.trim().replace(/^parecer:\s*/i, '');
+  } catch (err) {
+    console.warn('[Parecer IA] erro:', err.message);
+    return null;
+  }
 }
 
 /** Monta o relatório em texto (mesmo estilo dos laudos, com *negrito*). */
@@ -173,6 +216,11 @@ function formatarRelatorioComercial(a) {
   t += `🔎 *Por que essa nota:*\n`;
   a.motivos.forEach(m => { t += `• ${m}\n`; });
   t += `\n`;
+
+  if (a.parecer) {
+    t += `💬 *Parecer Bens:*\n${a.parecer}\n\n`;
+  }
+
   t += `_Análise por amostragem de negócios listados no Google Maps. Indicativa, para apoio à decisão._`;
   return t;
 }
