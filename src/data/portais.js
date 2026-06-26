@@ -33,11 +33,11 @@ async function buscarComparativos(dados) {
   const cached = cache.get(cacheKey);
   if (cached) return cached;
 
-  // Busca real via ScraperAPI. VivaReal é a fonte mais rica (JSON-LD com 30
-  // anúncios reais por página). OLX/ZAP/Imovelweb ficam disponíveis mas
-  // desativados por ora (parsers antigos + economia de créditos do proxy).
+  // Busca real via ScraperAPI nos dois maiores portais (JSON-LD, ~30 anúncios
+  // cada). OLX/Imovelweb seguem disponíveis mas desativados (parsers antigos).
   const resultados = await Promise.allSettled([
-    buscarVivaReal(dados)
+    buscarVivaReal(dados),
+    buscarZAP(dados)
   ]);
 
   // Combina imóveis de todos que retornaram
@@ -56,7 +56,17 @@ async function buscarComparativos(dados) {
     return null; // sem dados — precificador vai usar GPT-4o
   }
 
-  const resultado = montarResultado(todosImoveis, fontesUsadas, dados);
+  // Dedup: VivaReal e ZAP são do mesmo grupo e repetem o mesmo anúncio.
+  const vistos = new Set();
+  const unicos = todosImoveis.filter(i => {
+    const k = `${i.area}_${i.preco}`;
+    if (vistos.has(k)) return false;
+    vistos.add(k);
+    return true;
+  });
+  console.log(`[Portais] ${todosImoveis.length} anúncios (${fontesUsadas.join('+')}) → ${unicos.length} únicos`);
+
+  const resultado = montarResultado(unicos, fontesUsadas, dados);
   cache.set(cacheKey, resultado);
   return resultado;
 }
@@ -175,7 +185,7 @@ async function buscarVivaReal(dados) {
     const html = await fetchHtml(url, 'VivaReal');
 
     // Extrai anúncios reais do JSON-LD (ItemList de House/Apartment)
-    let imoveis = extrairListingsVivaRealJsonLD(html);
+    let imoveis = extrairListingsJsonLD(html, 'VivaReal');
     if (imoveis.length > 0) {
       console.log(`[VivaReal] ${imoveis.length} anúncios reais extraídos (JSON-LD)`);
     }
@@ -217,65 +227,21 @@ async function buscarZAP(dados) {
   try {
     const { tipo, finalidade, cidade, bairro } = dados;
 
-    const tipoMap = { 'casa': 'casas', 'apartamento': 'apartamentos', 'terreno': 'terrenos', 'comercial': 'comercio-e-industria' };
-    const tipoSlug = tipoMap[tipo] || 'imoveis';
+    const tipoMap = { 'casa': 'casas', 'apartamento': 'apartamentos', 'terreno': 'lotes-terrenos', 'comercial': 'imoveis-comerciais' };
+    const tipoSlug = tipoMap[tipo] || 'casas';
     const finalidadeSlug = finalidade === 'aluguel' ? 'aluguel' : 'venda';
     const cidadeSlug = slugify(cidade);
     const bairroSlug = slugify(bairro);
 
-    const url = `https://www.zapimoveis.com.br/${finalidadeSlug}/${tipoSlug}/go+${cidadeSlug}+${bairroSlug}/`;
+    // ZAP: /<finalidade>/<tipo>/go+<cidade>++<bairro>/
+    const url = `https://www.zapimoveis.com.br/${finalidadeSlug}/${tipoSlug}/go+${cidadeSlug}++${bairroSlug}/`;
 
     const html = await fetchHtml(url, 'ZAP');
-    const imoveis = [];
-
-    // Next.js
-    const nextData = extrairNextDataGenerico(html);
-    if (nextData) {
-      const candidatos = [
-        nextData?.props?.pageProps?.fetchListing?.search?.result?.listings,
-        nextData?.props?.pageProps?.listings,
-        nextData?.props?.pageProps?.initialState?.results?.listings,
-        nextData?.props?.pageProps?.searchResult?.listings
-      ];
-      const listings = candidatos.find(l => Array.isArray(l) && l.length > 0);
-      if (listings) {
-        for (const item of listings.slice(0, 20)) {
-          const listing = item.listing || item;
-          const pricingInfo = (listing.pricingInfos && listing.pricingInfos[0]) || listing.pricingInfo || {};
-          const preco = parseFloat(pricingInfo.price || pricingInfo.rentalTotalPrice || 0);
-          const area = parseFloat(listing.usableAreas?.[0] || listing.totalAreas?.[0] || 0);
-          if (preco && preco > 10000) {
-            imoveis.push({ preco: Math.round(preco), area: area || null, precoM2: area ? Math.round(preco / area) : null });
-          }
-          if (imoveis.length >= 10) break;
-        }
-      }
-    }
-
-    // Fallback HTML
-    if (imoveis.length === 0) {
-      const $ = cheerio.load(html);
-      const selectors = ['[data-cy="rp-property-cd"]', '[data-type="property"]', 'article[data-position]'];
-      let cards = $();
-      for (const sel of selectors) {
-        cards = $(sel);
-        if (cards.length > 0) break;
-      }
-      cards.each((i, el) => {
-        if (i >= 10) return false;
-        const $el = $(el);
-        const precoText = $el.find('[class*="price"]').first().text().trim();
-        const areaText = $el.find('[class*="area"]').first().text().trim();
-        const preco = extrairNumero(precoText);
-        const area = extrairNumero(areaText);
-        if (preco && preco > 10000) {
-          imoveis.push({ preco, area, precoM2: area ? Math.round(preco / area) : null });
-        }
-      });
-    }
+    const imoveis = extrairListingsJsonLD(html, 'ZAP');
+    if (imoveis.length > 0) console.log(`[ZAP] ${imoveis.length} anúncios reais extraídos (JSON-LD)`);
 
     if (imoveis.length === 0) return null;
-    return { fonte: 'ZAP Imóveis', imoveis };
+    return { fonte: 'ZAP', imoveis };
 
   } catch (err) {
     console.warn('[ZAP] Erro:', err.message);
@@ -414,11 +380,32 @@ function extrairAreaTexto(texto) {
   return null;
 }
 
+function num(v) {
+  if (v == null) return null;
+  const n = parseFloat(String(v).replace(/[^\d.]/g, ''));
+  return isNaN(n) ? null : n;
+}
+
+/** Extrai o preço de um campo offers (objeto, array, ou com priceSpecification). */
+function extrairOfferPrice(offers) {
+  if (!offers) return null;
+  const arr = Array.isArray(offers) ? offers : [offers];
+  for (const o of arr) {
+    if (!o) continue;
+    if (o.price) return num(o.price);
+    const ps = o.priceSpecification?.price || o.potentialAction?.priceSpecification?.price;
+    if (ps) return num(ps);
+  }
+  return null;
+}
+
 /**
- * Extrai anúncios reais do JSON-LD do VivaReal (ItemList de House/Apartment).
- * Cada item traz área e quartos no name e o preço na URL (...260m2-venda-RS650000-id...).
+ * Extrai anúncios reais do JSON-LD (ItemList de House/Apartment) — funciona
+ * para VivaReal e ZAP (mesmo grupo, mesma estrutura schema.org).
+ * Preço: offers.price (estruturado) → URL (...RS650000...) → name (R$ ...).
+ * Área: floorSize.value → name "X m²" → URL "Xm2".  Quartos: numberOfBedrooms.
  */
-function extrairListingsVivaRealJsonLD(html) {
+function extrairListingsJsonLD(html, fonte) {
   const imoveis = [];
   const re = /<script[^>]*application\/ld\+json[^>]*>([\s\S]*?)<\/script>/gi;
   let m;
@@ -432,18 +419,18 @@ function extrairListingsVivaRealJsonLD(html) {
         const item = el.item || {};
         const name = item.name || '';
         const url = item.url || '';
-        const ma = name.match(/(\d+)\s*m²/) || url.match(/(\d+)m2/);
-        const mp = url.match(/RS(\d+)/i) || name.match(/R\$\s?([\d.]+)/);
-        const mq = name.match(/(\d+)\s*quartos?/i);
-        if (!ma || !mp) continue;
-        const area = parseInt(ma[1], 10);
-        const preco = parseInt(String(mp[1]).replace(/\./g, ''), 10);
-        if (area > 0 && preco > 10000) {
-          imoveis.push({
-            preco, area, precoM2: Math.round(preco / area),
-            quartos: mq ? parseInt(mq[1], 10) : null,
-            url, fonte: 'VivaReal'
-          });
+
+        let area = num(item.floorSize?.value);
+        if (!area) { const ma = name.match(/(\d+)\s*m²/) || url.match(/(\d+)m2/); area = ma ? parseInt(ma[1], 10) : null; }
+
+        let preco = extrairOfferPrice(item.offers);
+        if (!preco) { const mp = url.match(/RS(\d+)/i) || name.match(/R\$\s?([\d.]+)/); preco = mp ? parseInt(String(mp[1]).replace(/\./g, ''), 10) : null; }
+
+        let quartos = item.numberOfBedrooms != null ? num(item.numberOfBedrooms) : null;
+        if (quartos == null) { const mq = name.match(/(\d+)\s*quartos?/i); quartos = mq ? parseInt(mq[1], 10) : null; }
+
+        if (area > 0 && preco > 1000) {
+          imoveis.push({ preco: Math.round(preco), area: Math.round(area), precoM2: Math.round(preco / area), quartos, url, fonte });
         }
       }
     }
@@ -459,8 +446,18 @@ function mediana(arr) {
 }
 
 function montarResultado(imoveis, fontes, dados = {}) {
-  const { metragem, tipo } = dados;
-  let usados = imoveis.filter(i => i.precoM2 > 0);
+  const { metragem, tipo, finalidade } = dados;
+
+  // Filtro de sanidade: descarta R$/m² absurdo (erro de parsing / anúncio quebrado)
+  const faixas = {
+    venda:   { terreno: [80, 8000], default: [800, 25000] },
+    aluguel: { terreno: [1, 60],    default: [5, 200] }
+  };
+  const fx = faixas[finalidade] || faixas.venda;
+  const lim = tipo === 'terreno' ? fx.terreno : fx.default;
+  let usados = imoveis.filter(i => i.precoM2 >= lim[0] && i.precoM2 <= lim[1]);
+  const descartados = imoveis.length - usados.length;
+  if (descartados > 0) console.log(`[Sanidade] ${descartados} anúncio(s) fora da faixa R$${lim[0]}-${lim[1]}/m² descartado(s)`);
 
   // Filtro por área similar ao imóvel avaliado (amostragem comparável)
   if (metragem > 0 && usados.length >= 5) {

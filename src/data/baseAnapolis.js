@@ -22,9 +22,11 @@ const { getMultiplicadorBairro } = require('./bairros');
 const { PGV_TERRENO_VENAL } = require('./pgvAnapolis');
 
 // ── Constantes de calibração (ajustáveis) ────────────────────────────
-const ALUGUEL_YIELD_MES = 0.0042;  // 0,42%/mês do valor de venda (yield bruto interior GO)
+const ALUGUEL_YIELD_MES = 0.0040;  // 0,40%/mês do valor de venda (calibrado c/ aluguéis reais
+                                   // VivaReal jun/2026: Jundiaí ~0,43%, Maracanã ~0,32%)
 const LOTE_FRACAO = 0.16;          // terreno ≈ 16% do R$/m² construído (fallback sem PGV)
-const PGV_FATOR_MERCADO = 2.1;     // venal (ITBI) × isto ≈ valor de mercado do terreno
+const PGV_FATOR_MERCADO = 1.85;    // venal (ITBI) × isto ≈ mercado. Calibrado c/ terrenos reais
+                                   // VivaReal jun/2026: Jundiaí 1,63x, Maracanã 1,98x, A.City 2,15x
 const BASE_DERIVADA_M2 = 4000;     // base p/ bairros fora da EBM = mult × isto.
                                    // Calibrado p/ que bairros NÃO listados na EBM (fora do top-10)
                                    // fiquem abaixo do piso EBM (4.400) salvo mult claramente premium.
