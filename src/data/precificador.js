@@ -3,6 +3,7 @@ const { getMultiplicadorBairro, getBairrosVizinhos } = require('./bairros');
 // Google Places removido — OSM é mais preciso e não inventa dados
 const { estimarPrecoComIA, estimarPrecoPredio } = require('./analistaIA');
 const { getAncora } = require('./baseAnapolis');
+const { gerarFichaPredio, formatarFichaPredio } = require('./fichaPredio');
 const { validarEndereco } = require('./geoValidacao');
 const { perfilarLocal, gerarContextoGuru } = require('./guruAnapolis');
 const db = require('./database');
@@ -595,8 +596,18 @@ async function calcularPreco(dadosImovel) {
     });
   } catch {}
 
+  // ─── FICHA DO PRÉDIO (apartamento com condomínio informado) ────────
+  let fichaPredio = null, fichaPredioTexto = null;
+  if (condominio && tipo === 'apartamento') {
+    try {
+      fichaPredio = await gerarFichaPredio({ condominio, bairro, cidade, valorMercado: precoRecomendado });
+      fichaPredioTexto = formatarFichaPredio(fichaPredio);
+    } catch (e) { console.warn('[FichaPredio] erro:', e.message); }
+  }
+
   return {
     precoMinimo, precoRecomendado, precoMaximo,
+    fichaPredio, fichaPredioTexto,
     precoM2Mercado, precoM2Imovel: precoM2Final,
     precoAlqMercado: tipo === 'rural' ? Math.round(precoM2Mercado * 48400) : null,
     precoAlqImovel:  tipo === 'rural' ? Math.round(precoM2Final   * 48400) : null,

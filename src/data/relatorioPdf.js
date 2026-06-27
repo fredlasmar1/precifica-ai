@@ -168,6 +168,30 @@ function gerarRelatorioPdf(dados, resultado, opts = {}) {
         resultado.ajustesAplicados.forEach((aj) => { ensure(14); doc.font('Helvetica').fontSize(8).fillColor(INK).text(`•  ${clean(aj)}`, LX + 4, y, { width: W - 8 }); y = doc.y + 3; });
         y += 6;
       }
+
+      // ── FICHA DO PRÉDIO ──
+      const fp = resultado.fichaPredio;
+      if (fp) {
+        band(`FICHA DO PRÉDIO — ${String(fp.condominio || '').toUpperCase()}`);
+        const linhas = [];
+        if (fp.endereco) linhas.push(['Endereço', fp.endereco]);
+        if (fp.cnpj) linhas.push(['CNPJ (público)', fp.cnpj]);
+        if (fp.padrao) linhas.push(['Padrão', fp.padrao]);
+        if (fp.lazer && fp.lazer.length) linhas.push(['Lazer', fp.lazer.slice(0, 8).join(', ')]);
+        if (fp.condominioMensal) linhas.push(['Condomínio/mês', typeof fp.condominioMensal === 'number' ? brl(fp.condominioMensal) : String(fp.condominioMensal)]);
+        if (fp.iptu) linhas.push(['IPTU/ano', `${brl(fp.iptu)} (${fp.iptuFonte})`]);
+        if (fp.perfilUnidades) linhas.push(['Unidades', fp.perfilUnidades]);
+        const dd = fp.processos;
+        if (dd && dd.disponivel) linhas.push(['Processos (CNPJ do condomínio)', dd.total > 0 ? `${dd.total} encontrado(s) — verificar antes de fechar` : 'nada consta']);
+        else if (fp.cnpj) linhas.push(['Processos', `due diligence indisponível (${(dd && dd.motivo) || 'sem DirectData'})`]);
+        linhas.forEach(([k, v]) => {
+          ensure(14);
+          doc.font('Helvetica-Bold').fontSize(8).fillColor(INK).text(`${k}: `, LX + 4, y, { continued: true, width: W - 8 });
+          doc.font('Helvetica').fontSize(8).fillColor(INK).text(clean(String(v)));
+          y = doc.y + 3;
+        });
+        y += 6;
+      }
     } else {
       // ── VERSÃO CLIENTE ──
       band('COMO CHEGAMOS NESSE VALOR');

@@ -359,7 +359,9 @@ function gerarLaudo(dados, resultado) {
     laudo += '\n';
   }
 
-  laudo += `📋 *Fontes:* ${(fontesConsultadas || []).join(' | ')}\n`;
+  if (resultado.fichaPredioTexto) laudo += `\n${resultado.fichaPredioTexto}`;
+
+  laudo += `\n📋 *Fontes:* ${(fontesConsultadas || []).join(' | ')}\n`;
   laudo += `_Avaliação gerada por PrecificaAI_\n\n`;
   laudo += `⚠️ _Este laudo é por amostragem/aproximação, baseado na média dos valores publicados em sites e portais de imóveis. Válido somente para simples consulta e sem valor de documento oficial._`;
   return laudo;
