@@ -20,7 +20,7 @@ async function dossiePredio(condominio, bairro, cidade) {
 Retorne SOMENTE um JSON com (campos sem dado confirmado = null):
 {
   "endereco": "endereço completo do prédio",
-  "cnpj": "CNPJ do condomínio no formato XX.XXX.XXX/XXXX-XX (informação pública)",
+  "cnpj": "CNPJ do condomínio no formato XX.XXX.XXX/XXXX-XX — busque em bases públicas (Receita Federal, Econodata, CNPJ.biz, Solutudo, consulta-empresa). É informação PÚBLICA. Se realmente não achar, null",
   "valorCondominioMensal": "faixa ou valor típico do condomínio mensal em R$ (de anúncios reais)",
   "iptuAnual": número (valor do IPTU anual em R$ citado em anúncios, se houver),
   "padrao": "alto / médio-alto / médio / popular",
@@ -46,10 +46,15 @@ Use SOMENTE dados reais e confirmados em ${cidade}-GO. NUNCA invente CNPJ nem va
 }
 
 function cnpjValido(c) { return String(c || '').replace(/\D/g, '').length === 14; }
+// Remove marcadores de citação da Perplexity ([1], [2][3]...) e espaços duplos
+function semCit(s) { return s == null ? s : String(s).replace(/\s*\[\d+\](\[\d+\])*/g, '').replace(/\s{2,}/g, ' ').trim(); }
 
 async function gerarFichaPredio({ condominio, bairro, cidade, valorMercado }) {
   if (!condominio) return null;
   const d = (await dossiePredio(condominio, bairro, cidade)) || {};
+  // limpa marcadores de citação dos campos de texto
+  ['endereco', 'padrao', 'perfilUnidades', 'valorCondominioMensal'].forEach(k => { if (typeof d[k] === 'string') d[k] = semCit(d[k]); });
+  if (Array.isArray(d.lazer)) d.lazer = d.lazer.map(semCit);
 
   // IPTU: prioriza o de anúncio; senão estima
   let iptu = null, iptuFonte = null;
