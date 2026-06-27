@@ -28,6 +28,12 @@ async function handleTelegram(req, res) {
 
     console.log(`[Telegram] ${chatId}: ${text.substring(0, 60)}`);
 
+    // Comando /meuid — devolve o chat ID (para ativar alertas de uso)
+    if (text === '/meuid' || text === '/id') {
+      await enviar(chatId, `🆔 Seu chat ID é: \`${chatId}\`\n\nEnvie esse número para o administrador para ativar os alertas de uso só para você.`);
+      return;
+    }
+
     // Comando /start
     if (text === '/start') {
       clearSession(sessionId);

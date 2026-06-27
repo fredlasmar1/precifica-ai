@@ -62,6 +62,16 @@ app.post('/api/guru/feedback', async (req, res) => {
   catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// Alertas de uso (Telegram) — envia teste só p/ o ALERT_CHAT_ID
+const { iniciarAlertas, checkUsoEAlertar, enviarTelegram } = require('./data/alertas');
+app.post('/api/alerta-teste', async (req, res) => {
+  const chatId = process.env.ALERT_CHAT_ID;
+  if (!chatId) return res.status(400).json({ error: 'ALERT_CHAT_ID não configurado.' });
+  const ok = await enviarTelegram(chatId, '✅ *Precifica Aí* — alertas de uso ativados! Você receberá aqui um aviso quando o consumo de scraping estiver acabando. (mensagem de teste)');
+  res.json({ ok, chatId });
+});
+app.get('/api/alerta-check', async (req, res) => { await checkUsoEAlertar(); res.json({ ok: true }); });
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, async () => {
   console.log(`✅ Precifica AI rodando na porta ${PORT}`);
@@ -72,4 +82,5 @@ app.listen(PORT, async () => {
   } catch (err) {
     console.error('[DB] Falha ao inicializar:', err.message);
   }
+  iniciarAlertas();
 });
