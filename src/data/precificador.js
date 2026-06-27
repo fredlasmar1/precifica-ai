@@ -1,7 +1,7 @@
 const { buscarComparativos } = require('./portais');
 const { getMultiplicadorBairro, getBairrosVizinhos } = require('./bairros');
 // Google Places removido — OSM é mais preciso e não inventa dados
-const { estimarPrecoComIA } = require('./analistaIA');
+const { estimarPrecoComIA, estimarPrecoPredio } = require('./analistaIA');
 const { getAncora } = require('./baseAnapolis');
 const { validarEndereco } = require('./geoValidacao');
 const { perfilarLocal, gerarContextoGuru } = require('./guruAnapolis');
@@ -269,6 +269,45 @@ async function calcularPreco(dadosImovel) {
     };
   }
 
+  // ─── BUSCA DEDICADA AO PRÉDIO (apartamento + condomínio informado) ──
+  // Modo inteligente: unidades do mesmo prédio são o melhor comparável.
+  // 3+ unidades → o prédio manda; 1-2 → mistura com o bairro; 0 → usa o bairro.
+  let notaPredio = null;
+  if (condominio && tipo === 'apartamento') {
+    try {
+      const predio = await estimarPrecoPredio(dadosImovel);
+      const compsPredio = (predio && !predio.suspeitaFabricacao) ? (predio.comparativos || []) : [];
+      if (compsPredio.length > 0) {
+        // marca os comparativos atuais como "bairro"
+        if (analiseIA?.comparativos) analiseIA.comparativos.forEach(c => { if (!c.origem) c.origem = 'bairro'; });
+        const nP = compsPredio.length;
+        if (nP >= 3) {
+          const mercadoBairro = precoM2Base;
+          precoM2Base = predio.precoMedioM2;
+          confiancaFonte = 'alta';
+          notaPredio = `Avaliação pelo PRÓPRIO PRÉDIO — ${nP} unidades anunciadas no ${condominio} (R$ ${predio.precoMedioM2.toLocaleString('pt-BR')}/m²)`;
+          analiseIA = {
+            precoMedioM2: predio.precoMedioM2, faixaMinM2: predio.faixaMinM2, faixaMaxM2: predio.faixaMaxM2,
+            anunciosAnalisados: nP,
+            comparativos: compsPredio.concat((analiseIA?.comparativos || []).slice(0, 6)),
+            confianca: 'alta', raciocinio: predio.raciocinio,
+            fonte: `Unidades do ${condominio}`, citacoes: predio.citacoes || []
+          };
+          console.log(`[Predio] ${nP} unidades no ${condominio} → R$${precoM2Base}/m² (era bairro R$${mercadoBairro})`);
+        } else {
+          // 1-2 unidades: mistura 60% prédio + 40% bairro
+          const mercadoBairro = precoM2Base;
+          precoM2Base = Math.round(0.6 * predio.precoMedioM2 + 0.4 * mercadoBairro);
+          notaPredio = `${nP} unidade(s) do prédio (${condominio}, R$ ${predio.precoMedioM2.toLocaleString('pt-BR')}/m²) combinada(s) com o bairro`;
+          if (analiseIA) analiseIA.comparativos = compsPredio.concat(analiseIA.comparativos || []);
+          console.log(`[Predio] ${nP} unidade(s) + bairro → R$${precoM2Base}/m²`);
+        }
+      } else {
+        notaPredio = `Nenhuma unidade do ${condominio} anunciada no momento — avaliação pelo bairro.`;
+      }
+    } catch (e) { console.warn('[Predio] integração:', e.message); }
+  }
+
   // ─── ÂNCORA DE CALIBRAÇÃO (EBM/Aderni-GO) ───────────────────────
   // Mantém o preço dentro da realidade do bairro. A amostra de mercado manda
   // quando é robusta; quando é fraca, fabricada ou destoa, puxa para a âncora.
@@ -319,6 +358,7 @@ async function calcularPreco(dadosImovel) {
 
   let precoM2Final = precoM2Base;
   let ajustesDescricao = ['Preço baseado em amostragem de mercado'];
+  if (notaPredio) ajustesDescricao.unshift(notaPredio);
   if (notaCalibracao) ajustesDescricao.push(notaCalibracao);
 
 

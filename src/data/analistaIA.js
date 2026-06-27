@@ -1038,4 +1038,82 @@ function repararJSON(str) {
   }
 }
 
-module.exports = { estimarPrecoComIA };
+/**
+ * Busca DEDICADA ao prédio: encontra apenas unidades do edifício/condomínio
+ * informado (comparação direta — o melhor comparável para apartamento).
+ * Retorna comps marcados origem:'prédio', ou null/vazio se não achar.
+ */
+async function estimarPrecoPredio(dadosImovel) {
+  const apiKey = process.env.PERPLEXITY_API_KEY;
+  if (!apiKey) return null;
+  const { finalidade, cidade, bairro, condominio } = dadosImovel;
+  if (!condominio) return null;
+
+  const finalidadeLabel = finalidade === 'aluguel' ? 'para ALUGAR' : 'à venda';
+  const prompt = `Liste APENAS apartamentos ${finalidadeLabel} no edifício/condomínio "${condominio}", bairro ${bairro}, ${cidade}-GO (estado de Goiás).
+
+Pesquise nos portais (VivaReal, ZAP, OLX, Chaves na Mão, 62imóveis, QuintoAndar) anúncios REAIS de unidades NESSE prédio específico. Para cada unidade, registre área (m²), preço (R$), quartos, andar e a fonte.
+
+REGRAS ABSOLUTAS:
+- SOMENTE unidades do edifício "${condominio}". NÃO inclua imóveis de outros prédios nem do bairro em geral.
+- NUNCA invente preços. Se não encontrar nenhuma unidade desse prédio, retorne lista vazia.
+
+RETORNE SOMENTE JSON válido:
+{
+  "comparativos": [{"area": número, "preco": número, "precoM2": número, "quartos": número_ou_null, "fonte": "site", "detalhe": "andar/descrição curta"}],
+  "precoMedioM2": número,
+  "anunciosAnalisados": número,
+  "raciocinio": "resumo das unidades encontradas no prédio"
+}`;
+
+  try {
+    const response = await axios.post('https://api.perplexity.ai/chat/completions', {
+      model: 'sonar-pro',
+      messages: [
+        { role: 'system', content: 'Pesquisador imobiliário. Retorne SOMENTE anúncios reais do edifício solicitado, nunca de outros prédios. NUNCA invente. SOMENTE JSON.' },
+        { role: 'user', content: prompt }
+      ],
+      temperature: 0.1, max_tokens: 1500
+    }, { timeout: 60000, headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' } });
+
+    let jsonStr = response.data.choices[0].message.content.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
+    let r;
+    try { r = JSON.parse(jsonStr); } catch { r = repararJSON(jsonStr); }
+    if (!r || !Array.isArray(r.comparativos)) return { comparativos: [], anunciosAnalisados: 0 };
+
+    const comps = r.comparativos
+      .filter((c) => Number(c.precoM2) > 0)
+      .map((c) => ({
+        area: Number(c.area) || null,
+        preco: Number(c.preco) || null,
+        precoM2: Math.round(Number(c.precoM2)),
+        quartos: c.quartos != null ? Number(c.quartos) : null,
+        bairro: condominio,
+        fonte: c.fonte || 'Pesquisa de prédio',
+        detalhe: `${c.detalhe ? c.detalhe + ' — ' : ''}mesmo prédio`,
+        origem: 'prédio',
+      }));
+    if (!comps.length) return { comparativos: [], anunciosAnalisados: 0 };
+
+    const m2 = comps.map((c) => c.precoM2).filter((p) => p > 0).sort((a, b) => a - b);
+    const mediana = m2[Math.floor(m2.length / 2)];
+    const disp = m2.length >= 3 ? (Math.max(...m2) - Math.min(...m2)) / Math.max(...m2) : 1;
+
+    return {
+      comparativos: comps,
+      precoMedioM2: mediana,
+      faixaMinM2: Math.min(...m2),
+      faixaMaxM2: Math.max(...m2),
+      anunciosAnalisados: comps.length,
+      confianca: comps.length >= 3 ? 'alta' : 'media',
+      suspeitaFabricacao: m2.length >= 3 && disp < 0.015,
+      raciocinio: r.raciocinio || `${comps.length} unidade(s) encontrada(s) no ${condominio}.`,
+      citacoes: (response.data.citations || []).slice(0, 5),
+    };
+  } catch (e) {
+    console.warn('[Predio] erro:', e.response?.data?.error || e.message);
+    return null;
+  }
+}
+
+module.exports = { estimarPrecoComIA, estimarPrecoPredio };

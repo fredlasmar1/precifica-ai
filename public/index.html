@@ -296,7 +296,7 @@
           <div class="row">
             <div class="field">
               <label>Tipo do imóvel</label>
-              <select id="f-tipo">
+              <select id="f-tipo" onchange="toggleCondominio()">
                 <option value="apartamento">Apartamento</option>
                 <option value="casa">Casa</option>
                 <option value="terreno">Terreno</option>
@@ -326,6 +326,11 @@
           <div class="field full">
             <label>Endereço / rua <span class="opt">(opcional, melhora a precisão)</span></label>
             <input id="f-endereco" placeholder="Ex: Rua 7, nº 100" />
+          </div>
+
+          <div class="field full" id="campo-condominio">
+            <label>🏢 Prédio / Condomínio <span class="opt">(opcional — busca unidades do MESMO prédio)</span></label>
+            <input id="f-condominio" placeholder="Ex: Edifício Maria Helena" />
           </div>
 
           <div class="row">
@@ -457,6 +462,13 @@
       if (u.alertas && u.alertas.length) c.classList.add('alerta');
     }).catch(() => {});
 
+    // Campo "Prédio/Condomínio" só aparece para apartamento
+    function toggleCondominio() {
+      const tipo = document.getElementById('f-tipo').value;
+      document.getElementById('campo-condominio').style.display = (tipo === 'apartamento') ? '' : 'none';
+    }
+    toggleCondominio();
+
     function switchTab(which) {
       for (const t of ['form', 'chat', 'comercial']) {
         document.getElementById('tab-' + t).classList.toggle('active', which === t);
@@ -507,6 +519,7 @@
         cidade: document.getElementById('f-cidade').value.trim(),
         bairro: document.getElementById('f-bairro').value.trim(),
         endereco: document.getElementById('f-endereco').value.trim(),
+        condominio: document.getElementById('f-condominio').value.trim(),
         metragem: document.getElementById('f-metragem').value,
         conservacao: document.getElementById('f-conservacao').value,
         quartos: document.getElementById('f-quartos').value,
