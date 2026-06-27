@@ -38,6 +38,7 @@ async function placesNearby({ lat, lng, keyword, radius }) {
   const apiKey = process.env.GOOGLE_PLACES_API_KEY;
   if (!apiKey) return { erro: 'GOOGLE_PLACES_API_KEY não configurada', results: [] };
   try {
+    try { require('./database').registrarUso('google_places', 1); } catch {} // contador de custo (best-effort)
     const { data } = await axios.get(PLACES_URL, {
       params: { location: `${lat},${lng}`, radius, keyword, key: apiKey },
       timeout: 15000

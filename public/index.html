@@ -439,11 +439,12 @@
 
     // Indicador de uso (custos) no rodapé
     fetch('/api/uso').then(r => r.json()).then(u => {
-      if (u.scraperapi && !u.scraperapi.erro) {
-        const c = document.getElementById('uso-chip');
-        c.innerHTML = ` &nbsp;|&nbsp; Scraping: <b>${u.scraperapi.pct}%</b> usado (${u.scraperapi.restam} restantes/mês)`;
-        if (u.alertas && u.alertas.length) c.classList.add('alerta');
-      }
+      const c = document.getElementById('uso-chip');
+      const partes = [];
+      if (u.scraperapi && !u.scraperapi.erro) partes.push(`Scraping: <b>${u.scraperapi.pct}%</b>`);
+      if (u.google && !u.google.erro) partes.push(`Google: <b>${u.google.pct}%</b>`);
+      if (partes.length) c.innerHTML = ` &nbsp;|&nbsp; ${partes.join(' · ')} da cota mensal`;
+      if (u.alertas && u.alertas.length) c.classList.add('alerta');
     }).catch(() => {});
 
     function switchTab(which) {

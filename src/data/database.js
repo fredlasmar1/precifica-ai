@@ -122,6 +122,16 @@ async function inicializar() {
       )
     `);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_historico_telegram ON historico_laudos(telegram_id, gerado_em DESC)`);
+
+    // Contador de uso de APIs externas (custo) por mês
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS api_uso (
+        mes TEXT NOT NULL,
+        servico TEXT NOT NULL,
+        chamadas INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (mes, servico)
+      )
+    `);
     console.log('[DB] Tabelas inicializadas com sucesso');
   } catch (err) {
     console.error('[DB] Erro ao inicializar:', err.message);
@@ -294,11 +304,31 @@ async function stats() {
   return result.rows[0];
 }
 
+// ─── Contador de uso de APIs (custo) ─────────────────────────────
+function mesAtual() { return new Date().toISOString().slice(0, 7); } // 'YYYY-MM'
+
+async function registrarUso(servico, n = 1) {
+  try {
+    await pool.query(
+      `INSERT INTO api_uso (mes, servico, chamadas) VALUES ($1, $2, $3)
+       ON CONFLICT (mes, servico) DO UPDATE SET chamadas = api_uso.chamadas + $3`,
+      [mesAtual(), servico, n]
+    );
+  } catch (err) { /* uso é best-effort, nunca quebra o fluxo */ }
+}
+
+async function obterUso(servico) {
+  try {
+    const r = await pool.query(`SELECT chamadas FROM api_uso WHERE mes = $1 AND servico = $2`, [mesAtual(), servico]);
+    return r.rows[0]?.chamadas || 0;
+  } catch (err) { return 0; }
+}
+
 module.exports = {
   pool, inicializar,
   salvarBairro, buscarBairro, listarBairros,
   salvarPreco, buscarPreco, invalidarPreco, salvarHistorico, buscarHistorico,
   salvarAvaliacao, salvarFeedback,
   salvarConhecimentoCidade, buscarConhecimentoCidade,
-  stats
+  stats, registrarUso, obterUso
 };

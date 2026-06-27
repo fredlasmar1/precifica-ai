@@ -38,10 +38,27 @@ async function checkUsoEAlertar() {
         `Scraping de anúncios: *${pct}%* usado este mês.\n` +
         `Restam *${restam}* buscas (~${avals} avaliações).\n` +
         `Renova em ${reset}.`);
-      console.log(`[Alerta] aviso de uso enviado (${pct}% usado)`);
+      console.log(`[Alerta] aviso ScraperAPI enviado (${pct}% usado)`);
     }
   } catch (e) {
-    console.warn('[Alerta] erro ao checar uso:', e.message);
+    console.warn('[Alerta] erro ao checar ScraperAPI:', e.message);
+  }
+
+  // ── Google Places (contador interno × cota grátis de US$200 ≈ 6.250 buscas) ──
+  try {
+    const db = require('./database');
+    const usados = await db.obterUso('google_places');
+    const limiteGoogle = Number(process.env.GOOGLE_PLACES_ALERTA || 5500); // ~88% da cota grátis
+    if (usados >= limiteGoogle) {
+      const pctG = Math.round((usados / 6250) * 100);
+      await enviarTelegram(chatId,
+        `⚠️ *Precifica Aí — alerta de uso (Google)*\n` +
+        `Buscas no Google Maps: *${usados}* este mês (~${pctG}% da cota grátis de US$200).\n` +
+        `Acima disso passa a ter custo (~US$0,032/busca). Considere reduzir análises comerciais ou ativar billing.`);
+      console.log(`[Alerta] aviso Google enviado (${usados} buscas)`);
+    }
+  } catch (e) {
+    console.warn('[Alerta] erro ao checar Google:', e.message);
   }
 }
 

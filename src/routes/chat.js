@@ -219,7 +219,7 @@ router.post('/melhor-bairro', async (req, res) => {
  */
 router.get('/uso', async (req, res) => {
   const axios = require('axios');
-  const out = { scraperapi: null, alertas: [] };
+  const out = { scraperapi: null, google: null, alertas: [] };
   try {
     const k = process.env.SCRAPER_API_KEY;
     if (k) {
@@ -230,6 +230,12 @@ router.get('/uso', async (req, res) => {
       if (restam < limite * 0.1) out.alertas.push(`ScraperAPI: só ${restam} buscas restantes (${pct}% usado)`);
     }
   } catch (e) { out.scraperapi = { erro: e.message }; }
+  try {
+    const usados = await require('../data/database').obterUso('google_places');
+    const cotaGratis = 6250; // US$200 / US$0,032 por busca
+    out.google = { usados, cotaGratis, pct: Math.round((usados / cotaGratis) * 100) };
+    if (usados >= cotaGratis * 0.85) out.alertas.push(`Google Maps: ${usados} buscas (${out.google.pct}% da cota grátis)`);
+  } catch (e) { out.google = { erro: e.message }; }
   res.json(out);
 });
 
