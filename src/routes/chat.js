@@ -170,17 +170,21 @@ router.post('/ponto-comercial', async (req, res) => {
   try {
     const { validarEndereco } = require('../data/geoValidacao');
     const { perfilarLocal } = require('../data/guruAnapolis');
-    const { analisarPontoComercial, formatarRelatorioComercial } = require('../data/pontoComercial');
+    const { analisarPontoComercial, formatarRelatorioComercial, coordsBairro } = require('../data/pontoComercial');
 
     const geo = await validarEndereco(cidade, bairro, endereco);
-    if (!geo || !geo.valido) {
-      return res.status(422).json({ error: 'Não consegui localizar esse endereço/bairro em Goiás. Confira e tente de novo.' });
+    let lat, lng;
+    if (geo && geo.valido) { lat = geo.lat; lng = geo.lng; }
+    else {
+      const c = coordsBairro(bairro); // fallback p/ bairros conhecidos (ex: "Centro" sem rua)
+      if (c) { lat = c.lat; lng = c.lng; }
+      else return res.status(422).json({ error: 'Não consegui localizar esse endereço/bairro em Goiás. Confira e tente de novo.' });
     }
 
     let perfilGuru = null;
-    try { perfilGuru = await perfilarLocal(cidade, bairro, geo.lat, geo.lng); } catch {}
+    try { perfilGuru = await perfilarLocal(cidade, bairro, lat, lng); } catch {}
 
-    const analise = await analisarPontoComercial(geo.lat, geo.lng, ramo, { cidade, bairro, perfilGuru });
+    const analise = await analisarPontoComercial(lat, lng, ramo, { cidade, bairro, perfilGuru });
     if (analise.erro) return res.status(422).json({ error: analise.erro });
 
     const texto = formatarRelatorioComercial(analise);

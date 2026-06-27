@@ -294,6 +294,17 @@ const BAIRROS_COORDS = {
   'Recanto do Sol': [-16.28281, -48.9291],
 };
 
+/** Coordenadas de um bairro conhecido (fallback quando o geocoding falha). */
+function coordsBairro(nome) {
+  const n = (nome || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
+  if (!n) return null;
+  for (const [k, v] of Object.entries(BAIRROS_COORDS)) {
+    const kn = k.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
+    if (kn === n || kn.includes(n) || n.includes(kn)) return { lat: v[0], lng: v[1] };
+  }
+  return null;
+}
+
 /** Análise leve de um bairro (2 chamadas Places) para ranquear. */
 async function analiseRapidaBairro(nome, lat, lng, ramo) {
   const [conc, superm] = await Promise.all([
@@ -372,4 +383,4 @@ function formatarMelhorBairro(d) {
   return t;
 }
 
-module.exports = { analisarPontoComercial, formatarRelatorioComercial, melhorBairro, formatarMelhorBairro, extrairRamo };
+module.exports = { analisarPontoComercial, formatarRelatorioComercial, melhorBairro, formatarMelhorBairro, extrairRamo, coordsBairro };
