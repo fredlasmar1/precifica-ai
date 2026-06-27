@@ -46,6 +46,24 @@ Use SOMENTE dados reais e confirmados em ${cidade}-GO. NUNCA invente CNPJ nem va
 }
 
 function cnpjValido(c) { return String(c || '').replace(/\D/g, '').length === 14; }
+
+/** Busca FOCADA do CNPJ (query de um campo só acerta mais que o dossiê inteiro). */
+async function buscarCnpjPredio(condominio, cidade) {
+  const apiKey = process.env.PERPLEXITY_API_KEY;
+  if (!apiKey) return null;
+  try {
+    const { data } = await axios.post('https://api.perplexity.ai/chat/completions', {
+      model: 'sonar-pro',
+      messages: [
+        { role: 'system', content: 'Responda APENAS com o CNPJ no formato XX.XXX.XXX/XXXX-XX, ou a palavra "nenhum". Sem nenhum texto extra.' },
+        { role: 'user', content: `Qual o CNPJ do Condomínio/Edifício "${condominio}" em ${cidade}-GO? Procure em Receita Federal, Econodata, CNPJ.biz, Solutudo, consulta-empresa. É informação pública.` },
+      ],
+      temperature: 0, max_tokens: 30,
+    }, { timeout: 40000, headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' } });
+    const m = data.choices[0].message.content.match(/\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2}/);
+    return m ? m[0] : null;
+  } catch { return null; }
+}
 // Remove marcadores de citação da Perplexity ([1], [2][3]...) e espaços duplos
 function semCit(s) { return s == null ? s : String(s).replace(/\s*\[\d+\](\[\d+\])*/g, '').replace(/\s{2,}/g, ' ').trim(); }
 
@@ -61,14 +79,18 @@ async function gerarFichaPredio({ condominio, bairro, cidade, valorMercado }) {
   if (d.iptuAnual && Number(d.iptuAnual) > 0) { iptu = Math.round(Number(d.iptuAnual)); iptuFonte = 'informado em anúncio'; }
   else if (valorMercado > 0) { iptu = Math.round((valorMercado * IPTU_FATOR) / 10) * 10; iptuFonte = 'estimado (valor venal × alíquota)'; }
 
+  // CNPJ: se o dossiê não trouxe, tenta a busca focada
+  let cnpj = cnpjValido(d.cnpj) ? d.cnpj : null;
+  if (!cnpj) { const c = await buscarCnpjPredio(condominio, cidade); if (cnpjValido(c)) cnpj = c; }
+
   // Processos contra o condomínio (DirectData, por CNPJ)
   let processos = null;
-  if (cnpjValido(d.cnpj)) processos = await processosPorCnpj(d.cnpj, 'GO');
+  if (cnpjValido(cnpj)) processos = await processosPorCnpj(cnpj, 'GO');
 
   return {
     condominio,
     endereco: d.endereco || null,
-    cnpj: cnpjValido(d.cnpj) ? d.cnpj : null,
+    cnpj: cnpjValido(cnpj) ? cnpj : null,
     condominioMensal: d.valorCondominioMensal || null,
     iptu, iptuFonte,
     padrao: d.padrao || null,
