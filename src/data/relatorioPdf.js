@@ -16,6 +16,9 @@ const LOGO = path.join(__dirname, '..', '..', 'public', 'bens-logo-white.png');
 const CORRETOR = 'Frederico Ivan Lasmar Alves';
 const CRECI_F = 'CRECI-F 41.009';
 const CRECI_J = 'CRECI-J 43.934';
+const RAZAO = 'Bens Imóveis Corporativos';
+const ENDERECO = 'Av. Mato Grosso, Ville Center Mall, sala 18 · Anápolis-GO';
+const CONTATO = '(62) 9973-9596 · www.benscorporativos.com.br · @benscorporativos';
 
 const PAGE_W = 595.28, PAGE_H = 841.89;
 const TOP = 92, BOTTOM = 64, LX = 44, RX = PAGE_W - 44, W = RX - LX;
@@ -58,14 +61,17 @@ function gerarRelatorioPdf(dados, resultado, opts = {}) {
       doc.font('Helvetica-Bold').fontSize(13).fillColor(WHITE)
         .text('Parecer de Avaliação Mercadológica', LX, 21, { width: W, align: 'right' });
       doc.font('Helvetica').fontSize(7.5).fillColor('#cfe0ff')
-        .text('Bens Imóveis · Inteligência Imobiliária', LX, 38, { width: W, align: 'right' });
-      // Footer
-      const fy = PAGE_H - 44;
+        .text('Imóveis Corporativos · Anápolis-GO', LX, 38, { width: W, align: 'right' });
+      // Footer (2 linhas — dados oficiais Bens)
+      const fy = PAGE_H - 46;
+      doc.page.margins.bottom = 0; // permite escrever na área do rodapé sem o PDFKit paginar
       doc.moveTo(LX, fy).lineTo(RX, fy).lineWidth(0.5).strokeColor(LINE).stroke();
-      doc.font('Helvetica').fontSize(7).fillColor(MUTED)
-        .text(`Bens Imóveis · ${CRECI_J} · Anápolis-GO  —  documento gerado por Precifica Aí`, LX, fy + 6, { width: W * 0.75 });
-      doc.font('Helvetica').fontSize(7).fillColor(MUTED)
-        .text(`Emitido em ${dataEmissao}`, RX - 150, fy + 6, { width: 150, align: 'right' });
+      doc.font('Helvetica').fontSize(6.8).fillColor(MUTED)
+        .text(`${RAZAO} · ${CRECI_J} · ${ENDERECO}`, LX, fy + 5, { width: W, lineBreak: false });
+      doc.font('Helvetica').fontSize(6.8).fillColor(MUTED)
+        .text(`${CONTATO}  ·  documento gerado por Precifica Aí`, LX, fy + 15, { width: W * 0.8, lineBreak: false });
+      doc.font('Helvetica').fontSize(6.8).fillColor(MUTED)
+        .text(`Emitido em ${dataEmissao}`, RX - 120, fy + 15, { width: 120, align: 'right' });
     };
 
     // ── Helpers de seção ──
@@ -193,7 +199,7 @@ function gerarRelatorioPdf(dados, resultado, opts = {}) {
     doc.lineWidth(0.7).strokeColor(NAVY).moveTo(LX + half / 2 - 80, y).lineTo(LX + half / 2 + 80, y).stroke();
     doc.font('Helvetica').fontSize(8).fillColor(LABEL).text('CORRETOR RESPONSÁVEL', LX + half / 2 - 80, y + 5, { width: 160, align: 'center' });
     doc.font('Helvetica-Bold').fontSize(9).fillColor(INK).text(`${CORRETOR}`, LX + half / 2 - 90, y + 16, { width: 180, align: 'center' });
-    doc.font('Helvetica').fontSize(8).fillColor(MUTED).text(`${CRECI_F} · Bens Imóveis (${CRECI_J})`, LX + half / 2 - 90, y + 28, { width: 180, align: 'center' });
+    doc.font('Helvetica').fontSize(8).fillColor(MUTED).text(`${CRECI_F} · ${RAZAO} (${CRECI_J})`, LX + half / 2 - 90, y + 28, { width: 180, align: 'center' });
     // selo lateral
     doc.roundedRect(LX + half + 30, y - 4, half - 50, 46, 8).lineWidth(1).strokeColor(BLUE).stroke();
     doc.font('Helvetica-Bold').fontSize(9).fillColor(BLUE).text('Avaliação por amostragem', LX + half + 40, y + 6, { width: half - 70, align: 'center' });
