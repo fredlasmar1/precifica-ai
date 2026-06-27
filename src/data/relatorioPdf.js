@@ -29,7 +29,13 @@ function brl(v) {
   return Number.isNaN(n) ? '—' : n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 });
 }
 function num(v) { if (v == null || v === '') return '—'; const n = Number(v); return Number.isNaN(n) ? String(v) : n.toLocaleString('pt-BR'); }
-function txt(v) { return v == null || v === '' ? '—' : String(v); }
+// Remove emojis (a fonte Helvetica do PDF não os renderiza → viram lixo)
+function clean(s) {
+  return String(s == null ? '' : s)
+    .replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{FE00}-\u{FE0F}\u{200D}\u{2190}-\u{21FF}]/gu, '')
+    .replace(/\s{2,}/g, ' ').trim();
+}
+function txt(v) { if (v == null || v === '') return '—'; return clean(v) || '—'; }
 function cap(s) { s = String(s || ''); return s.charAt(0).toUpperCase() + s.slice(1); }
 
 function gerarRelatorioPdf(dados, resultado, opts = {}) {
@@ -83,7 +89,7 @@ function gerarRelatorioPdf(dados, resultado, opts = {}) {
     };
     const paragraph = (t, size = 8.5) => {
       ensure(28);
-      doc.font('Helvetica').fontSize(size).fillColor(INK).text(t, LX, y, { width: W, align: 'justify', lineGap: 1.5 });
+      doc.font('Helvetica').fontSize(size).fillColor(INK).text(clean(t), LX, y, { width: W, align: 'justify', lineGap: 1.5 });
       y = doc.y + 8;
     };
     const cell = (x, w, label, value) => {
@@ -121,7 +127,7 @@ function gerarRelatorioPdf(dados, resultado, opts = {}) {
     doc.font('Helvetica').fontSize(7.5).fillColor('#cfe0ff').text('FAIXA DE MERCADO', RX - 230, y + 10, { width: 120 });
     doc.font('Helvetica').fontSize(7.5).fillColor('#cfe0ff').text('R$/m²', RX - 100, y + 10, { width: 84 });
     doc.font('Helvetica-Bold').fontSize(10).fillColor(WHITE).text(`${brl(resultado.precoMinimo)} – ${brl(resultado.precoMaximo)}`, RX - 230, y + 22, { width: 125 });
-    doc.font('Helvetica-Bold').fontSize(12).fillColor(WHITE).text(brl(resultado.precoM2Mercado), RX - 100, y + 21, { width: 84 });
+    doc.font('Helvetica-Bold').fontSize(12).fillColor(WHITE).text(brl(resultado.precoM2Imovel != null ? resultado.precoM2Imovel : resultado.precoM2Mercado), RX - 100, y + 21, { width: 84 });
     doc.font('Helvetica').fontSize(7).fillColor('#cfe0ff')
       .text(`Liquidez: ${txt(resultado.indiceLiquidez)}  ·  Tempo estimado: ${txt(resultado.tempoEstimadoDias)} dias  ·  Amostra: ${nAmostras} anúncios  ·  Fundamentação: ${grau}`, LX + 16, y + 44);
     y += 66;
@@ -159,7 +165,7 @@ function gerarRelatorioPdf(dados, resultado, opts = {}) {
       // ── AJUSTES ──
       if (Array.isArray(resultado.ajustesAplicados) && resultado.ajustesAplicados.length) {
         band('AJUSTES E CALIBRAÇÃO');
-        resultado.ajustesAplicados.forEach((aj) => { ensure(14); doc.font('Helvetica').fontSize(8).fillColor(INK).text(`•  ${aj}`, LX + 4, y, { width: W - 8 }); y = doc.y + 3; });
+        resultado.ajustesAplicados.forEach((aj) => { ensure(14); doc.font('Helvetica').fontSize(8).fillColor(INK).text(`•  ${clean(aj)}`, LX + 4, y, { width: W - 8 }); y = doc.y + 3; });
         y += 6;
       }
     } else {
