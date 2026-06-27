@@ -123,4 +123,26 @@ function formatarFichaPredio(f) {
   return t;
 }
 
-module.exports = { gerarFichaPredio, formatarFichaPredio };
+/** Resultado da aba "Prédios": ficha + unidades anunciadas + faixa de preço. */
+function formatarBuscaPredio(ficha, unidades) {
+  if (!ficha) return '⚠️ Não consegui montar a ficha desse prédio.';
+  let t = `🏢 *${ficha.condominio}*\n`;
+  t += formatarFichaPredio(ficha);
+  const comps = (unidades && unidades.comparativos) || [];
+  if (comps.length) {
+    t += `\n🏠 *Unidades anunciadas no prédio (${comps.length}):*\n`;
+    comps.slice(0, 8).forEach((c, i) => {
+      t += `  ${i + 1}. ${c.area || '?'}m² • R$ ${Number(c.preco || 0).toLocaleString('pt-BR')} (R$ ${Number(c.precoM2 || 0).toLocaleString('pt-BR')}/m²)${c.quartos ? ` • ${c.quartos}q` : ''}\n`;
+    });
+    const m2 = comps.map(c => Number(c.precoM2)).filter(p => p > 0).sort((a, b) => a - b);
+    if (m2.length) {
+      const med = m2[Math.floor(m2.length / 2)];
+      t += `\n💰 *Faixa do prédio:* R$ ${m2[0].toLocaleString('pt-BR')} – R$ ${m2[m2.length - 1].toLocaleString('pt-BR')}/m² (mediana R$ ${med.toLocaleString('pt-BR')}/m²)\n`;
+    }
+  } else {
+    t += `\n_Nenhuma unidade anunciada no momento neste prédio._\n`;
+  }
+  return t;
+}
+
+module.exports = { gerarFichaPredio, formatarFichaPredio, formatarBuscaPredio };

@@ -219,6 +219,40 @@ router.post('/melhor-bairro', async (req, res) => {
 });
 
 /**
+ * POST /api/predio — aba "Prédios": ficha completa de um edifício
+ * (endereço, CNPJ, condomínio, IPTU, lazer, processos) + unidades anunciadas.
+ */
+router.post('/predio', async (req, res) => {
+  const b = req.body || {};
+  const condominio = String(b.condominio || '').trim();
+  const bairro = String(b.bairro || '').trim();
+  const cidade = String(b.cidade || 'Anápolis').trim();
+  if (!condominio || !bairro) {
+    return res.status(400).json({ error: 'Informe o nome do prédio e o bairro.' });
+  }
+  try {
+    const { estimarPrecoPredio } = require('../data/analistaIA');
+    const { gerarFichaPredio, formatarBuscaPredio } = require('../data/fichaPredio');
+
+    // unidades anunciadas no prédio (para faixa de preço + base do IPTU)
+    const unidades = await estimarPrecoPredio({ finalidade: 'venda', cidade, bairro, condominio });
+    const comps = (unidades && unidades.comparativos) || [];
+    let valorRef = 0;
+    if (comps.length) {
+      const precos = comps.map(c => Number(c.preco)).filter(p => p > 0).sort((a, b) => a - b);
+      valorRef = precos[Math.floor(precos.length / 2)] || 0;
+    }
+
+    const ficha = await gerarFichaPredio({ condominio, bairro, cidade, valorMercado: valorRef });
+    const texto = formatarBuscaPredio(ficha, unidades);
+    return res.json({ type: 'predio', response: texto, ficha, unidades: comps });
+  } catch (err) {
+    console.error('[Predio API] Erro:', err);
+    return res.status(500).json({ error: '⚠️ Erro ao pesquisar o prédio. Tente novamente.' });
+  }
+});
+
+/**
  * GET /api/uso — status de consumo das APIs (para monitorar custos).
  */
 router.get('/uso', async (req, res) => {
