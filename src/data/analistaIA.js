@@ -1056,7 +1056,9 @@ Pesquise nos portais (VivaReal, ZAP, OLX, Chaves na Mão, 62imóveis, QuintoAnda
 
 REGRAS ABSOLUTAS:
 - SOMENTE unidades do edifício "${condominio}". NÃO inclua imóveis de outros prédios nem do bairro em geral.
-- NUNCA invente preços. Se não encontrar nenhuma unidade desse prédio, retorne lista vazia.
+- CONFIRME que o edifício fica em ${bairro}, ${cidade}-GO (Goiás). DESCARTE qualquer anúncio de OUTRA cidade (ex: Goiânia) ou de prédio HOMÔNIMO em outro lugar — se a rua/cidade não bater com ${cidade}-GO, NÃO inclua.
+- Use SOMENTE anúncios de portais imobiliários reais. DESCARTE vídeos do YouTube, blogs e fontes que não sejam anúncio de imóvel.
+- NUNCA invente preços. Se não encontrar nenhuma unidade desse prédio em ${cidade}-GO, retorne lista vazia.
 
 RETORNE SOMENTE JSON válido:
 {
