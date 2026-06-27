@@ -243,6 +243,28 @@ router.get('/uso', async (req, res) => {
   res.json(out);
 });
 
+/**
+ * POST /api/relatorio
+ * Gera o PDF do Parecer de Avaliação Mercadológica (PTAM por amostragem).
+ * Body: { dados, resultado, versao: 'tecnica'|'cliente', solicitante }
+ */
+router.post('/relatorio', async (req, res) => {
+  const { dados, resultado, versao, solicitante } = req.body || {};
+  if (!dados || !resultado) return res.status(400).json({ error: 'Faça uma avaliação primeiro.' });
+  try {
+    const { gerarRelatorioPdf } = require('../data/relatorioPdf');
+    const pdf = await gerarRelatorioPdf(dados, resultado, { versao, solicitante });
+    const slug = String(dados.bairro || 'imovel').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-');
+    const nome = `parecer-${slug}-${versao === 'cliente' ? 'cliente' : 'tecnico'}.pdf`;
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${nome}"`);
+    res.send(pdf);
+  } catch (err) {
+    console.error('[Relatorio API] Erro:', err);
+    res.status(500).json({ error: '⚠️ Erro ao gerar o PDF. Tente novamente.' });
+  }
+});
+
 function gerarLaudo(dados, resultado) {
   const { tipo, finalidade, cidade, bairro, endereco, metragem, quartos, vagas } = dados;
   const {

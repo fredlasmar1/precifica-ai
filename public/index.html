@@ -230,6 +230,16 @@
     .ou-sep span { position: relative; background: var(--card); padding: 0 12px; color: var(--muted2); font-size: 12px; }
     /* Mapa de concorrentes no laudo */
     .laudo-map { width: 100%; border-radius: 14px; border: 1px solid var(--line); margin-bottom: 16px; display: block; }
+    /* Botões de PDF */
+    .pdf-bar { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
+    .btn-pdf {
+      display: inline-flex; align-items: center; gap: 7px; padding: 10px 16px; border-radius: 11px;
+      border: none; cursor: pointer; font-size: 13.5px; font-weight: 700; font-family: inherit;
+      background: var(--blue); color: #fff; box-shadow: 0 6px 16px -7px rgba(1,62,248,.5);
+    }
+    .btn-pdf:hover { background: var(--blue-d); }
+    .btn-pdf.alt { background: #fff; color: var(--blue); border: 1.5px solid var(--blue); box-shadow: none; }
+    .btn-pdf:disabled { opacity: .6; cursor: wait; }
     /* Indicador de uso */
     .uso-chip { font-size: 11px; color: var(--muted2); }
     .uso-chip b { color: var(--ink); font-weight: 600; }
@@ -516,13 +526,48 @@
           body: JSON.stringify(payload)
         });
         const data = await res.json();
-        if (data.error) showError(data.error);
-        else showLaudo(data.response);
+        if (data.error) { showError(data.error); avaliacaoAtual = null; }
+        else { showLaudo(data.response); avaliacaoAtual = { dados: data.dados, resultado: data.resultado }; mostrarAcoesPdf(); }
       } catch (err) {
         showError('Erro de conexão. Tente novamente.');
       } finally {
         busy = false;
         document.getElementById('btn-avaliar').disabled = false;
+      }
+    }
+
+    // ── Relatório em PDF (Parecer de Avaliação Mercadológica) ──
+    let avaliacaoAtual = null;
+    function mostrarAcoesPdf() {
+      const laudo = document.querySelector('#result-body .laudo');
+      if (!laudo) return;
+      const bar = document.createElement('div');
+      bar.className = 'pdf-bar';
+      bar.innerHTML =
+        '<button class="btn-pdf" onclick="baixarRelatorio(\'tecnica\', this)">📄 Relatório técnico (PDF)</button>' +
+        '<button class="btn-pdf alt" onclick="baixarRelatorio(\'cliente\', this)">📄 Versão cliente (PDF)</button>';
+      laudo.prepend(bar);
+    }
+    async function baixarRelatorio(versao, btn) {
+      if (!avaliacaoAtual) return;
+      const solicitante = prompt('Nome do cliente/solicitante (opcional — aparece no relatório):', '') || '';
+      btn.disabled = true;
+      try {
+        const res = await fetch('/api/relatorio', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...avaliacaoAtual, versao, solicitante })
+        });
+        if (!res.ok) { alert('Não foi possível gerar o PDF. Tente de novo.'); return; }
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = `parecer-${versao === 'cliente' ? 'cliente' : 'tecnico'}.pdf`;
+        document.body.appendChild(a); a.click(); a.remove();
+        URL.revokeObjectURL(url);
+      } catch (err) {
+        alert('Erro de conexão ao gerar o PDF.');
+      } finally {
+        btn.disabled = false;
       }
     }
 
