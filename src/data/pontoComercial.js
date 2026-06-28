@@ -53,6 +53,37 @@ async function placesNearby({ lat, lng, keyword, radius }) {
   }
 }
 
+/**
+ * Contagem EXATA via paginação do Google (até ~60, 3 páginas).
+ * O next_page_token só fica válido ~2s depois — daí o delay.
+ */
+async function placesCountExato({ lat, lng, keyword, radius, maxPages = 3 }) {
+  const apiKey = process.env.GOOGLE_PLACES_API_KEY;
+  if (!apiKey) return { total: 0, results: [], capou: false };
+  let results = [];
+  let pageToken = null;
+  let pages = 0;
+  try {
+    while (pages < maxPages) {
+      try { require('./database').registrarUso('google_places', 1); } catch {}
+      const params = pageToken
+        ? { pagetoken: pageToken, key: apiKey }
+        : { location: `${lat},${lng}`, radius, keyword, key: apiKey };
+      const { data } = await axios.get(PLACES_URL, { params, timeout: 15000 });
+      const r = (data.results || []).filter((x) => x.business_status !== 'CLOSED_PERMANENTLY');
+      results = results.concat(r);
+      pageToken = data.next_page_token || null;
+      pages++;
+      if (!pageToken || pages >= maxPages) break;
+      await new Promise((res) => setTimeout(res, 2100)); // token leva ~2s p/ ativar
+    }
+    return { total: results.length, results, capou: !!pageToken };
+  } catch (e) {
+    console.warn('[PlacesCount] erro:', e.message);
+    return { total: results.length, results, capou: false };
+  }
+}
+
 /** Conta e resume concorrentes do ramo (nome, nota, nº avaliações, coords). */
 function resumirConcorrentes(results) {
   const reais = results.filter(r => r.business_status !== 'CLOSED_PERMANENTLY');
@@ -125,7 +156,7 @@ async function analisarPontoComercial(lat, lng, ramo, ctx = {}) {
 
   // 1) Concorrência direta — 500m e 1km
   const [c500, c1k] = await Promise.all([
-    placesNearby({ lat, lng, keyword: ramoLimpo, radius: 500 }),
+    placesCountExato({ lat, lng, keyword: ramoLimpo, radius: 500, maxPages: 3 }), // 500m exato
     placesNearby({ lat, lng, keyword: ramoLimpo, radius: 1000 }),
   ]);
   const conc500 = resumirConcorrentes(c500.results);
@@ -183,7 +214,7 @@ async function analisarPontoComercial(lat, lng, ramo, ctx = {}) {
     ramo: ramoLimpo,
     bairro: ctx.bairro, cidade: ctx.cidade,
     score, veredito, emoji, motivos,
-    concorrencia: { em500m: conc500, em1km: conc1k, capado500: c500.capado, capado1k: c1k.capado },
+    concorrencia: { em500m: conc500, em1km: conc1k, capado500: c500.capou, capado1k: c1k.capado },
     movimento: { score: Math.round(movimentoScore), geradores: geradoresRes.map(g => ({ label: g.label, qtd: g.qtd, capado: g.capado })) },
     demanda: { populacao, pibPerCapita },
   };
@@ -308,14 +339,14 @@ function coordsBairro(nome) {
 /** Análise de um bairro (4 chamadas Places) para ranquear — multifator. */
 async function analiseRapidaBairro(nome, lat, lng, ramo) {
   const [conc, superm, escola, banco] = await Promise.all([
-    placesNearby({ lat, lng, keyword: ramo, radius: 1000 }),
+    placesCountExato({ lat, lng, keyword: ramo, radius: 1000, maxPages: 3 }), // contagem EXATA (até ~60)
     placesNearby({ lat, lng, keyword: 'supermercado mercado', radius: 1000 }),
     placesNearby({ lat, lng, keyword: 'escola colégio faculdade', radius: 1000 }),
     placesNearby({ lat, lng, keyword: 'banco agência lotérica', radius: 1000 }),
   ]);
   const rc = resumirConcorrentes(conc.results);
-  const concorrentes = rc.total;
-  const capado = !!conc.capado;
+  const concorrentes = conc.total;      // número real (paginado), não mais capado em 20
+  const capado = !!conc.capou;          // só true se passar de ~60
   const notaConc = rc.notaMedia;
   const mov = {
     supermercado: resumirConcorrentes(superm.results).total,
@@ -327,11 +358,11 @@ async function analiseRapidaBairro(nome, lat, lng, ramo) {
 
   let score = 45;
   const fatores = [];
-  // Concorrência (quantidade)
-  if (concorrentes <= 2)       { score += 5;  fatores.push('mercado pouco explorado'); }
-  else if (concorrentes <= 8)  { score += 18; fatores.push('concorrência saudável (demanda validada)'); }
-  else if (concorrentes <= 15) { score += 8;  fatores.push('concorrência moderada'); }
-  else                         { score -= 8;  fatores.push('mercado concorrido'); }
+  // Concorrência (quantidade exata, até ~60)
+  if (concorrentes <= 3)        { score += 6;  fatores.push('mercado pouco explorado'); }
+  else if (concorrentes <= 12)  { score += 18; fatores.push('concorrência saudável (demanda validada)'); }
+  else if (concorrentes <= 25)  { score += 6;  fatores.push(`concorrência alta (${concorrentes})`); }
+  else                          { score -= 12; fatores.push(`mercado saturado (${concorrentes} concorrentes)`); }
   // Qualidade da concorrência (concorrente fraco = brecha)
   if (concorrentes >= 3 && notaConc != null) {
     if (notaConc < 3.8)       { score += 12; fatores.push(`concorrência fraca (${notaConc}⭐) — brecha`); }
