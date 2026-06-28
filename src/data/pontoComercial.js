@@ -141,6 +141,61 @@ async function extrairRamo(pergunta) {
   } catch { return txt; }
 }
 
+function semCit(s) { return String(s == null ? '' : s).replace(/\s*\[\d+\](\[\d+\])*/g, '').replace(/\s{2,}/g, ' ').trim(); }
+
+/** Ticket médio + faturamento mensal estimado (IA, escalado pela renda do bairro). */
+async function estimarTicketMedio(ramo, bairro, cidade, rendaTier) {
+  const client = getOpenAI();
+  if (!client) return null;
+  try {
+    const r = await client.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: [
+        { role: 'system', content: 'Consultor de negócios em Anápolis-GO. Dê estimativas realistas e conservadoras para o interior de Goiás. Responda SOMENTE JSON.' },
+        { role: 'user', content: `Estime para um(a) "${ramo}" no bairro ${bairro} (${cidade}-GO), renda da região: ${rendaTier}.\nResponda JSON: {"ticketMedio":"R$ valor médio por venda/serviço","faturamentoMensal":"R$ X a R$ Y (faixa realista de UM estabelecimento desse porte na região)","racional":"1 frase curta"}` },
+      ],
+      temperature: 0.4, max_tokens: 220,
+    });
+    let s = r.choices[0].message.content.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
+    return JSON.parse(s);
+  } catch (e) { console.warn('[Ticket] erro:', e.message); return null; }
+}
+
+/** Melhores ruas/avenidas comerciais do bairro para o ramo (Perplexity). */
+async function melhoresRuas(ramo, bairro, cidade) {
+  const apiKey = process.env.PERPLEXITY_API_KEY;
+  if (!apiKey) return null;
+  try {
+    const { data } = await axios.post('https://api.perplexity.ai/chat/completions', {
+      model: 'sonar-pro',
+      messages: [
+        { role: 'system', content: 'Você conhece o comércio de Anápolis-GO. Responda SOMENTE JSON.' },
+        { role: 'user', content: `Quais as 2 a 3 ruas/avenidas comerciais mais movimentadas do bairro ${bairro} em ${cidade}-GO, boas para instalar um(a) "${ramo}"? Para cada, o nome real e uma frase do porquê (fluxo, comércio, acesso). JSON: {"ruas":[{"nome":"...","motivo":"..."}]}` },
+      ],
+      temperature: 0.2, max_tokens: 450,
+    }, { timeout: 50000, headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' } });
+    let s = data.choices[0].message.content.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
+    const j = JSON.parse(s);
+    if (Array.isArray(j.ruas)) j.ruas = j.ruas.map(r => ({ nome: semCit(r.nome), motivo: semCit(r.motivo) })).filter(r => r.nome);
+    return j;
+  } catch (e) { console.warn('[Ruas] erro:', e.message); return null; }
+}
+
+/** R$/m² comercial (compra e aluguel) do bairro — reusa o motor de avaliação. */
+async function precoComercialBairro(cidade, bairro) {
+  try {
+    const { calcularPreco } = require('./precificador');
+    const [v, a] = await Promise.all([
+      calcularPreco({ tipo: 'comercial', finalidade: 'venda', cidade, bairro, metragem: 50, conservacao: 'bom' }),
+      calcularPreco({ tipo: 'comercial', finalidade: 'aluguel', cidade, bairro, metragem: 50, conservacao: 'bom' }),
+    ]);
+    return {
+      vendaM2: v && !v.erro ? v.precoM2Mercado : null,
+      aluguelM2: a && !a.erro ? a.precoM2Mercado : null,
+    };
+  } catch (e) { console.warn('[PrecoComercial] erro:', e.message); return null; }
+}
+
 /**
  * Analisa um ponto comercial.
  * @param {number} lat, lng — coordenadas do imóvel
@@ -210,6 +265,15 @@ async function analisarPontoComercial(lat, lng, ramo, ctx = {}) {
   else if (score >= 45) { veredito = 'Ponto regular'; emoji = '🟡'; }
   else                  { veredito = 'Ponto arriscado / saturado'; emoji = '🔴'; }
 
+  // ── Dossiê de viabilidade: ticket médio, melhores ruas, R$/m² comercial ──
+  const renda = (getBaseVenda(ctx.cidade || 'Anápolis', ctx.bairro).m2) || 4000;
+  const rendaTier = renda >= 6000 ? 'alta' : renda >= 5000 ? 'média-alta' : renda >= 4000 ? 'média' : 'popular';
+  const [ticket, ruas, precoComercial] = await Promise.all([
+    estimarTicketMedio(ramoLimpo, ctx.bairro, ctx.cidade || 'Anápolis', rendaTier),
+    melhoresRuas(ramoLimpo, ctx.bairro, ctx.cidade || 'Anápolis'),
+    precoComercialBairro(ctx.cidade || 'Anápolis', ctx.bairro),
+  ]);
+
   const analise = {
     ramo: ramoLimpo,
     bairro: ctx.bairro, cidade: ctx.cidade,
@@ -217,6 +281,7 @@ async function analisarPontoComercial(lat, lng, ramo, ctx = {}) {
     concorrencia: { em500m: conc500, em1km: conc1k, capado500: c500.capou, capado1k: c1k.capado },
     movimento: { score: Math.round(movimentoScore), geradores: geradoresRes.map(g => ({ label: g.label, qtd: g.qtd, capado: g.capado })) },
     demanda: { populacao, pibPerCapita },
+    ticket, ruas, precoComercial,
   };
 
   // Parecer (IA) e mapa estático em paralelo — não bloqueiam se falharem
@@ -242,17 +307,21 @@ async function gerarParecerIA(a) {
     concorrentes_500m: a.concorrencia.em500m.total + (a.concorrencia.capado500 ? '+' : ''),
     nota_media_concorrencia: a.concorrencia.em500m.notaMedia,
     geradores_movimento: a.movimento.geradores.map(g => `${g.label}:${g.qtd}`).join(', '),
-    pib_per_capita: a.demanda.pibPerCapita
+    pib_per_capita: a.demanda.pibPerCapita,
+    ticket_medio: a.ticket && a.ticket.ticketMedio,
+    faturamento_estimado: a.ticket && a.ticket.faturamentoMensal,
+    melhores_ruas: a.ruas && Array.isArray(a.ruas.ruas) ? a.ruas.ruas.map(r => r.nome).join(', ') : null,
+    custo_comercial: a.precoComercial ? `compra R$${a.precoComercial.vendaM2 || '?'}/m², aluguel R$${a.precoComercial.aluguelM2 || '?'}/m²` : null,
   };
   try {
     const r = await client.chat.completions.create({
       model: 'gpt-4o-mini',
       messages: [
         { role: 'system', content: 'Você é um consultor sênior de pontos comerciais de uma imobiliária corporativa em Anápolis-GO. Escreva pareceres objetivos, profissionais e diretos, sem enrolação.' },
-        { role: 'user', content: `Com base nestes dados de análise de ponto, escreva um parecer profissional curto (2 a 4 frases) recomendando ou não o ponto para o ramo do cliente, citando o principal motivo e uma orientação prática (ex: diferenciação, público, localização). Não repita os números crus, interprete-os. Dados:\n${JSON.stringify(resumo)}` }
+        { role: 'user', content: `Com base nestes dados de viabilidade comercial, escreva um parecer profissional (3 a 5 frases) recomendando ou não o ponto para o ramo: cite o principal motivo, relacione o potencial de faturamento com o custo do ponto comercial, sugira a melhor rua e dê uma orientação prática. Não repita os números crus, interprete-os. Dados:\n${JSON.stringify(resumo)}` }
       ],
       temperature: 0.5,
-      max_tokens: 220
+      max_tokens: 300
     });
     return r.choices[0].message.content.trim().replace(/^parecer:\s*/i, '');
   } catch (err) {
@@ -290,6 +359,27 @@ function formatarRelatorioComercial(a) {
     t += `📊 *Demanda (IBGE):*\n`;
     if (a.demanda.populacao) t += `• População do município: ${Number(a.demanda.populacao).toLocaleString('pt-BR')}\n`;
     if (a.demanda.pibPerCapita) t += `• PIB per capita: R$ ${Number(a.demanda.pibPerCapita).toLocaleString('pt-BR')}\n`;
+    t += `\n`;
+  }
+
+  if (a.ticket && (a.ticket.ticketMedio || a.ticket.faturamentoMensal)) {
+    t += `💵 *Potencial financeiro (estimado):*\n`;
+    if (a.ticket.ticketMedio) t += `• Ticket médio: ${a.ticket.ticketMedio}\n`;
+    if (a.ticket.faturamentoMensal) t += `• Faturamento mensal estimado: ${a.ticket.faturamentoMensal}\n`;
+    if (a.ticket.racional) t += `• ${a.ticket.racional}\n`;
+    t += `\n`;
+  }
+
+  if (a.ruas && Array.isArray(a.ruas.ruas) && a.ruas.ruas.length) {
+    t += `🛣️ *Melhores ruas para o ponto:*\n`;
+    a.ruas.ruas.slice(0, 3).forEach(r => { t += `• *${r.nome}*${r.motivo ? ` — ${r.motivo}` : ''}\n`; });
+    t += `\n`;
+  }
+
+  if (a.precoComercial && (a.precoComercial.vendaM2 || a.precoComercial.aluguelM2)) {
+    t += `🏢 *Custo do ponto comercial (${a.bairro}):*\n`;
+    if (a.precoComercial.vendaM2) t += `• Compra: R$ ${Number(a.precoComercial.vendaM2).toLocaleString('pt-BR')}/m²\n`;
+    if (a.precoComercial.aluguelM2) t += `• Aluguel: R$ ${Number(a.precoComercial.aluguelM2).toLocaleString('pt-BR')}/m²·mês\n`;
     t += `\n`;
   }
 
