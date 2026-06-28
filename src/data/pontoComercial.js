@@ -305,31 +305,51 @@ function coordsBairro(nome) {
   return null;
 }
 
-/** Análise leve de um bairro (2 chamadas Places) para ranquear. */
+/** Análise de um bairro (4 chamadas Places) para ranquear — multifator. */
 async function analiseRapidaBairro(nome, lat, lng, ramo) {
-  const [conc, superm] = await Promise.all([
+  const [conc, superm, escola, banco] = await Promise.all([
     placesNearby({ lat, lng, keyword: ramo, radius: 1000 }),
     placesNearby({ lat, lng, keyword: 'supermercado mercado', radius: 1000 }),
+    placesNearby({ lat, lng, keyword: 'escola colégio faculdade', radius: 1000 }),
+    placesNearby({ lat, lng, keyword: 'banco agência lotérica', radius: 1000 }),
   ]);
-  const concorrentes = resumirConcorrentes(conc.results).total;
-  const movimento = resumirConcorrentes(superm.results).total;
+  const rc = resumirConcorrentes(conc.results);
+  const concorrentes = rc.total;
+  const capado = !!conc.capado;
+  const notaConc = rc.notaMedia;
+  const mov = {
+    supermercado: resumirConcorrentes(superm.results).total,
+    escola: resumirConcorrentes(escola.results).total,
+    banco: resumirConcorrentes(banco.results).total,
+  };
+  const fluxo = Math.min(mov.supermercado, 8) * 1.0 + Math.min(mov.escola, 8) * 0.9 + Math.min(mov.banco, 8) * 0.7;
   const renda = getBaseVenda('Anápolis', nome).m2 || 4000; // poder de compra (proxy)
 
-  let score = 50;
+  let score = 45;
   const fatores = [];
-  if (concorrentes <= 2)       { score += 5;  fatores.push('pouca concorrência (mercado aberto)'); }
-  else if (concorrentes <= 8)  { score += 18; fatores.push('concorrência saudável (demanda validada, sem saturar)'); }
+  // Concorrência (quantidade)
+  if (concorrentes <= 2)       { score += 5;  fatores.push('mercado pouco explorado'); }
+  else if (concorrentes <= 8)  { score += 18; fatores.push('concorrência saudável (demanda validada)'); }
   else if (concorrentes <= 15) { score += 8;  fatores.push('concorrência moderada'); }
-  else                         { score -= 10; fatores.push('mercado saturado'); }
+  else                         { score -= 8;  fatores.push('mercado concorrido'); }
+  // Qualidade da concorrência (concorrente fraco = brecha)
+  if (concorrentes >= 3 && notaConc != null) {
+    if (notaConc < 3.8)       { score += 12; fatores.push(`concorrência fraca (${notaConc}⭐) — brecha`); }
+    else if (notaConc >= 4.4) { score -= 6;  fatores.push(`concorrência forte e bem avaliada (${notaConc}⭐)`); }
+  }
+  // Fluxo (multifonte)
+  score += Math.min(fluxo, 22);
+  if (fluxo >= 14) fatores.push('alto fluxo de pessoas');
+  else if (fluxo < 4) fatores.push('baixo fluxo');
+  // Renda
+  if (renda >= 6000)      { score += 10; fatores.push('alto poder de compra'); }
+  else if (renda >= 5000) { score += 6;  fatores.push('bom poder de compra'); }
+  else if (renda >= 4000) { score += 3; }
 
-  score += Math.min(movimento, 8) * 2.5; // movimento/fluxo
-  if (movimento >= 6) fatores.push('alto fluxo comercial');
-
-  if (renda >= 6000)      { score += 12; fatores.push('alto poder de compra'); }
-  else if (renda >= 5000) { score += 8;  fatores.push('bom poder de compra'); }
-  else if (renda >= 4000) { score += 4; }
-
-  return { bairro: nome, score: Math.max(0, Math.min(100, Math.round(score))), concorrentes, movimento, renda, fatores };
+  return {
+    bairro: nome, score: Math.max(0, Math.min(100, Math.round(score))),
+    concorrentes, capado, notaConc, mov, fluxo: Math.round(fluxo), renda, fatores,
+  };
 }
 
 /**
@@ -353,16 +373,22 @@ async function melhorBairro(ramo) {
 
 async function gerarRespostaMelhorBairro(ramo, ranking) {
   const client = getOpenAI();
-  const top = ranking.slice(0, 5).map(r => ({ bairro: r.bairro, score: r.score, concorrentes: r.concorrentes, fluxo: r.movimento }));
+  const top = ranking.slice(0, 5).map(r => ({
+    bairro: r.bairro, score: r.score,
+    concorrentes: `${r.concorrentes}${r.capado ? '+' : ''}`,
+    notaConcorrencia: r.notaConc,
+    fluxo: r.fluxo, geradores: r.mov,
+    renda: r.renda >= 6000 ? 'alta' : r.renda >= 5000 ? 'média-alta' : r.renda >= 4000 ? 'média' : 'popular',
+  }));
   if (!client) return null;
   try {
     const r = await client.chat.completions.create({
       model: 'gpt-4o-mini',
       messages: [
         { role: 'system', content: 'Você é um consultor de pontos comerciais de uma imobiliária corporativa em Anápolis-GO. Responda de forma direta, profissional e prática.' },
-        { role: 'user', content: `Um cliente quer abrir um(a) "${ramo}" em Anápolis e pergunta qual o melhor bairro. Com base neste ranking (score 0-100, nº de concorrentes e fluxo comercial por bairro), responda em 3-5 frases qual(is) bairro(s) recomendar e por quê, citando os 2-3 melhores e uma ressalva prática. Ranking:\n${JSON.stringify(top)}` }
+        { role: 'user', content: `Um cliente quer abrir um(a) "${ramo}" em Anápolis e pergunta qual o melhor bairro. Com base neste ranking (score 0-100, nº de concorrentes, nota média da concorrência, fluxo e renda por bairro), responda em 4-6 frases: recomende os 2-3 melhores bairros e POR QUÊ (cruzando concorrência×qualidade×fluxo×renda), aponte onde há "brecha" (concorrência fraca) e dê uma ressalva/estratégia prática para o ramo. Ranking:\n${JSON.stringify(top)}` }
       ],
-      temperature: 0.5, max_tokens: 300
+      temperature: 0.5, max_tokens: 380
     });
     return r.choices[0].message.content.trim();
   } catch (err) { console.warn('[MelhorBairro IA] erro:', err.message); return null; }
@@ -377,9 +403,12 @@ function formatarMelhorBairro(d) {
   t += `📊 *Ranking:*\n`;
   d.ranking.forEach((r, i) => {
     const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`;
-    t += `${medal} *${r.bairro}* — ${r.score}/100  (${r.concorrentes} concorrentes, fluxo ${r.movimento})\n`;
+    const conc = `${r.concorrentes}${r.capado ? '+' : ''}${r.notaConc ? ` (${r.notaConc}⭐)` : ''}`;
+    const rendaTxt = r.renda >= 6000 ? 'renda alta' : r.renda >= 5000 ? 'renda média-alta' : r.renda >= 4000 ? 'renda média' : 'renda popular';
+    t += `${medal} *${r.bairro}* — ${r.score}/100\n`;
+    t += `      ${conc} concorrentes · fluxo ${r.fluxo} (merc ${r.mov.supermercado}/esc ${r.mov.escola}/banco ${r.mov.banco}) · ${rendaTxt}\n`;
   });
-  t += `\n_Análise por amostragem (Google Maps). Indicativa, para apoio à decisão._`;
+  t += `\n_Concorrência "20+" = Google capou em 20 (bairro lotado). Análise por amostragem (Google Maps), indicativa._`;
   return t;
 }
 
