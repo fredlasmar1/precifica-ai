@@ -7,7 +7,7 @@ const chatRoutes = require('./routes/chat');
 const estimateRoutes = require('./routes/estimate');
 
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: '8mb' })); // 8mb: o dossiê comercial envia o mapa em base64
 
 // Interface web (pasta public)
 app.use(express.static(path.join(__dirname, '../public')));
