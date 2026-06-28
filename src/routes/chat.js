@@ -299,6 +299,26 @@ router.post('/relatorio', async (req, res) => {
   }
 });
 
+/**
+ * POST /api/relatorio-comercial — PDF do Estudo de Viabilidade Comercial.
+ * Body: { analise (de /api/ponto-comercial), solicitante }
+ */
+router.post('/relatorio-comercial', async (req, res) => {
+  const { analise, solicitante } = req.body || {};
+  if (!analise) return res.status(400).json({ error: 'Faça uma análise de ponto comercial primeiro.' });
+  try {
+    const { gerarDossiePdf } = require('../data/relatorioPdf');
+    const pdf = await gerarDossiePdf(analise, { solicitante });
+    const slug = String(analise.ramo || 'ponto').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-');
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="viabilidade-${slug}.pdf"`);
+    res.send(pdf);
+  } catch (err) {
+    console.error('[RelatComercial API] Erro:', err);
+    res.status(500).json({ error: '⚠️ Erro ao gerar o PDF. Tente novamente.' });
+  }
+});
+
 function gerarLaudo(dados, resultado) {
   const { tipo, finalidade, cidade, bairro, endereco, metragem, quartos, vagas } = dados;
   const {

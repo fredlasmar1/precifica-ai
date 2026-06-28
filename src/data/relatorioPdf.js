@@ -282,4 +282,145 @@ function gerarRelatorioPdf(dados, resultado, opts = {}) {
   });
 }
 
-module.exports = { gerarRelatorioPdf };
+/**
+ * PDF do Estudo de Viabilidade Comercial (aba Ponto Comercial).
+ * Mesma identidade Bens. Recebe o objeto `analise` de analisarPontoComercial.
+ */
+function gerarDossiePdf(analise, opts = {}) {
+  const a = analise || {};
+  const solicitante = opts.solicitante || '';
+  const dataEmissao = new Date().toLocaleDateString('pt-BR');
+
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ size: 'A4', bufferPages: true, margins: { top: TOP, bottom: BOTTOM, left: LX, right: 44 } });
+    const chunks = [];
+    doc.on('data', (d) => chunks.push(d));
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
+    doc.on('error', reject);
+
+    let y = TOP;
+    const ensure = (need) => { if (y + need > PAGE_H - BOTTOM) { doc.addPage(); y = TOP; } };
+
+    const chrome = () => {
+      doc.rect(0, 0, PAGE_W, 64).fill(BLUE);
+      try { doc.image(LOGO, LX, 22, { height: 20 }); } catch {}
+      doc.font('Helvetica-Bold').fontSize(13).fillColor(WHITE).text('Estudo de Viabilidade Comercial', LX, 21, { width: W, align: 'right' });
+      doc.font('Helvetica').fontSize(7.5).fillColor('#cfe0ff').text('Bens Imóveis Corporativos · Inteligência Comercial', LX, 38, { width: W, align: 'right' });
+      const fy = PAGE_H - 46;
+      doc.page.margins.bottom = 0;
+      doc.moveTo(LX, fy).lineTo(RX, fy).lineWidth(0.5).strokeColor(LINE).stroke();
+      doc.font('Helvetica').fontSize(6.8).fillColor(MUTED).text(`${RAZAO} · ${CRECI_J} · ${ENDERECO}`, LX, fy + 5, { width: W, lineBreak: false });
+      doc.font('Helvetica').fontSize(6.8).fillColor(MUTED).text(`${CONTATO}  ·  documento gerado por Precifica Aí`, LX, fy + 15, { width: W * 0.8, lineBreak: false });
+      doc.font('Helvetica').fontSize(6.8).fillColor(MUTED).text(`Emitido em ${dataEmissao}`, RX - 120, fy + 15, { width: 120, align: 'right' });
+    };
+
+    const band = (title) => { ensure(22); doc.rect(LX, y, W, 15).fill(BLUE); doc.font('Helvetica-Bold').fontSize(8).fillColor(WHITE).text(title, LX + 8, y + 4, { lineBreak: false }); y += 20; };
+    const paragraph = (t, size = 8.5) => { ensure(28); doc.font('Helvetica').fontSize(size).fillColor(INK).text(clean(t), LX, y, { width: W, align: 'justify', lineGap: 1.5 }); y = doc.y + 8; };
+    const kv = (k, v) => { ensure(13); doc.font('Helvetica-Bold').fontSize(8).fillColor(INK).text(`${k}: `, LX + 4, y, { continued: true, width: W - 8 }); doc.font('Helvetica').fontSize(8).fillColor(INK).text(clean(String(v))); y = doc.y + 3; };
+
+    // Título
+    doc.font('Helvetica-Bold').fontSize(16).fillColor(NAVY).text('ESTUDO DE VIABILIDADE COMERCIAL', LX, y, { width: W, align: 'center' });
+    doc.font('Helvetica').fontSize(8).fillColor(BLUE).text('Análise de ponto comercial por amostragem', LX, y + 20, { width: W, align: 'center' });
+    y += 38;
+
+    // Identificação
+    const cell = (x, w, label, value) => {
+      doc.rect(x, y, w, 24).lineWidth(0.5).strokeColor(LINE).stroke();
+      doc.font('Helvetica').fontSize(5.5).fillColor(LABEL).text(String(label).toUpperCase(), x + 5, y + 4, { width: w - 10, lineBreak: false });
+      doc.font('Helvetica-Bold').fontSize(8.5).fillColor(INK).text(value || '—', x + 5, y + 12, { width: w - 10, height: 10, ellipsis: true, lineBreak: false });
+    };
+    cell(LX, W * 0.55, 'Ramo do cliente', cap(a.ramo));
+    cell(LX + W * 0.55, W * 0.45, 'Solicitante', txt(solicitante)); y += 24;
+    cell(LX, W * 0.55, 'Local', `${txt(a.bairro)} — ${txt(a.cidade || 'Anápolis')}/GO`);
+    cell(LX + W * 0.55, W * 0.45, 'Responsável', `${CORRETOR} · ${CRECI_F}`); y += 24;
+    y += 10;
+
+    // Veredito
+    ensure(52);
+    doc.roundedRect(LX, y, W, 44, 8).fill(BLUE);
+    doc.font('Helvetica').fontSize(8).fillColor('#cfe0ff').text('VEREDITO', LX + 16, y + 9);
+    doc.font('Helvetica-Bold').fontSize(17).fillColor(WHITE).text(`${txt(a.veredito)}`, LX + 16, y + 19);
+    doc.font('Helvetica-Bold').fontSize(20).fillColor(WHITE).text(`${a.score}/100`, RX - 130, y + 13, { width: 114, align: 'right' });
+    y += 54;
+
+    // Mapa
+    if (a.mapaDataUri && typeof a.mapaDataUri === 'string' && a.mapaDataUri.includes(',')) {
+      try {
+        const img = Buffer.from(a.mapaDataUri.split(',')[1], 'base64');
+        const h = Math.round(W * 0.5);
+        ensure(h + 6);
+        doc.image(img, LX, y, { width: W, height: h });
+        y += h + 8;
+      } catch {}
+    }
+
+    // Concorrência
+    band('CONCORRÊNCIA (MESMO RAMO)');
+    const c5 = a.concorrencia?.em500m || {}, c1 = a.concorrencia?.em1km || {};
+    kv('Em 500m', `${c5.total || 0}${a.concorrencia?.capado500 ? '+' : ''}${c5.notaMedia ? ` (nota média ${c5.notaMedia})` : ''}`);
+    kv('Em 1km', `${c1.total || 0}${a.concorrencia?.capado1k ? '+' : ''}`);
+    if (Array.isArray(c5.top) && c5.top.length) kv('Principais', c5.top.slice(0, 4).map(x => `${x.nome}${x.nota ? ` (${x.nota})` : ''}`).join(' · '));
+
+    // Fluxo
+    if (Array.isArray(a.movimento?.geradores)) {
+      band('FLUXO / GERADORES DE MOVIMENTO (500m)');
+      a.movimento.geradores.forEach((g) => kv(g.label, `${g.qtd}${g.capado ? '+' : ''}`));
+    }
+
+    // Demanda
+    if (a.demanda?.populacao || a.demanda?.pibPerCapita) {
+      band('DEMANDA (IBGE)');
+      if (a.demanda.populacao) kv('População do município', Number(a.demanda.populacao).toLocaleString('pt-BR'));
+      if (a.demanda.pibPerCapita) kv('PIB per capita', brl(a.demanda.pibPerCapita));
+    }
+
+    // Potencial financeiro
+    if (a.ticket && (a.ticket.ticketMedio || a.ticket.faturamentoMensal)) {
+      band('POTENCIAL FINANCEIRO (ESTIMADO)');
+      if (a.ticket.ticketMedio) kv('Ticket médio', a.ticket.ticketMedio);
+      if (a.ticket.faturamentoMensal) kv('Faturamento mensal', a.ticket.faturamentoMensal);
+      if (a.ticket.racional) paragraph(a.ticket.racional);
+    }
+
+    // Melhores ruas
+    if (a.ruas && Array.isArray(a.ruas.ruas) && a.ruas.ruas.length) {
+      band('MELHORES RUAS PARA O PONTO');
+      a.ruas.ruas.slice(0, 3).forEach((r) => {
+        ensure(20);
+        doc.font('Helvetica-Bold').fontSize(8.5).fillColor(BLUE).text(`• ${clean(r.nome)}`, LX + 4, y, { width: W - 8 });
+        y = doc.y + 1;
+        if (r.motivo) { doc.font('Helvetica').fontSize(8).fillColor(INK).text(clean(r.motivo), LX + 12, y, { width: W - 16, align: 'justify' }); y = doc.y + 4; }
+      });
+      y += 2;
+    }
+
+    // Custo comercial
+    if (a.precoComercial && (a.precoComercial.vendaM2 || a.precoComercial.aluguelM2)) {
+      band('CUSTO DO PONTO COMERCIAL');
+      if (a.precoComercial.vendaM2) kv('Compra', `${brl(a.precoComercial.vendaM2)}/m²`);
+      if (a.precoComercial.aluguelM2) kv('Aluguel', `${brl(a.precoComercial.aluguelM2)}/m² por mês`);
+    }
+
+    // Parecer
+    if (a.parecer) { band('PARECER BENS'); paragraph(a.parecer); }
+
+    // Ressalvas + assinatura
+    band('RESSALVAS');
+    paragraph('Estudo de apoio à decisão, baseado em negócios listados no Google Maps, dados públicos (IBGE) e anúncios de mercado na data de emissão. Ticket médio e faturamento são ESTIMATIVAS (escaladas pelo perfil de renda da região), não garantia de resultado. Custo do ponto comercial é por amostragem de oferta.', 8);
+
+    ensure(60);
+    y += 14;
+    const half = W / 2;
+    doc.lineWidth(0.7).strokeColor(NAVY).moveTo(LX + half / 2 - 80, y).lineTo(LX + half / 2 + 80, y).stroke();
+    doc.font('Helvetica').fontSize(8).fillColor(LABEL).text('CONSULTOR RESPONSÁVEL', LX + half / 2 - 80, y + 5, { width: 160, align: 'center' });
+    doc.font('Helvetica-Bold').fontSize(9).fillColor(INK).text(CORRETOR, LX + half / 2 - 90, y + 16, { width: 180, align: 'center' });
+    doc.font('Helvetica').fontSize(8).fillColor(MUTED).text(`${CRECI_F} · ${RAZAO} (${CRECI_J})`, LX + half / 2 - 90, y + 28, { width: 180, align: 'center' });
+
+    const range = doc.bufferedPageRange();
+    for (let i = 0; i < range.count; i++) { doc.switchToPage(range.start + i); chrome(); }
+    doc.flushPages();
+    doc.end();
+  });
+}
+
+module.exports = { gerarRelatorioPdf, gerarDossiePdf };
