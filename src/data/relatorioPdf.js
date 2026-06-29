@@ -192,6 +192,25 @@ function gerarRelatorioPdf(dados, resultado, opts = {}) {
         });
         y += 6;
       }
+
+      // ── FONTES E REFERÊNCIAS ──
+      try {
+        const ff = require('./fontes').fontesAvaliacao(dados, resultado);
+        band('FONTES E REFERÊNCIAS');
+        const linha = (k, v) => { ensure(13); doc.font('Helvetica-Bold').fontSize(8).fillColor(INK).text(`${k}: `, LX + 4, y, { continued: true, width: W - 8 }); doc.font('Helvetica').fontSize(8).fillColor(INK).text(clean(String(v))); y = doc.y + 3; };
+        linha('Método', ff.metodo);
+        linha('Base', `${ff.amostra} · coletado em ${ff.data} · fundamentação ${ff.grau}`);
+        if (ff.portais && ff.portais.length) linha('Portais de mercado', ff.portais.join(', '));
+        if (ff.bases && ff.bases.length) {
+          ensure(13); doc.font('Helvetica-Bold').fontSize(8).fillColor(INK).text('Bases oficiais:', LX + 4, y); y = doc.y + 2;
+          ff.bases.forEach((b) => { ensure(12); doc.font('Helvetica').fontSize(8).fillColor(INK).text(`• ${clean(b)}`, LX + 10, y, { width: W - 14 }); y = doc.y + 2; });
+        }
+        if (ff.links && ff.links.length) {
+          ensure(13); doc.font('Helvetica-Bold').fontSize(8).fillColor(INK).text('Anúncios consultados (links):', LX + 4, y); y = doc.y + 2;
+          ff.links.slice(0, 6).forEach((u) => { ensure(12); doc.font('Helvetica').fontSize(7.5).fillColor(BLUE).text(clean(u), LX + 10, y, { width: W - 14, link: u, underline: true }); y = doc.y + 2; });
+        }
+        y += 6;
+      } catch {}
     } else {
       // ── VERSÃO CLIENTE ──
       band('COMO CHEGAMOS NESSE VALOR');

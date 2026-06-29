@@ -117,7 +117,7 @@ function formatarEmpresa(r) {
     t += `\n🔎 *O que pesou no múltiplo:*\n`;
     r.fatores.forEach(f => { t += `• ${f}\n`; });
   }
-  t += `\n_Parecer mercadológico de apoio à negociação. NÃO é avaliação contábil — confirme os números (faturamento, lucro, dívidas) com documentos e um contador antes de fechar._`;
+  try { const { fontesEmpresa, textoFontes } = require('./fontes'); t += textoFontes(fontesEmpresa(r)); } catch {}
   return t;
 }
 

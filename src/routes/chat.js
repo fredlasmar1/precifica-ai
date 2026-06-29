@@ -3,6 +3,7 @@ const router = express.Router();
 const { getSession, addMessage, clearSession, isReadyToEvaluate } = require('../agent/session');
 const { chat, extractPropertyData } = require('../agent/openai');
 const { calcularPreco, formatarReais } = require('../data/precificador');
+const { fontesAvaliacao, textoFontes } = require('../data/fontes');
 
 /**
  * POST /api/chat
@@ -382,14 +383,6 @@ function gerarLaudo(dados, resultado) {
       laudo += `• Confiança: ${analiseIA.confianca}\n`;
       if (analiseIA.raciocinio) laudo += `• ${analiseIA.raciocinio}\n`;
       laudo += '\n';
-      // Links dos portais consultados
-      if (analiseIA.citacoes && analiseIA.citacoes.length > 0) {
-        laudo += `🔗 *Links consultados:*\n`;
-        analiseIA.citacoes.slice(0, 3).forEach(url => {
-          laudo += `• ${url}\n`;
-        });
-        laudo += '\n';
-      }
     } else {
       laudo += `• ${analiseIA.raciocinio}\n`;
       laudo += `• Faixa: ${analiseIA.faixaM2}\n\n`;
@@ -434,9 +427,11 @@ function gerarLaudo(dados, resultado) {
 
   if (resultado.fichaPredioTexto) laudo += `\n${resultado.fichaPredioTexto}`;
 
-  laudo += `\n📋 *Fontes:* ${(fontesConsultadas || []).join(' | ')}\n`;
-  laudo += `_Avaliação gerada por PrecificaAI_\n\n`;
-  laudo += `⚠️ _Este laudo é por amostragem/aproximação, baseado na média dos valores publicados em sites e portais de imóveis. Válido somente para simples consulta e sem valor de documento oficial._`;
+  // Bloco padronizado de credibilidade (método, amostra, data, links, bases)
+  try { laudo += textoFontes(fontesAvaliacao(dados, resultado)); } catch {}
+
+  laudo += `_Avaliação gerada por Precifica Aí (Bens Imóveis Corporativos)_\n\n`;
+  laudo += `⚠️ _Parecer de avaliação mercadológica por amostragem. Apoio à decisão — não substitui laudo de engenharia (ABNT NBR 14653) para fins judiciais ou fiscais._`;
   return laudo;
 }
 

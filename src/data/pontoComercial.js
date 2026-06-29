@@ -391,7 +391,8 @@ function formatarRelatorioComercial(a) {
     t += `💬 *Parecer Bens:*\n${a.parecer}\n\n`;
   }
 
-  t += `_Análise por amostragem de negócios listados no Google Maps. Indicativa, para apoio à decisão._`;
+  try { const { fontesComercial, textoFontes } = require('./fontes'); t += textoFontes(fontesComercial(a)); } catch {}
+  t += `_Estudo indicativo, para apoio à decisão · Bens Imóveis Corporativos._`;
   return t;
 }
 

@@ -144,6 +144,7 @@ function formatarBuscaPredio(ficha, unidades) {
   } else {
     t += `\n_Nenhuma unidade anunciada no momento neste prédio._\n`;
   }
+  try { const { fontesPredio, textoFontes } = require('./fontes'); t += textoFontes(fontesPredio(ficha)); } catch {}
   return t;
 }
 
