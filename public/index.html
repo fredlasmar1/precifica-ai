@@ -772,14 +772,26 @@
         lista.forEach(l => {
           const d = new Date(l.criado_em);
           const data = d.toLocaleDateString('pt-BR') + ' ' + d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-          const local = [l.endereco, l.bairro].filter(Boolean).join(', ') || l.bairro || '—';
-          const tipo = TIPOS_LABEL[l.tipo] || (l.tipo || '');
-          const fin = l.finalidade === 'aluguel' ? 'Aluguel' : 'Venda';
-          const valor = l.valor ? 'R$ ' + Number(l.valor).toLocaleString('pt-BR') : '—';
+          const valor = l.valor ? 'R$ ' + Number(l.valor).toLocaleString('pt-BR') : '';
+          let main, sub, val;
+          if (l.kind === 'comercial') {
+            main = `🏪 Ponto: ${l.titulo || ''}`;
+            sub = `${l.bairro || ''} — ${l.cidade || 'Anápolis'} · ${data}`;
+            val = '';
+          } else if (l.kind === 'empresa') {
+            main = `💼 Empresa: ${l.titulo || ''}`;
+            sub = `${l.bairro || ''} — ${l.cidade || 'Anápolis'} · ${data}`;
+            val = valor;
+          } else {
+            const local = [l.endereco, l.bairro].filter(Boolean).join(', ') || l.bairro || '—';
+            main = `${TIPOS_LABEL[l.tipo] || l.tipo || ''} · ${l.finalidade === 'aluguel' ? 'Aluguel' : 'Venda'}`;
+            sub = `${local} — ${l.cidade || ''} · ${data}`;
+            val = valor;
+          }
           const row = document.createElement('div');
           row.className = 'hist-row';
           row.onclick = () => abrirLaudo(l.id);
-          row.innerHTML = `<div><div class="h-main">${tipo} · ${fin}</div><div class="h-sub">${local} — ${l.cidade || ''} · ${data}</div></div><div class="h-val">${valor}</div>`;
+          row.innerHTML = `<div><div class="h-main">${main}</div><div class="h-sub">${sub}</div></div><div class="h-val">${val}</div>`;
           box.appendChild(row);
         });
       } catch (err) {
@@ -787,16 +799,25 @@
       }
     }
     async function abrirLaudo(id) {
-      showSpinner('Abrindo avaliação (atualizada com as normas atuais)…');
+      showSpinner('Abrindo (atualizado com as normas atuais)…');
       try {
         const res = await fetch('/api/laudos/' + id);
         const data = await res.json();
         if (data.error) { showError(data.error); return; }
-        showLaudo(data.response);
-        avaliacaoAtual = { dados: data.dados, resultado: data.resultado };
-        mostrarAcoesPdf();
+        // limpa os "atuais" antes
+        avaliacaoAtual = comercialAtual = empresaAtual = null;
+        if (data.kind === 'comercial') {
+          showLaudo(data.response, data.resultado && data.resultado.mapaDataUri);
+          comercialAtual = data.resultado; mostrarAcoesPdfComercial();
+        } else if (data.kind === 'empresa') {
+          showLaudo(data.response);
+          empresaAtual = data.resultado; mostrarAcoesPdfEmpresa();
+        } else {
+          showLaudo(data.response);
+          avaliacaoAtual = { dados: data.dados, resultado: data.resultado }; mostrarAcoesPdf();
+        }
       } catch (err) {
-        showError('Erro ao abrir a avaliação.');
+        showError('Erro ao abrir.');
       }
     }
 

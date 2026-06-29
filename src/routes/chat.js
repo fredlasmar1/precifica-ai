@@ -145,6 +145,7 @@ router.post('/avaliar', async (req, res) => {
     // Salva no histórico (best-effort, não bloqueia a resposta)
     try {
       require('../data/database').salvarLaudo({
+        kind: 'imovel',
         tipo: dadosImovel.tipo, finalidade: dadosImovel.finalidade, cidade: dadosImovel.cidade,
         bairro: dadosImovel.bairro, endereco: dadosImovel.endereco, condominio: dadosImovel.condominio,
         valor: resultado.precoRecomendado, dados: dadosImovel, resultado,
@@ -197,6 +198,13 @@ router.post('/ponto-comercial', async (req, res) => {
     if (analise.erro) return res.status(422).json({ error: analise.erro });
 
     const texto = formatarRelatorioComercial(analise);
+    try {
+      require('../data/database').salvarLaudo({
+        kind: 'comercial', titulo: analise.ramo, tipo: 'comercial',
+        cidade: analise.cidade, bairro: analise.bairro, valor: 0,
+        dados: { ramo: analise.ramo, bairro: analise.bairro }, resultado: analise,
+      });
+    } catch {}
     return res.json({ type: 'comercial', response: texto, analise });
   } catch (err) {
     console.error('[PontoComercial API] Erro:', err);
@@ -273,6 +281,13 @@ router.post('/avaliar-empresa', async (req, res) => {
     const { avaliarEmpresa, formatarEmpresa } = require('../data/valuationEmpresa');
     const resultado = await avaliarEmpresa(b);
     if (resultado.erro) return res.status(422).json({ error: resultado.erro });
+    try {
+      require('../data/database').salvarLaudo({
+        kind: 'empresa', titulo: resultado.ramo, tipo: 'empresa',
+        cidade: resultado.cidade, bairro: resultado.bairro, valor: resultado.valorSugerido,
+        dados: { ramo: resultado.ramo, bairro: resultado.bairro }, resultado,
+      });
+    } catch {}
     return res.json({ type: 'empresa', response: formatarEmpresa(resultado), resultado });
   } catch (err) {
     console.error('[Empresa API] Erro:', err);
@@ -376,9 +391,12 @@ router.get('/laudos/:id', async (req, res) => {
   try {
     const l = await require('../data/database').buscarLaudo(req.params.id);
     if (!l) return res.status(404).json({ error: 'Avaliação não encontrada.' });
-    // Re-gera o laudo com o motor ATUAL (normas/fontes mais recentes)
-    const laudoTexto = gerarLaudo(l.dados, l.resultado);
-    res.json({ id: l.id, criado_em: l.criado_em, dados: l.dados, resultado: l.resultado, response: laudoTexto });
+    // Re-gera o relatório com o motor ATUAL (normas/fontes mais recentes), por tipo
+    let response;
+    if (l.kind === 'comercial') response = require('../data/pontoComercial').formatarRelatorioComercial(l.resultado);
+    else if (l.kind === 'empresa') response = require('../data/valuationEmpresa').formatarEmpresa(l.resultado);
+    else response = gerarLaudo(l.dados, l.resultado);
+    res.json({ id: l.id, criado_em: l.criado_em, kind: l.kind, dados: l.dados, resultado: l.resultado, response });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
