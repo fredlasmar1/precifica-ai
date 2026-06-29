@@ -478,6 +478,26 @@ async function analiseRapidaBairro(nome, lat, lng, ramo) {
  * @param {string} ramo — ramo do negócio (ex: "barbearia")
  * @returns { ramo, ranking:[...], resposta (texto IA) }
  */
+// Traduções para linguagem de cliente (sem jargão)
+function cap(s) { s = String(s || ''); return s.charAt(0).toUpperCase() + s.slice(1); }
+function txtConcorrencia(n) {
+  if (n <= 3) return 'quase sem concorrência';
+  if (n <= 12) return 'concorrência tranquila';
+  if (n <= 25) return 'concorrência forte';
+  return 'muito concorrido';
+}
+function txtMovimento(fluxo) {
+  if (fluxo >= 16) return 'movimento alto de pessoas';
+  if (fluxo >= 8) return 'movimento médio de pessoas';
+  return 'movimento mais fraco';
+}
+function txtRendaSimples(renda) {
+  if (renda >= 6000) return 'público de alto poder de compra (dá pra cobrar mais caro)';
+  if (renda >= 5000) return 'público de bom poder de compra';
+  if (renda >= 4000) return 'público de poder de compra médio';
+  return 'público mais popular (preço acessível atrai mais)';
+}
+
 async function melhorBairro(ramo) {
   if (!process.env.GOOGLE_PLACES_API_KEY) return { erro: 'Busca indisponível (Google Places não configurado).' };
   const ramoLimpo = String(ramo || '').trim();
@@ -488,6 +508,12 @@ async function melhorBairro(ramo) {
     entradas.map(([nome, [lat, lng]]) => analiseRapidaBairro(nome, lat, lng, ramoLimpo).catch(() => null))
   )).filter(Boolean).sort((a, b) => b.score - a.score);
 
+  // Valores estimados (ticket/faturamento) para os 3 melhores — o cliente adora isso
+  await Promise.all(ranking.slice(0, 3).map(async (r) => {
+    const tier = r.renda >= 6000 ? 'alta' : r.renda >= 5000 ? 'média-alta' : r.renda >= 4000 ? 'média' : 'popular';
+    r.ticket = await estimarTicketMedio(ramoLimpo, r.bairro, 'Anápolis', tier).catch(() => null);
+  }));
+
   const resposta = await gerarRespostaMelhorBairro(ramoLimpo, ranking);
   return { ramo: ramoLimpo, ranking, resposta };
 }
@@ -495,21 +521,22 @@ async function melhorBairro(ramo) {
 async function gerarRespostaMelhorBairro(ramo, ranking) {
   const client = getOpenAI();
   const top = ranking.slice(0, 5).map(r => ({
-    bairro: r.bairro, score: r.score,
+    bairro: r.bairro,
     concorrentes: `${r.concorrentes}${r.capado ? '+' : ''}`,
-    notaConcorrencia: r.notaConc,
-    fluxo: r.fluxo, geradores: r.mov,
-    renda: r.renda >= 6000 ? 'alta' : r.renda >= 5000 ? 'média-alta' : r.renda >= 4000 ? 'média' : 'popular',
+    movimento: txtMovimento(r.fluxo),
+    publico: txtRendaSimples(r.renda),
+    ticket_medio: r.ticket && r.ticket.ticketMedio,
+    faturamento_estimado: r.ticket && r.ticket.faturamentoMensal,
   }));
   if (!client) return null;
   try {
     const r = await client.chat.completions.create({
       model: 'gpt-4o-mini',
       messages: [
-        { role: 'system', content: 'Você é um consultor de pontos comerciais de uma imobiliária corporativa em Anápolis-GO. Responda de forma direta, profissional e prática.' },
-        { role: 'user', content: `Um cliente quer abrir um(a) "${ramo}" em Anápolis e pergunta qual o melhor bairro. Com base neste ranking (score 0-100, nº de concorrentes, nota média da concorrência, fluxo e renda por bairro), responda em 4-6 frases: recomende os 2-3 melhores bairros e POR QUÊ (cruzando concorrência×qualidade×fluxo×renda), aponte onde há "brecha" (concorrência fraca) e dê uma ressalva/estratégia prática para o ramo. Ranking:\n${JSON.stringify(top)}` }
+        { role: 'system', content: 'Você é um consultor que explica de forma MUITO SIMPLES, como se falasse com um cliente leigo que não entende de mercado. Use frases curtas, sem jargão técnico. Nada de "score", "fluxo" ou números crus — fale em "movimento", "concorrência", "quanto dá pra faturar".' },
+        { role: 'user', content: `Um cliente quer abrir um(a) "${ramo}" em Anápolis e pergunta qual o melhor bairro. Com base nestes dados dos melhores bairros, escreva uma recomendação em linguagem SIMPLES (4-6 frases): diga claramente os 2-3 melhores bairros e POR QUÊ (em palavras simples: pouca/muita concorrência, movimento, público), cite o faturamento estimado quando houver, e dê uma dica prática de como se destacar. Dados:\n${JSON.stringify(top)}` }
       ],
-      temperature: 0.5, max_tokens: 380
+      temperature: 0.5, max_tokens: 400
     });
     return r.choices[0].message.content.trim();
   } catch (err) { console.warn('[MelhorBairro IA] erro:', err.message); return null; }
@@ -517,19 +544,30 @@ async function gerarRespostaMelhorBairro(ramo, ranking) {
 
 function formatarMelhorBairro(d) {
   if (!d || d.erro) return `⚠️ ${d?.erro || 'Não foi possível analisar.'}`;
-  let t = `🏆 *MELHOR BAIRRO PARA: ${d.ramo.toUpperCase()}*\n`;
-  t += `━━━━━━━━━━━━━━━━━━━━━\n`;
-  t += `📍 Anápolis-GO · ${d.ranking.length} bairros analisados\n\n`;
-  if (d.resposta) t += `💬 *Recomendação Bens:*\n${d.resposta}\n\n`;
-  t += `📊 *Ranking:*\n`;
+  const ramo = d.ramo;
+  let t = `🏆 *MELHOR BAIRRO PARA ABRIR SUA ${ramo.toUpperCase()}*\n`;
+  t += `📍 Anápolis — comparamos ${d.ranking.length} bairros pra você\n\n`;
+  t += `*Como avaliamos cada bairro:*\n`;
+  t += `1️⃣ Quantos(as) ${ramo}(s) já existem por perto (concorrência)\n`;
+  t += `2️⃣ O movimento de pessoas na região\n`;
+  t += `3️⃣ O poder de compra do público\n`;
+  t += `Quanto melhor o equilíbrio dos três, maior a nota (de 0 a 100).\n\n`;
+
+  if (d.resposta) t += `💬 *Nossa recomendação:*\n${d.resposta}\n\n`;
+
+  t += `📊 *Ranking dos bairros:*\n`;
   d.ranking.forEach((r, i) => {
-    const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`;
-    const conc = `${r.concorrentes}${r.capado ? '+' : ''}${r.notaConc ? ` (${r.notaConc}⭐)` : ''}`;
-    const rendaTxt = r.renda >= 6000 ? 'renda alta' : r.renda >= 5000 ? 'renda média-alta' : r.renda >= 4000 ? 'renda média' : 'renda popular';
-    t += `${medal} *${r.bairro}* — ${r.score}/100\n`;
-    t += `      ${conc} concorrentes · fluxo ${r.fluxo} (merc ${r.mov.supermercado}/esc ${r.mov.escola}/banco ${r.mov.banco}) · ${rendaTxt}\n`;
+    const medal = i === 0 ? '🥇 1º' : i === 1 ? '🥈 2º' : i === 2 ? '🥉 3º' : `${i + 1}º`;
+    t += `\n${medal} — *${r.bairro}*  (nota ${r.score}/100)\n`;
+    t += `   • Concorrência: ${r.concorrentes}${r.capado ? '+' : ''} ${ramo}(s) por perto — ${txtConcorrencia(r.concorrentes)}\n`;
+    t += `   • ${cap(txtMovimento(r.fluxo))}\n`;
+    t += `   • ${cap(txtRendaSimples(r.renda))}\n`;
+    if (r.ticket) {
+      if (r.ticket.ticketMedio) t += `   • 💵 Cada cliente gasta em média: *${r.ticket.ticketMedio}*\n`;
+      if (r.ticket.faturamentoMensal) t += `   • 💰 Faturamento estimado: *${r.ticket.faturamentoMensal}* por mês\n`;
+    }
   });
-  t += `\n_Concorrência "20+" = Google capou em 20 (bairro lotado). Análise por amostragem (Google Maps), indicativa._`;
+  t += `\n_Os valores de faturamento são estimativas (baseadas no perfil de renda da região), para te dar uma ideia — não são garantia. Dados de concorrência e movimento vêm do Google Maps._`;
   return t;
 }
 
