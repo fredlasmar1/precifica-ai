@@ -193,24 +193,6 @@ function gerarRelatorioPdf(dados, resultado, opts = {}) {
         y += 6;
       }
 
-      // ── FONTES E REFERÊNCIAS ──
-      try {
-        const ff = require('./fontes').fontesAvaliacao(dados, resultado);
-        band('FONTES E REFERÊNCIAS');
-        const linha = (k, v) => { ensure(13); doc.font('Helvetica-Bold').fontSize(8).fillColor(INK).text(`${k}: `, LX + 4, y, { continued: true, width: W - 8 }); doc.font('Helvetica').fontSize(8).fillColor(INK).text(clean(String(v))); y = doc.y + 3; };
-        linha('Método', ff.metodo);
-        linha('Base', `${ff.amostra} · coletado em ${ff.data} · fundamentação ${ff.grau}`);
-        if (ff.portais && ff.portais.length) linha('Portais de mercado', ff.portais.join(', '));
-        if (ff.bases && ff.bases.length) {
-          ensure(13); doc.font('Helvetica-Bold').fontSize(8).fillColor(INK).text('Bases oficiais:', LX + 4, y); y = doc.y + 2;
-          ff.bases.forEach((b) => { ensure(12); doc.font('Helvetica').fontSize(8).fillColor(INK).text(`• ${clean(b)}`, LX + 10, y, { width: W - 14 }); y = doc.y + 2; });
-        }
-        if (ff.links && ff.links.length) {
-          ensure(13); doc.font('Helvetica-Bold').fontSize(8).fillColor(INK).text('Anúncios consultados (links):', LX + 4, y); y = doc.y + 2;
-          ff.links.slice(0, 6).forEach((u) => { ensure(12); doc.font('Helvetica').fontSize(7.5).fillColor(BLUE).text(clean(u), LX + 10, y, { width: W - 14, link: u, underline: true }); y = doc.y + 2; });
-        }
-        y += 6;
-      } catch {}
     } else {
       // ── VERSÃO CLIENTE ──
       band('COMO CHEGAMOS NESSE VALOR');
@@ -231,6 +213,25 @@ function gerarRelatorioPdf(dados, resultado, opts = {}) {
         `Tempo médio estimado de venda na região: ${txt(resultado.tempoEstimadoDias)} dias (${txt(resultado.indiceLiquidez)}).`,
       );
     }
+
+    // ── FONTES E REFERÊNCIAS (técnica e cliente) ──
+    try {
+      const ff = require('./fontes').fontesAvaliacao(dados, resultado);
+      band('FONTES E REFERÊNCIAS');
+      const linha = (k, v) => { ensure(13); doc.font('Helvetica-Bold').fontSize(8).fillColor(INK).text(`${k}: `, LX + 4, y, { continued: true, width: W - 8 }); doc.font('Helvetica').fontSize(8).fillColor(INK).text(clean(String(v))); y = doc.y + 3; };
+      linha('Método', ff.metodo);
+      linha('Base', `${ff.amostra} · coletado em ${ff.data} · fundamentação ${ff.grau}`);
+      if (ff.portais && ff.portais.length) linha('Portais de mercado', ff.portais.join(', '));
+      if (ff.bases && ff.bases.length) {
+        ensure(13); doc.font('Helvetica-Bold').fontSize(8).fillColor(INK).text('Bases oficiais:', LX + 4, y); y = doc.y + 2;
+        ff.bases.forEach((b) => { ensure(12); doc.font('Helvetica').fontSize(8).fillColor(INK).text(`• ${clean(b)}`, LX + 10, y, { width: W - 14 }); y = doc.y + 2; });
+      }
+      if (ff.links && ff.links.length) {
+        ensure(13); doc.font('Helvetica-Bold').fontSize(8).fillColor(INK).text('Anúncios consultados (links):', LX + 4, y); y = doc.y + 2;
+        ff.links.slice(0, 6).forEach((u) => { ensure(12); doc.font('Helvetica').fontSize(7.5).fillColor(BLUE).text(clean(u), LX + 10, y, { width: W - 14, link: u, underline: true }); y = doc.y + 2; });
+      }
+      y += 6;
+    } catch {}
 
     // ── RESSALVAS ──
     band('PRESSUPOSTOS E RESSALVAS');
@@ -424,6 +425,19 @@ function gerarDossiePdf(analise, opts = {}) {
     if (a.parecer) { band('PARECER BENS'); paragraph(a.parecer); }
 
     // Ressalvas + assinatura
+    // ── FONTES E METODOLOGIA ──
+    try {
+      const ff = require('./fontes').fontesComercial(a);
+      band('FONTES E METODOLOGIA');
+      kv('Método', ff.metodo);
+      kv('Base', `${ff.amostra} · consulta em ${ff.data}`);
+      if (ff.bases && ff.bases.length) {
+        ensure(13); doc.font('Helvetica-Bold').fontSize(8).fillColor(INK).text('Fontes:', LX + 4, y); y = doc.y + 2;
+        ff.bases.forEach((b) => { ensure(12); doc.font('Helvetica').fontSize(8).fillColor(INK).text(`• ${clean(b)}`, LX + 10, y, { width: W - 14 }); y = doc.y + 2; });
+      }
+      y += 4;
+    } catch {}
+
     band('RESSALVAS');
     paragraph('Estudo de apoio à decisão, baseado em negócios listados no Google Maps, dados públicos (IBGE) e anúncios de mercado na data de emissão. Ticket médio e faturamento são ESTIMATIVAS (escaladas pelo perfil de renda da região), não garantia de resultado. Custo do ponto comercial é por amostragem de oferta.', 8);
 
@@ -442,4 +456,101 @@ function gerarDossiePdf(analise, opts = {}) {
   });
 }
 
-module.exports = { gerarRelatorioPdf, gerarDossiePdf };
+/**
+ * PDF da Avaliação de Empresa / passagem de ponto. Recebe o `resultado` de
+ * valuationEmpresa.avaliarEmpresa. Mesma identidade Bens.
+ */
+function gerarEmpresaPdf(r, opts = {}) {
+  const solicitante = opts.solicitante || '';
+  const dataEmissao = new Date().toLocaleDateString('pt-BR');
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ size: 'A4', bufferPages: true, margins: { top: TOP, bottom: BOTTOM, left: LX, right: 44 } });
+    const chunks = [];
+    doc.on('data', (d) => chunks.push(d));
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
+    doc.on('error', reject);
+    let y = TOP;
+    const ensure = (need) => { if (y + need > PAGE_H - BOTTOM) { doc.addPage(); y = TOP; } };
+    const chrome = () => {
+      doc.rect(0, 0, PAGE_W, 64).fill(BLUE);
+      try { doc.image(LOGO, LX, 22, { height: 20 }); } catch {}
+      doc.font('Helvetica-Bold').fontSize(13).fillColor(WHITE).text('Avaliação de Empresa', LX, 21, { width: W, align: 'right' });
+      doc.font('Helvetica').fontSize(7.5).fillColor('#cfe0ff').text('Bens Imóveis Corporativos · Passagem de ponto', LX, 38, { width: W, align: 'right' });
+      const fy = PAGE_H - 46; doc.page.margins.bottom = 0;
+      doc.moveTo(LX, fy).lineTo(RX, fy).lineWidth(0.5).strokeColor(LINE).stroke();
+      doc.font('Helvetica').fontSize(6.8).fillColor(MUTED).text(`${RAZAO} · ${CRECI_J} · ${ENDERECO}`, LX, fy + 5, { width: W, lineBreak: false });
+      doc.font('Helvetica').fontSize(6.8).fillColor(MUTED).text(`${CONTATO}  ·  documento gerado por Precifica Aí`, LX, fy + 15, { width: W * 0.8, lineBreak: false });
+      doc.font('Helvetica').fontSize(6.8).fillColor(MUTED).text(`Emitido em ${dataEmissao}`, RX - 120, fy + 15, { width: 120, align: 'right' });
+    };
+    const band = (title) => { ensure(22); doc.rect(LX, y, W, 15).fill(BLUE); doc.font('Helvetica-Bold').fontSize(8).fillColor(WHITE).text(title, LX + 8, y + 4, { lineBreak: false }); y += 20; };
+    const paragraph = (t, size = 8.5) => { ensure(28); doc.font('Helvetica').fontSize(size).fillColor(INK).text(clean(t), LX, y, { width: W, align: 'justify', lineGap: 1.5 }); y = doc.y + 8; };
+    const kv = (k, v) => { ensure(13); doc.font('Helvetica-Bold').fontSize(8).fillColor(INK).text(`${k}: `, LX + 4, y, { continued: true, width: W - 8 }); doc.font('Helvetica').fontSize(8).fillColor(INK).text(clean(String(v))); y = doc.y + 3; };
+
+    doc.font('Helvetica-Bold').fontSize(16).fillColor(NAVY).text('AVALIAÇÃO DE EMPRESA', LX, y, { width: W, align: 'center' });
+    doc.font('Helvetica').fontSize(8).fillColor(BLUE).text('Parecer de valor para venda / passagem de ponto', LX, y + 20, { width: W, align: 'center' });
+    y += 38;
+
+    const cell = (x, w, label, value) => {
+      doc.rect(x, y, w, 24).lineWidth(0.5).strokeColor(LINE).stroke();
+      doc.font('Helvetica').fontSize(5.5).fillColor(LABEL).text(String(label).toUpperCase(), x + 5, y + 4, { width: w - 10, lineBreak: false });
+      doc.font('Helvetica-Bold').fontSize(8.5).fillColor(INK).text(value || '—', x + 5, y + 12, { width: w - 10, height: 10, ellipsis: true, lineBreak: false });
+    };
+    cell(LX, W * 0.55, 'Ramo do negócio', cap(r.ramo));
+    cell(LX + W * 0.55, W * 0.45, 'Solicitante', txt(solicitante)); y += 24;
+    cell(LX, W * 0.55, 'Local', `${txt(r.bairro)} — ${txt(r.cidade || 'Anápolis')}/GO`);
+    cell(LX + W * 0.55, W * 0.45, 'Responsável', `${CORRETOR} · ${CRECI_F}`); y += 24;
+    y += 10;
+
+    ensure(58);
+    doc.roundedRect(LX, y, W, 50, 8).fill(BLUE);
+    doc.font('Helvetica').fontSize(8).fillColor('#cfe0ff').text('VALOR SUGERIDO DA EMPRESA', LX + 16, y + 9);
+    doc.font('Helvetica-Bold').fontSize(20).fillColor(WHITE).text(brl(r.valorSugerido), LX + 16, y + 20);
+    doc.font('Helvetica').fontSize(7.5).fillColor('#cfe0ff').text('FAIXA DE NEGOCIAÇÃO', RX - 200, y + 9, { width: 190, align: 'right' });
+    doc.font('Helvetica-Bold').fontSize(11).fillColor(WHITE).text(`${brl(r.faixaMin)} – ${brl(r.faixaMax)}`, RX - 200, y + 22, { width: 190, align: 'right' });
+    y += 60;
+
+    band('OS NÚMEROS DO NEGÓCIO');
+    kv('Faturamento', `${brl(r.faturamentoMensal)}/mês`);
+    kv('Lucro líquido', `${brl(r.lucroMensal)}/mês (margem ${r.margem}%)${r.lucroEstimado ? ' — estimado' : ''}`);
+    if (r.dividas) kv('Dívidas', brl(r.dividas));
+    if (r.ativos) kv('Equipamentos/estoque', brl(r.ativos));
+
+    band('COMO CHEGAMOS NO VALOR (3 MÉTODOS)');
+    kv('Pela rentabilidade (principal)', `lucro × ${r.multiplicadorMeses} meses = ${brl(r.metodos.rentabilidade)}`);
+    kv('Pelo faturamento', brl(r.metodos.faturamento));
+    kv('Pelo patrimônio (piso)', `${brl(r.metodos.patrimonial)} (equipamentos − dívidas)`);
+    if (Array.isArray(r.fatores) && r.fatores.length) {
+      ensure(13); doc.font('Helvetica-Bold').fontSize(8).fillColor(INK).text('O que pesou no múltiplo:', LX + 4, y); y = doc.y + 2;
+      r.fatores.forEach((f) => { ensure(12); doc.font('Helvetica').fontSize(8).fillColor(INK).text(`• ${clean(f)}`, LX + 10, y, { width: W - 14 }); y = doc.y + 2; });
+      y += 2;
+    }
+
+    if (r.parecer) { band('PARECER BENS'); paragraph(r.parecer); }
+
+    try {
+      const ff = require('./fontes').fontesEmpresa(r);
+      band('FONTES E METODOLOGIA');
+      kv('Método', ff.metodo);
+      kv('Base', `${ff.amostra} · ${ff.data}`);
+      if (ff.bases && ff.bases.length) ff.bases.forEach((b) => kv('Referência', b));
+    } catch {}
+
+    band('RESSALVAS');
+    paragraph('Parecer mercadológico de apoio à negociação, emitido por corretor de imóveis. NÃO é avaliação contábil nem laudo pericial. Os valores dependem da veracidade dos números informados (faturamento, lucro, dívidas) — confirme com documentos e um contador antes de fechar.', 8);
+
+    ensure(56);
+    y += 14;
+    const half = W / 2;
+    doc.lineWidth(0.7).strokeColor(NAVY).moveTo(LX + half / 2 - 80, y).lineTo(LX + half / 2 + 80, y).stroke();
+    doc.font('Helvetica').fontSize(8).fillColor(LABEL).text('CONSULTOR RESPONSÁVEL', LX + half / 2 - 80, y + 5, { width: 160, align: 'center' });
+    doc.font('Helvetica-Bold').fontSize(9).fillColor(INK).text(CORRETOR, LX + half / 2 - 90, y + 16, { width: 180, align: 'center' });
+    doc.font('Helvetica').fontSize(8).fillColor(MUTED).text(`${CRECI_F} · ${RAZAO} (${CRECI_J})`, LX + half / 2 - 90, y + 28, { width: 180, align: 'center' });
+
+    const range = doc.bufferedPageRange();
+    for (let i = 0; i < range.count; i++) { doc.switchToPage(range.start + i); chrome(); }
+    doc.flushPages();
+    doc.end();
+  });
+}
+
+module.exports = { gerarRelatorioPdf, gerarDossiePdf, gerarEmpresaPdf };

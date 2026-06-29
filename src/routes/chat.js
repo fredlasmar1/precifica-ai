@@ -272,6 +272,23 @@ router.post('/avaliar-empresa', async (req, res) => {
   }
 });
 
+/** POST /api/relatorio-empresa — PDF da avaliação de empresa. */
+router.post('/relatorio-empresa', async (req, res) => {
+  const { resultado, solicitante } = req.body || {};
+  if (!resultado) return res.status(400).json({ error: 'Faça uma avaliação de empresa primeiro.' });
+  try {
+    const { gerarEmpresaPdf } = require('../data/relatorioPdf');
+    const pdf = await gerarEmpresaPdf(resultado, { solicitante });
+    const slug = String(resultado.ramo || 'empresa').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-');
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="avaliacao-empresa-${slug}.pdf"`);
+    res.send(pdf);
+  } catch (err) {
+    console.error('[RelatEmpresa API] Erro:', err);
+    res.status(500).json({ error: '⚠️ Erro ao gerar o PDF. Tente novamente.' });
+  }
+});
+
 /**
  * GET /api/uso — status de consumo das APIs (para monitorar custos).
  */
