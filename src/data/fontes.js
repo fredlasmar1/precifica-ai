@@ -62,7 +62,7 @@ function fontesPredio(f) {
   };
 }
 
-/** Texto do bloco (com *negrito*/emoji) — para o laudo na tela. */
+/** Texto do bloco (negrito e emoji) — para o laudo na tela. */
 function textoFontes(f) {
   let t = `\n📋 *FONTES E METODOLOGIA*\n`;
   if (f.metodo) t += `• Método: ${f.metodo}\n`;
