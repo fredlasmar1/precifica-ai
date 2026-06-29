@@ -142,6 +142,14 @@ router.post('/avaliar', async (req, res) => {
       return res.status(422).json({ error: resultado.mensagem });
     }
     const laudo = gerarLaudo(dadosImovel, resultado);
+    // Salva no histórico (best-effort, não bloqueia a resposta)
+    try {
+      require('../data/database').salvarLaudo({
+        tipo: dadosImovel.tipo, finalidade: dadosImovel.finalidade, cidade: dadosImovel.cidade,
+        bairro: dadosImovel.bairro, endereco: dadosImovel.endereco, condominio: dadosImovel.condominio,
+        valor: resultado.precoRecomendado, dados: dadosImovel, resultado,
+      });
+    } catch {}
     return res.json({ type: 'laudo', response: laudo, dados: dadosImovel, resultado });
   } catch (err) {
     console.error('[Avaliar API] Erro:', err);
@@ -354,6 +362,24 @@ router.post('/relatorio-comercial', async (req, res) => {
     console.error('[RelatComercial API] Erro:', err);
     res.status(500).json({ error: '⚠️ Erro ao gerar o PDF. Tente novamente.' });
   }
+});
+
+/**
+ * GET /api/laudos — lista o histórico de avaliações (recentes primeiro).
+ * GET /api/laudos/:id — abre uma avaliação, re-gerando o laudo com as normas atuais.
+ */
+router.get('/laudos', async (req, res) => {
+  try { res.json(await require('../data/database').listarLaudos(60)); }
+  catch (err) { res.status(500).json({ error: err.message }); }
+});
+router.get('/laudos/:id', async (req, res) => {
+  try {
+    const l = await require('../data/database').buscarLaudo(req.params.id);
+    if (!l) return res.status(404).json({ error: 'Avaliação não encontrada.' });
+    // Re-gera o laudo com o motor ATUAL (normas/fontes mais recentes)
+    const laudoTexto = gerarLaudo(l.dados, l.resultado);
+    res.json({ id: l.id, criado_em: l.criado_em, dados: l.dados, resultado: l.resultado, response: laudoTexto });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 function gerarLaudo(dados, resultado) {

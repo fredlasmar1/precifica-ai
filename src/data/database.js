@@ -132,6 +132,18 @@ async function inicializar() {
         PRIMARY KEY (mes, servico)
       )
     `);
+
+    // Histórico de avaliações (laudos salvos para consulta)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS laudos (
+        id SERIAL PRIMARY KEY,
+        criado_em TIMESTAMP DEFAULT NOW(),
+        tipo TEXT, finalidade TEXT, cidade TEXT, bairro TEXT, endereco TEXT, condominio TEXT,
+        valor BIGINT,
+        dados JSONB, resultado JSONB
+      )
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_laudos_data ON laudos(criado_em DESC)`);
     console.log('[DB] Tabelas inicializadas com sucesso');
   } catch (err) {
     console.error('[DB] Erro ao inicializar:', err.message);
@@ -324,11 +336,33 @@ async function obterUso(servico) {
   } catch (err) { return 0; }
 }
 
+// ─── Histórico de laudos (consulta) ─────────────────────────────
+async function salvarLaudo(p) {
+  const r = await pool.query(
+    `INSERT INTO laudos (tipo, finalidade, cidade, bairro, endereco, condominio, valor, dados, resultado)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id, criado_em`,
+    [p.tipo, p.finalidade, p.cidade, p.bairro, p.endereco || null, p.condominio || null, p.valor || 0,
+     JSON.stringify(p.dados || {}), JSON.stringify(p.resultado || {})]
+  );
+  return r.rows[0];
+}
+async function listarLaudos(limit = 60) {
+  const r = await pool.query(
+    `SELECT id, criado_em, tipo, finalidade, cidade, bairro, endereco, condominio, valor
+     FROM laudos ORDER BY criado_em DESC LIMIT $1`, [limit]);
+  return r.rows;
+}
+async function buscarLaudo(id) {
+  const r = await pool.query(`SELECT * FROM laudos WHERE id = $1`, [id]);
+  return r.rows[0] || null;
+}
+
 module.exports = {
   pool, inicializar,
   salvarBairro, buscarBairro, listarBairros,
   salvarPreco, buscarPreco, invalidarPreco, salvarHistorico, buscarHistorico,
   salvarAvaliacao, salvarFeedback,
   salvarConhecimentoCidade, buscarConhecimentoCidade,
-  stats, registrarUso, obterUso
+  stats, registrarUso, obterUso,
+  salvarLaudo, listarLaudos, buscarLaudo
 };

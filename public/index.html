@@ -240,6 +240,16 @@
     .btn-pdf:hover { background: var(--blue-d); }
     .btn-pdf.alt { background: #fff; color: var(--blue); border: 1.5px solid var(--blue); box-shadow: none; }
     .btn-pdf:disabled { opacity: .6; cursor: wait; }
+    /* Histórico */
+    .hist-row {
+      display: flex; align-items: center; justify-content: space-between; gap: 10px;
+      padding: 11px 13px; border: 1px solid var(--line); border-radius: 12px; cursor: pointer;
+      background: #fbfcff; transition: border .15s, box-shadow .15s;
+    }
+    .hist-row:hover { border-color: var(--blue); box-shadow: 0 4px 14px -8px rgba(1,62,248,.4); }
+    .hist-row .h-main { font-size: 13px; font-weight: 700; color: var(--ink); }
+    .hist-row .h-sub { font-size: 11.5px; color: var(--muted); margin-top: 2px; }
+    .hist-row .h-val { font-size: 13px; font-weight: 800; color: var(--blue); white-space: nowrap; }
     /* Indicador de uso */
     .uso-chip { font-size: 11px; color: var(--muted2); }
     .uso-chip b { color: var(--ink); font-weight: 600; }
@@ -289,6 +299,7 @@
         <button class="tab" id="tab-comercial" onclick="switchTab('comercial')">🏪 Ponto Comercial</button>
         <button class="tab" id="tab-predio" onclick="switchTab('predio')">🏢 Prédios</button>
         <button class="tab" id="tab-empresa" onclick="switchTab('empresa')">💼 Empresa</button>
+        <button class="tab" id="tab-historico" onclick="switchTab('historico')">📁 Histórico</button>
         <button class="tab" id="tab-chat" onclick="switchTab('chat')">💬 Conversar</button>
       </div>
 
@@ -450,6 +461,17 @@
         </form>
       </div>
 
+      <!-- Histórico -->
+      <div class="pane" id="pane-historico">
+        <div style="display:flex; align-items:center; justify-content:space-between; padding: 4px 2px 12px;">
+          <div style="font-size:13px; font-weight:700; color:var(--ink);">📁 Avaliações salvas</div>
+          <button type="button" class="btn-search" style="padding:7px 14px; font-size:12.5px;" onclick="carregarHistorico()">🔄 Atualizar</button>
+        </div>
+        <div id="lista-historico" style="display:flex; flex-direction:column; gap:8px;">
+          <div style="color:var(--muted2); font-size:13px; text-align:center; padding:20px;">Carregando…</div>
+        </div>
+      </div>
+
       <!-- Empresa -->
       <div class="pane" id="pane-empresa">
         <form onsubmit="avaliarEmpresa(event)">
@@ -552,7 +574,7 @@
     toggleCondominio();
 
     function switchTab(which) {
-      for (const t of ['form', 'chat', 'comercial', 'predio', 'empresa']) {
+      for (const t of ['form', 'chat', 'comercial', 'predio', 'empresa', 'historico']) {
         document.getElementById('tab-' + t).classList.toggle('active', which === t);
         document.getElementById('pane-' + t).classList.toggle('active', which === t);
       }
@@ -560,6 +582,7 @@
       if (head) head.textContent = which === 'comercial' ? 'Análise de Ponto Comercial'
         : which === 'predio' ? 'Ficha do Prédio'
         : which === 'empresa' ? 'Avaliação de Empresa' : 'Laudo de Precificação';
+      if (which === 'historico') carregarHistorico();
       if (which === 'chat' && !document.getElementById('thread').dataset.init) {
         addMsg('agent', 'Olá! Sou o *Precifica Aí* 🏠\nDescreva o imóvel (tipo, cidade, bairro, m², quartos, vagas, estado) que eu pesquiso o mercado e gero o laudo.');
         document.getElementById('thread').dataset.init = '1';
@@ -730,6 +753,50 @@
         alert('Erro de conexão ao gerar o PDF.');
       } finally {
         btn.disabled = false;
+      }
+    }
+
+    // ── Histórico de avaliações ──
+    const TIPOS_LABEL = { apartamento: 'Apartamento', casa: 'Casa', terreno: 'Terreno', comercial: 'Comercial' };
+    async function carregarHistorico() {
+      const box = document.getElementById('lista-historico');
+      box.innerHTML = '<div style="color:var(--muted2);font-size:13px;text-align:center;padding:20px;">Carregando…</div>';
+      try {
+        const res = await fetch('/api/laudos');
+        const lista = await res.json();
+        if (!Array.isArray(lista) || !lista.length) {
+          box.innerHTML = '<div style="color:var(--muted2);font-size:13px;text-align:center;padding:30px;">Nenhuma avaliação salva ainda.<br>As avaliações que você fizer aparecem aqui.</div>';
+          return;
+        }
+        box.innerHTML = '';
+        lista.forEach(l => {
+          const d = new Date(l.criado_em);
+          const data = d.toLocaleDateString('pt-BR') + ' ' + d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+          const local = [l.endereco, l.bairro].filter(Boolean).join(', ') || l.bairro || '—';
+          const tipo = TIPOS_LABEL[l.tipo] || (l.tipo || '');
+          const fin = l.finalidade === 'aluguel' ? 'Aluguel' : 'Venda';
+          const valor = l.valor ? 'R$ ' + Number(l.valor).toLocaleString('pt-BR') : '—';
+          const row = document.createElement('div');
+          row.className = 'hist-row';
+          row.onclick = () => abrirLaudo(l.id);
+          row.innerHTML = `<div><div class="h-main">${tipo} · ${fin}</div><div class="h-sub">${local} — ${l.cidade || ''} · ${data}</div></div><div class="h-val">${valor}</div>`;
+          box.appendChild(row);
+        });
+      } catch (err) {
+        box.innerHTML = '<div class="err-box" style="padding:20px;text-align:center;">Erro ao carregar o histórico.</div>';
+      }
+    }
+    async function abrirLaudo(id) {
+      showSpinner('Abrindo avaliação (atualizada com as normas atuais)…');
+      try {
+        const res = await fetch('/api/laudos/' + id);
+        const data = await res.json();
+        if (data.error) { showError(data.error); return; }
+        showLaudo(data.response);
+        avaliacaoAtual = { dados: data.dados, resultado: data.resultado };
+        mostrarAcoesPdf();
+      } catch (err) {
+        showError('Erro ao abrir a avaliação.');
       }
     }
 
