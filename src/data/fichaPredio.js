@@ -1,5 +1,5 @@
 const axios = require('axios');
-const { processosPorCnpj } = require('./directData');
+const { processosPorCnpj } = require('./escavador');
 
 /**
  * FICHA DO PRÉDIO — dossiê de um edifício/condomínio para apoiar a avaliação.
@@ -114,10 +114,12 @@ function formatarFichaPredio(f) {
   const dd = f.processos;
   if (dd && dd.disponivel) {
     t += dd.total > 0
-      ? `• ⚖️ Processos do condomínio (CNPJ): *${dd.total} encontrado(s)* — verificar antes de fechar\n`
-      : `• ⚖️ Processos do condomínio (CNPJ): nada consta\n`;
+      ? `• ⚖️ Processos do condomínio (CNPJ): *${dd.total}${dd.temMais ? '+' : ''} encontrado(s)* — verificar antes de fechar\n`
+      : `• ⚖️ Processos do condomínio (CNPJ): nada consta ✅\n`;
   } else if (f.cnpj) {
-    t += `• ⚖️ Processos: due diligence indisponível (${(dd && dd.motivo) || 'sem token DirectData'})\n`;
+    const motivo = (dd && dd.motivo) || 'sem token';
+    const amigavel = /saldo|cr[ée]dito/i.test(motivo) ? 'Escavador sem saldo — adicione créditos no painel' : motivo;
+    t += `• ⚖️ Processos: indisponível (${amigavel})\n`;
   }
   t += `_Ficha por amostragem de fontes públicas/anúncios. IPTU e condomínio variam por unidade; verifique o oficial._\n`;
   return t;
