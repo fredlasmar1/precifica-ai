@@ -253,6 +253,25 @@ router.post('/predio', async (req, res) => {
 });
 
 /**
+ * POST /api/avaliar-empresa — Calculadora de avaliação de empresa / passagem de ponto.
+ */
+router.post('/avaliar-empresa', async (req, res) => {
+  const b = req.body || {};
+  if (!b.faturamentoMensal || Number(b.faturamentoMensal) <= 0) {
+    return res.status(400).json({ error: 'Informe ao menos o faturamento mensal.' });
+  }
+  try {
+    const { avaliarEmpresa, formatarEmpresa } = require('../data/valuationEmpresa');
+    const resultado = await avaliarEmpresa(b);
+    if (resultado.erro) return res.status(422).json({ error: resultado.erro });
+    return res.json({ type: 'empresa', response: formatarEmpresa(resultado), resultado });
+  } catch (err) {
+    console.error('[Empresa API] Erro:', err);
+    return res.status(500).json({ error: '⚠️ Erro ao avaliar a empresa. Tente novamente.' });
+  }
+});
+
+/**
  * GET /api/uso — status de consumo das APIs (para monitorar custos).
  */
 router.get('/uso', async (req, res) => {

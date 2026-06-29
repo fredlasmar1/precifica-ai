@@ -288,6 +288,7 @@
         <button class="tab active" id="tab-form" onclick="switchTab('form')">📋 Avaliar</button>
         <button class="tab" id="tab-comercial" onclick="switchTab('comercial')">🏪 Ponto Comercial</button>
         <button class="tab" id="tab-predio" onclick="switchTab('predio')">🏢 Prédios</button>
+        <button class="tab" id="tab-empresa" onclick="switchTab('empresa')">💼 Empresa</button>
         <button class="tab" id="tab-chat" onclick="switchTab('chat')">💬 Conversar</button>
       </div>
 
@@ -448,6 +449,61 @@
           <div class="hint">Endereço, CNPJ, condomínio, IPTU, lazer, processos e unidades anunciadas.</div>
         </form>
       </div>
+
+      <!-- Empresa -->
+      <div class="pane" id="pane-empresa">
+        <form onsubmit="avaliarEmpresa(event)">
+          <div class="row">
+            <div class="field">
+              <label>Ramo do negócio</label>
+              <input id="e-ramo" placeholder="Ex: barbearia, padaria" />
+            </div>
+            <div class="field">
+              <label>Bairro</label>
+              <input id="e-bairro" placeholder="Ex: Jundiaí" />
+            </div>
+          </div>
+          <div class="row">
+            <div class="field">
+              <label>Faturamento mensal (R$)</label>
+              <input id="e-faturamento" type="number" min="0" placeholder="20000" />
+            </div>
+            <div class="field">
+              <label>Lucro líquido mensal (R$) <span class="opt">(opcional)</span></label>
+              <input id="e-lucro" type="number" min="0" placeholder="6000" />
+            </div>
+          </div>
+          <div class="row">
+            <div class="field">
+              <label>Dívidas (R$) <span class="opt">(opcional)</span></label>
+              <input id="e-dividas" type="number" min="0" placeholder="0" />
+            </div>
+            <div class="field">
+              <label>Equipamentos/estoque (R$) <span class="opt">(opcional)</span></label>
+              <input id="e-ativos" type="number" min="0" placeholder="30000" />
+            </div>
+          </div>
+          <div class="row">
+            <div class="field">
+              <label>Anos de operação</label>
+              <input id="e-anos" type="number" min="0" placeholder="5" />
+            </div>
+            <div class="field">
+              <label>Depende do dono?</label>
+              <select id="e-dependencia">
+                <option value="média">Média</option>
+                <option value="baixa">Pouco (roda sozinho)</option>
+                <option value="alta">Muito (depende do dono)</option>
+              </select>
+            </div>
+          </div>
+          <button class="btn-primary" id="btn-empresa" type="submit">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 21l-4.35-4.35"/><circle cx="11" cy="11" r="7"/></svg>
+            Avaliar empresa
+          </button>
+          <div class="hint">Faixa de valor por 3 métodos + parecer. Apoio à negociação (não é laudo contábil).</div>
+        </form>
+      </div>
     </div>
 
     <!-- DIREITA: resultado -->
@@ -496,13 +552,14 @@
     toggleCondominio();
 
     function switchTab(which) {
-      for (const t of ['form', 'chat', 'comercial', 'predio']) {
+      for (const t of ['form', 'chat', 'comercial', 'predio', 'empresa']) {
         document.getElementById('tab-' + t).classList.toggle('active', which === t);
         document.getElementById('pane-' + t).classList.toggle('active', which === t);
       }
       const head = document.getElementById('result-title');
       if (head) head.textContent = which === 'comercial' ? 'Análise de Ponto Comercial'
-        : which === 'predio' ? 'Ficha do Prédio' : 'Laudo de Precificação';
+        : which === 'predio' ? 'Ficha do Prédio'
+        : which === 'empresa' ? 'Avaliação de Empresa' : 'Laudo de Precificação';
       if (which === 'chat' && !document.getElementById('thread').dataset.init) {
         addMsg('agent', 'Olá! Sou o *Precifica Aí* 🏠\nDescreva o imóvel (tipo, cidade, bairro, m², quartos, vagas, estado) que eu pesquiso o mercado e gero o laudo.');
         document.getElementById('thread').dataset.init = '1';
@@ -673,6 +730,43 @@
         alert('Erro de conexão ao gerar o PDF.');
       } finally {
         btn.disabled = false;
+      }
+    }
+
+    async function avaliarEmpresa(e) {
+      e.preventDefault();
+      if (busy) return;
+      const payload = {
+        ramo: document.getElementById('e-ramo').value.trim(),
+        bairro: document.getElementById('e-bairro').value.trim(),
+        cidade: 'Anápolis',
+        faturamentoMensal: document.getElementById('e-faturamento').value,
+        lucroMensal: document.getElementById('e-lucro').value,
+        dividas: document.getElementById('e-dividas').value,
+        ativos: document.getElementById('e-ativos').value,
+        anosOperacao: document.getElementById('e-anos').value,
+        dependenciaDono: document.getElementById('e-dependencia').value
+      };
+      if (!payload.faturamentoMensal || Number(payload.faturamentoMensal) <= 0) {
+        showError('Informe ao menos o *faturamento mensal*.');
+        return;
+      }
+      busy = true;
+      document.getElementById('btn-empresa').disabled = true;
+      showSpinner('Calculando o valor da empresa (3 métodos)…');
+      try {
+        const res = await fetch('/api/avaliar-empresa', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (data.error) showError(data.error);
+        else showLaudo(data.response);
+      } catch (err) {
+        showError('Erro de conexão. Tente novamente.');
+      } finally {
+        busy = false;
+        document.getElementById('btn-empresa').disabled = false;
       }
     }
 
