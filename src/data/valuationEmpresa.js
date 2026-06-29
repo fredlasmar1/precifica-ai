@@ -49,7 +49,9 @@ async function avaliarEmpresa(input = {}) {
 
   // ── Métodos ──
   const valorRentabilidade = brl0(lucroMensal * meses);          // going concern (inclui ponto/clientela)
-  const mesesFat = margem >= 0.30 ? 15 : margem >= 0.20 ? 12 : margem >= 0.10 ? 9 : 6;
+  // Múltiplo de faturamento (regra de mercado) — calibrado pela margem p/ não
+  // destoar do método de lucro (negócio de margem baixa vale menos meses).
+  const mesesFat = margem >= 0.25 ? 8 : margem >= 0.15 ? 5 : margem >= 0.08 ? 3 : 2;
   const valorFaturamento = brl0(faturamentoMensal * mesesFat);
   const ativosLiquidos = brl0(ativos - dividas);                 // piso (liquidação)
 
