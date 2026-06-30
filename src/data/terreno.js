@@ -28,8 +28,15 @@ const ZONAS = {
 
 // Custo de obra por m² construído (CUB-GO aprox., padrão residencial, ref. 2026).
 const CUB = { popular: 1900, normal: 2500, alto: 3400 };
-const EFICIENCIA = 0.80;        // área privativa vendável / área construída total
-const CUSTOS_INDIRETOS = 0.28;  // projeto, legalização, BDI, comissão de vendas (sobre custo de obra)
+
+// ── Parâmetros do estudo de incorporação (calibrados p/ margem realista) ──
+const EFICIENCIA = 0.78;          // área privativa vendável / área construída total
+const FATOR_REALIZACAO = 0.90;    // preço de venda realizável vs. referência de tabela (desconto de negociação/lançamento)
+const INDIRETOS_OBRA = 0.20;      // projeto, fundação/infra, administração da obra, BDI técnico (sobre o custo de obra)
+const CUSTO_VENDAS = 0.08;        // comissão de corretagem + marketing/lançamento (sobre o VGV)
+const IMPOSTO_VGV = 0.04;         // RET — Regime Especial de Tributação da incorporação (sobre o VGV)
+const CUSTO_CAPITAL_MES = 0.012;  // custo financeiro do capital empregado (~1,2%/mês ≈ 15,4%/ano)
+const PRAZO_PADRAO = 24;          // meses (obra + vendas) quando não informado
 
 /**
  * Estudo de viabilidade de um terreno/lote.
@@ -72,19 +79,29 @@ async function analisarTerreno(input = {}) {
   const areaProjecao = Math.round(area * to);             // footprint máximo no térreo
   const areaPrivativa = Math.round(areaConstruivel * EFICIENCIA); // área vendável
 
-  // 3) VGV — Valor Geral de Vendas (área privativa × R$/m² de venda da região)
+  // 3) VGV — Valor Geral de Vendas. Bruto = área vendável × R$/m² de referência;
+  //    realizável = aplica o desconto de tabela/negociação (preço que sai de fato).
   const venda = getBaseVenda(cidade, bairro);
   const precoVendaM2 = venda.m2;
-  const vgv = Math.round(areaPrivativa * precoVendaM2);
+  const precoVendaRealizavel = Math.round(precoVendaM2 * FATOR_REALIZACAO);
+  const vgvBruto = Math.round(areaPrivativa * precoVendaM2);
+  const vgv = Math.round(areaPrivativa * precoVendaRealizavel); // VGV de trabalho (realizável)
 
-  // 4) Custo de obra
+  // 4) Cascata de custos da incorporação
   const padrao = input.padrao && CUB[input.padrao] ? input.padrao : 'normal';
   const cub = CUB[padrao];
-  const custoObra = Math.round(areaConstruivel * cub);
-  const custoIndireto = Math.round(custoObra * CUSTOS_INDIRETOS);
-  const custoTotal = custoObra + custoIndireto + custoTerreno;
+  const prazoMeses = Number(input.prazoMeses) > 0 ? Math.round(Number(input.prazoMeses)) : PRAZO_PADRAO;
 
-  // 5) Resultado do incorporador
+  const custoObra = Math.round(areaConstruivel * cub);
+  const custoIndiretoObra = Math.round(custoObra * INDIRETOS_OBRA);          // projeto, infra, administração
+  const custoVendas = Math.round(vgv * CUSTO_VENDAS);                        // comissão + marketing
+  const impostos = Math.round(vgv * IMPOSTO_VGV);                            // RET incorporação
+  // Custo financeiro: capital (terreno + obra) exposto ao longo do projeto,
+  // com exposição média ~50% (desembolso gradual).
+  const custoFinanceiro = Math.round((custoTerreno + custoObra) * CUSTO_CAPITAL_MES * prazoMeses * 0.5);
+  const custoTotal = custoTerreno + custoObra + custoIndiretoObra + custoVendas + impostos + custoFinanceiro;
+
+  // 5) Resultado do incorporador (sobre o VGV realizável)
   const lucro = vgv - custoTotal;
   const margem = vgv > 0 ? Math.round((lucro / vgv) * 100) : 0;
   const veredito = margem >= 20 ? '🟢 Atrativo' : margem >= 12 ? '🟡 Viável (apertado)' : margem >= 0 ? '🟠 Marginal' : '🔴 Inviável';
@@ -98,8 +115,10 @@ async function analisarTerreno(input = {}) {
     valorTerreno, precoM2Terreno, valorPedido, custoTerreno, confianca, fontesPreco,
     zonaKey, zonaLabel: zona.label, gabarito: zona.gabarito, ca, to,
     areaConstruivel, areaProjecao, areaPrivativa,
-    precoVendaM2, vgv,
-    padrao, cub, custoObra, custoIndireto, custoTotal,
+    precoVendaM2, precoVendaRealizavel, fatorRealizacao: FATOR_REALIZACAO,
+    vgvBruto, vgv,
+    padrao, cub, prazoMeses,
+    custoObra, custoIndiretoObra, custoVendas, impostos, custoFinanceiro, custoTotal,
     lucro, margem, veredito,
     areaUnidade, unidades,
     caEstimado: !(Number(input.ca) > 0),
@@ -117,7 +136,7 @@ async function gerarParecerTerreno(r) {
       model: 'gpt-4o-mini',
       messages: [
         { role: 'system', content: 'Você é um consultor de incorporação imobiliária. Explica de forma clara e direta para um corretor/investidor. Português do Brasil, sem jargão excessivo.' },
-        { role: 'user', content: `Dê um parecer de 4-6 frases sobre a viabilidade de incorporar um terreno de ${r.area}m² no bairro ${r.bairro}, ${r.cidade}-GO (zona ${r.zonaLabel}, coef. de aproveitamento ${r.ca}). Potencial construtivo ${r.areaConstruivel}m², área vendável ${r.areaPrivativa}m². VGV estimado ${m(r.vgv)}; custo total (terreno ${m(r.custoTerreno)} + obra ${m(r.custoObra)} + indiretos ${m(r.custoIndireto)}) = ${m(r.custoTotal)}; resultado ${m(r.lucro)} (margem ${r.margem}%). Diga se vale a pena, o que mais pesa no resultado, 1 alavanca para melhorar a margem e 1 ressalva (confirmar zoneamento/coeficiente no Plano Diretor de Anápolis).` },
+        { role: 'user', content: `Dê um parecer de 4-6 frases sobre a viabilidade de incorporar um terreno de ${r.area}m² no bairro ${r.bairro}, ${r.cidade}-GO (zona ${r.zonaLabel}, coef. de aproveitamento ${r.ca}). Potencial construtivo ${r.areaConstruivel}m², área vendável ${r.areaPrivativa}m². VGV realizável ${m(r.vgv)} (prazo ${r.prazoMeses} meses); custo total ${m(r.custoTotal)} = terreno ${m(r.custoTerreno)} + obra ${m(r.custoObra)} + indiretos ${m(r.custoIndiretoObra)} + vendas ${m(r.custoVendas)} + impostos ${m(r.impostos)} + custo financeiro ${m(r.custoFinanceiro)}; resultado ${m(r.lucro)} (margem ${r.margem}% sobre o VGV). Diga se vale a pena (margem de incorporação saudável costuma ser 15-25%), o que mais pesa no resultado, 1 alavanca para melhorar a margem e 1 ressalva (confirmar zoneamento/coeficiente no Plano Diretor de Anápolis).` },
       ],
       temperature: 0.5, max_tokens: 360,
     });
@@ -150,12 +169,16 @@ function formatarTerreno(r) {
   if (r.unidades) t += `• ≈ *${r.unidades} unidades* de ${n(r.areaUnidade)} m²\n`;
   t += `\n`;
 
-  t += `💰 *Conta do incorporador:*\n`;
-  t += `• VGV (vendas): ${n(r.areaPrivativa)} m² × ${m(r.precoVendaM2)}/m² = *${m(r.vgv)}*\n`;
+  t += `💰 *Conta do incorporador (prazo ${r.prazoMeses || PRAZO_PADRAO} meses):*\n`;
+  t += `• VGV potencial (tabela): ${n(r.areaPrivativa)} m² × ${m(r.precoVendaM2)}/m² = ${m(r.vgvBruto)}\n`;
+  t += `• *VGV realizável* (−${Math.round((1 - (r.fatorRealizacao || FATOR_REALIZACAO)) * 100)}% tabela): ${m(r.precoVendaRealizavel)}/m² = *${m(r.vgv)}*\n`;
   t += `• (−) Terreno: ${m(r.custoTerreno)}\n`;
   t += `• (−) Obra (CUB ${r.padrao} ${m(r.cub)}/m²): ${m(r.custoObra)}\n`;
-  t += `• (−) Indiretos (projeto/legal/vendas ${Math.round(CUSTOS_INDIRETOS * 100)}%): ${m(r.custoIndireto)}\n`;
-  t += `• *Resultado: ${m(r.lucro)}* (margem ${r.margem}% sobre o VGV)\n`;
+  t += `• (−) Indiretos da obra (projeto/infra/adm ${Math.round(INDIRETOS_OBRA * 100)}%): ${m(r.custoIndiretoObra)}\n`;
+  t += `• (−) Vendas (comissão+marketing ${Math.round(CUSTO_VENDAS * 100)}% do VGV): ${m(r.custoVendas)}\n`;
+  t += `• (−) Impostos (RET ${Math.round(IMPOSTO_VGV * 100)}% do VGV): ${m(r.impostos)}\n`;
+  t += `• (−) Custo financeiro (${(CUSTO_CAPITAL_MES * 100).toFixed(1)}%/mês sobre capital): ${m(r.custoFinanceiro)}\n`;
+  t += `• *Resultado: ${m(r.lucro)}* (margem ${r.margem}% sobre o VGV realizável)\n`;
 
   try {
     const { textoFontes } = require('./fontes');

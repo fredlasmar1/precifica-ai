@@ -549,9 +549,15 @@
               <input id="t-unidade" type="number" min="0" placeholder="ex: 60" />
             </div>
           </div>
-          <div class="field">
-            <label>Valor pedido pelo terreno (R$) <span class="opt">(opcional)</span></label>
-            <input id="t-pedido" type="number" min="0" placeholder="Se souber, entra na conta do incorporador" />
+          <div class="row">
+            <div class="field">
+              <label>Prazo do projeto (meses) <span class="opt">(obra + vendas)</span></label>
+              <input id="t-prazo" type="number" min="6" placeholder="24" />
+            </div>
+            <div class="field">
+              <label>Valor pedido pelo terreno (R$) <span class="opt">(opcional)</span></label>
+              <input id="t-pedido" type="number" min="0" placeholder="Entra na conta do incorporador" />
+            </div>
           </div>
           <button class="btn-primary" id="btn-terreno" type="submit">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 20h18"/><path d="M5 20V9l7-5 7 5v11"/></svg>
@@ -1071,6 +1077,7 @@
         ca: document.getElementById('t-ca').value,
         padrao: document.getElementById('t-padrao').value,
         areaUnidade: document.getElementById('t-unidade').value,
+        prazoMeses: document.getElementById('t-prazo').value,
         valorPedido: document.getElementById('t-pedido').value
       };
       if (!payload.bairro || !(Number(payload.area) > 0)) {
