@@ -313,6 +313,43 @@ router.post('/relatorio-empresa', async (req, res) => {
 });
 
 /**
+ * POST /api/repasse — transforma a avaliação em repasse: desconto sugerido,
+ * preço de repasse, economia, tempo acelerado e estratégia de venda.
+ * Body: { dados, resultado, desconto? }
+ */
+router.post('/repasse', async (req, res) => {
+  const { dados, resultado, desconto } = req.body || {};
+  if (!resultado || !resultado.precoRecomendado) return res.status(400).json({ error: 'Faça uma avaliação primeiro.' });
+  try {
+    const { calcularRepasse, descontoSugerido, estrategiaRepasse } = require('../data/repasse');
+    const sugerido = descontoSugerido(resultado.indiceLiquidez);
+    const r = calcularRepasse(resultado, desconto != null ? desconto : sugerido);
+    const estrategia = await estrategiaRepasse(dados || {}, r);
+    return res.json({ ...r, descontoSugerido: sugerido, estrategia });
+  } catch (err) {
+    console.error('[Repasse API] Erro:', err);
+    return res.status(500).json({ error: '⚠️ Erro ao calcular o repasse. Tente novamente.' });
+  }
+});
+
+/** POST /api/relatorio-repasse — PDF do laudo de repasse. */
+router.post('/relatorio-repasse', async (req, res) => {
+  const { dados, resultado, desconto, estrategia, solicitante } = req.body || {};
+  if (!resultado || !resultado.precoRecomendado) return res.status(400).json({ error: 'Faça uma avaliação primeiro.' });
+  try {
+    const { gerarRepassePdf } = require('../data/relatorioPdf');
+    const pdf = await gerarRepassePdf(dados || {}, resultado, { desconto, estrategia, solicitante });
+    const slug = String(dados?.bairro || 'imovel').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-');
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="repasse-${slug}.pdf"`);
+    res.send(pdf);
+  } catch (err) {
+    console.error('[RelatRepasse API] Erro:', err);
+    res.status(500).json({ error: '⚠️ Erro ao gerar o PDF. Tente novamente.' });
+  }
+});
+
+/**
  * GET /api/uso — status de consumo das APIs (para monitorar custos).
  */
 router.get('/uso', async (req, res) => {

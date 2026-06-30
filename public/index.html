@@ -239,7 +239,28 @@
     }
     .btn-pdf:hover { background: var(--blue-d); }
     .btn-pdf.alt { background: #fff; color: var(--blue); border: 1.5px solid var(--blue); box-shadow: none; }
+    .btn-pdf.rep { background: #0e9f6e; box-shadow: 0 6px 16px -7px rgba(14,159,110,.5); }
+    .btn-pdf.rep:hover { background: #0b8a5f; }
     .btn-pdf:disabled { opacity: .6; cursor: wait; }
+    /* Painel de Repasse */
+    .repasse { padding: 4px 2px; }
+    .rep-head { font-size: 15px; font-weight: 800; color: var(--ink); margin-bottom: 14px; }
+    .rep-boxes { display: flex; gap: 12px; margin-bottom: 12px; }
+    .rep-box { flex: 1; border: 1.5px solid var(--line); border-radius: 14px; padding: 14px; text-align: center; }
+    .rep-box span { font-size: 11px; color: var(--muted); display: block; }
+    .rep-box b { font-size: 22px; color: var(--ink); display: block; margin: 4px 0; letter-spacing: -.5px; }
+    .rep-box small { font-size: 11px; color: var(--muted2); }
+    .rep-box.azul { background: var(--blue); border-color: var(--blue); }
+    .rep-box.azul span, .rep-box.azul small { color: #cfe0ff; }
+    .rep-box.azul b { color: #fff; }
+    .rep-econ { background: var(--blue-tint); border: 1px solid var(--blue-tint2); border-radius: 12px; padding: 12px; text-align: center; font-size: 14px; color: var(--ink); margin-bottom: 16px; }
+    .rep-econ b { color: var(--blue); }
+    .rep-slider-wrap { margin-bottom: 16px; }
+    .rep-slider-wrap label { display: flex; justify-content: space-between; font-size: 13px; font-weight: 600; color: var(--ink); margin-bottom: 8px; }
+    .rep-slider-wrap label b { color: #0e9f6e; }
+    .rep-slider-wrap input[type=range] { width: 100%; accent-color: #0e9f6e; }
+    .rep-estrategia { background: #fbfcff; border: 1px solid var(--line); border-radius: 12px; padding: 14px; font-size: 13px; line-height: 1.55; color: var(--ink); white-space: pre-wrap; margin-bottom: 16px; }
+    .rep-estrategia b { color: var(--blue); }
     /* Histórico */
     .hist-row {
       display: flex; align-items: center; justify-content: space-between; gap: 10px;
@@ -297,7 +318,7 @@
       <div class="tabs">
         <button class="tab active" id="tab-form" onclick="switchTab('form')">📋 Avaliar</button>
         <button class="tab" id="tab-comercial" onclick="switchTab('comercial')">🏪 Ponto Comercial</button>
-        <button class="tab" id="tab-predio" onclick="switchTab('predio')">🏢 Prédios</button>
+        <button class="tab" id="tab-predio" onclick="switchTab('predio')">🏢 Prédios/Apt.</button>
         <button class="tab" id="tab-empresa" onclick="switchTab('empresa')">💼 Empresa</button>
         <button class="tab" id="tab-historico" onclick="switchTab('historico')">📁 Histórico</button>
         <button class="tab" id="tab-chat" onclick="switchTab('chat')">💬 Conversar</button>
@@ -647,7 +668,7 @@
         });
         const data = await res.json();
         if (data.error) { showError(data.error); avaliacaoAtual = null; }
-        else { showLaudo(data.response); avaliacaoAtual = { dados: data.dados, resultado: data.resultado }; mostrarAcoesPdf(); }
+        else { showLaudo(data.response); avaliacaoAtual = { dados: data.dados, resultado: data.resultado, laudoTexto: data.response }; mostrarAcoesPdf(); }
       } catch (err) {
         showError('Erro de conexão. Tente novamente.');
       } finally {
@@ -665,7 +686,8 @@
       bar.className = 'pdf-bar';
       bar.innerHTML =
         '<button class="btn-pdf" onclick="baixarRelatorio(\'tecnica\', this)">📄 Relatório técnico (PDF)</button>' +
-        '<button class="btn-pdf alt" onclick="baixarRelatorio(\'cliente\', this)">📄 Versão cliente (PDF)</button>';
+        '<button class="btn-pdf alt" onclick="baixarRelatorio(\'cliente\', this)">📄 Versão cliente (PDF)</button>' +
+        '<button class="btn-pdf rep" onclick="abrirRepasse()">🔁 Transformar em Repasse</button>';
       laudo.prepend(bar);
     }
     async function baixarRelatorio(versao, btn) {
@@ -689,6 +711,78 @@
       } finally {
         btn.disabled = false;
       }
+    }
+
+    // ── Modo Repasse ──
+    let repasseState = null;
+    const fmtBRL = (v) => 'R$ ' + Number(v).toLocaleString('pt-BR');
+    const tempoRep = (base, d) => Math.max(15, Math.round(base * Math.max(0.18, 1 - d * 0.05)));
+    async function abrirRepasse() {
+      if (!avaliacaoAtual) return;
+      showSpinner('Montando a oportunidade de repasse…');
+      try {
+        const res = await fetch('/api/repasse', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ dados: avaliacaoAtual.dados, resultado: avaliacaoAtual.resultado })
+        });
+        const r = await res.json();
+        if (r.error) { showError(r.error); return; }
+        repasseState = {
+          dados: avaliacaoAtual.dados, resultado: avaliacaoAtual.resultado,
+          valorMercado: r.valorMercado, baseDias: r.tempoMercadoDias,
+          descontoAtual: r.descontoSugerido, estrategia: r.estrategia
+        };
+        renderRepasse();
+      } catch (e) { showError('Erro ao montar o repasse.'); }
+    }
+    function renderRepasse() {
+      const s = repasseState;
+      document.getElementById('result-tag').textContent = 'repasse';
+      const body = document.getElementById('result-body');
+      body.innerHTML =
+        '<div class="laudo"><div class="repasse">' +
+        '<div class="rep-head">🔁 Modo Repasse — venda rápida</div>' +
+        '<div class="rep-boxes">' +
+          `<div class="rep-box"><span>VALOR DE MERCADO</span><b>${fmtBRL(s.valorMercado)}</b><small>~${s.baseDias} dias p/ vender</small></div>` +
+          `<div class="rep-box azul"><span>PREÇO DE REPASSE</span><b id="rep-preco">—</b><small id="rep-tempo">—</small></div>` +
+        '</div>' +
+        '<div class="rep-econ">O comprador economiza <b id="rep-econ">—</b> (<span id="rep-pct">—</span> abaixo do mercado)</div>' +
+        '<div class="rep-slider-wrap"><label>Ajustar desconto <b id="rep-desc-label">—</b></label>' +
+          `<input type="range" id="rep-slider" min="5" max="30" step="1" value="${s.descontoAtual}" oninput="recalcRepasse()"></div>` +
+        (s.estrategia ? `<div class="rep-estrategia"><b>Estratégia de venda:</b>\n${s.estrategia.replace(/&/g,'&amp;').replace(/</g,'&lt;')}</div>` : '') +
+        '<div class="pdf-bar">' +
+          '<button class="btn-pdf rep" onclick="baixarRepassePdf(this)">📄 Laudo de repasse (PDF)</button>' +
+          '<button class="btn-pdf alt" onclick="voltarAvaliacao()">← Voltar à avaliação</button>' +
+        '</div></div></div>';
+      recalcRepasse();
+    }
+    function recalcRepasse() {
+      const s = repasseState; const d = Number(document.getElementById('rep-slider').value);
+      s.descontoAtual = d;
+      const preco = Math.round(s.valorMercado * (1 - d / 100));
+      document.getElementById('rep-preco').textContent = fmtBRL(preco);
+      document.getElementById('rep-econ').textContent = fmtBRL(s.valorMercado - preco);
+      document.getElementById('rep-pct').textContent = d + '%';
+      document.getElementById('rep-desc-label').textContent = '−' + d + '%';
+      document.getElementById('rep-tempo').textContent = '~' + tempoRep(s.baseDias, d) + ' dias p/ vender';
+    }
+    async function baixarRepassePdf(btn) {
+      const s = repasseState; if (!s) return;
+      const solicitante = prompt('Nome do cliente/solicitante (opcional):', '') || '';
+      btn.disabled = true;
+      try {
+        const res = await fetch('/api/relatorio-repasse', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ dados: s.dados, resultado: s.resultado, desconto: s.descontoAtual, estrategia: s.estrategia, solicitante })
+        });
+        if (!res.ok) { alert('Não foi possível gerar o PDF.'); return; }
+        const blob = await res.blob(); const url = URL.createObjectURL(blob);
+        const a = document.createElement('a'); a.href = url; a.download = 'laudo-repasse.pdf';
+        document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+      } catch (e) { alert('Erro de conexão.'); } finally { btn.disabled = false; }
+    }
+    function voltarAvaliacao() {
+      if (avaliacaoAtual && avaliacaoAtual.laudoTexto) { showLaudo(avaliacaoAtual.laudoTexto); mostrarAcoesPdf(); }
     }
 
     async function analisarPonto(e) {
@@ -814,7 +908,7 @@
           empresaAtual = data.resultado; mostrarAcoesPdfEmpresa();
         } else {
           showLaudo(data.response);
-          avaliacaoAtual = { dados: data.dados, resultado: data.resultado }; mostrarAcoesPdf();
+          avaliacaoAtual = { dados: data.dados, resultado: data.resultado, laudoTexto: data.response }; mostrarAcoesPdf();
         }
       } catch (err) {
         showError('Erro ao abrir.');

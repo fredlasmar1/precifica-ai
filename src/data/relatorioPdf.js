@@ -553,4 +553,98 @@ function gerarEmpresaPdf(r, opts = {}) {
   });
 }
 
-module.exports = { gerarRelatorioPdf, gerarDossiePdf, gerarEmpresaPdf };
+/**
+ * PDF do LAUDO DE REPASSE — valor de mercado vs preço de repasse (venda rápida).
+ */
+function gerarRepassePdf(dados, resultado, opts = {}) {
+  const { calcularRepasse } = require('./repasse');
+  const r = calcularRepasse(resultado, opts.desconto);
+  const estrategia = opts.estrategia || '';
+  const solicitante = opts.solicitante || '';
+  const dataEmissao = new Date().toLocaleDateString('pt-BR');
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ size: 'A4', bufferPages: true, margins: { top: TOP, bottom: BOTTOM, left: LX, right: 44 } });
+    const chunks = [];
+    doc.on('data', (d) => chunks.push(d));
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
+    doc.on('error', reject);
+    let y = TOP;
+    const ensure = (need) => { if (y + need > PAGE_H - BOTTOM) { doc.addPage(); y = TOP; } };
+    const chrome = () => {
+      doc.rect(0, 0, PAGE_W, 64).fill(BLUE);
+      try { doc.image(LOGO, LX, 22, { height: 20 }); } catch {}
+      doc.font('Helvetica-Bold').fontSize(13).fillColor(WHITE).text('Oportunidade de Repasse', LX, 21, { width: W, align: 'right' });
+      doc.font('Helvetica').fontSize(7.5).fillColor('#cfe0ff').text('Bens Imóveis Corporativos · Venda rápida', LX, 38, { width: W, align: 'right' });
+      const fy = PAGE_H - 46; doc.page.margins.bottom = 0;
+      doc.moveTo(LX, fy).lineTo(RX, fy).lineWidth(0.5).strokeColor(LINE).stroke();
+      doc.font('Helvetica').fontSize(6.8).fillColor(MUTED).text(`${RAZAO} · ${CRECI_J} · ${ENDERECO}`, LX, fy + 5, { width: W, lineBreak: false });
+      doc.font('Helvetica').fontSize(6.8).fillColor(MUTED).text(`${CONTATO}  ·  documento gerado por Precifica Aí`, LX, fy + 15, { width: W * 0.8, lineBreak: false });
+      doc.font('Helvetica').fontSize(6.8).fillColor(MUTED).text(`Emitido em ${dataEmissao}`, RX - 120, fy + 15, { width: 120, align: 'right' });
+    };
+    const band = (title) => { ensure(22); doc.rect(LX, y, W, 15).fill(BLUE); doc.font('Helvetica-Bold').fontSize(8).fillColor(WHITE).text(title, LX + 8, y + 4, { lineBreak: false }); y += 20; };
+    const paragraph = (t, size = 8.5) => { ensure(28); doc.font('Helvetica').fontSize(size).fillColor(INK).text(clean(t), LX, y, { width: W, align: 'justify', lineGap: 1.5 }); y = doc.y + 8; };
+    const kv = (k, v) => { ensure(13); doc.font('Helvetica-Bold').fontSize(8).fillColor(INK).text(`${k}: `, LX + 4, y, { continued: true, width: W - 8 }); doc.font('Helvetica').fontSize(8).fillColor(INK).text(clean(String(v))); y = doc.y + 3; };
+
+    doc.font('Helvetica-Bold').fontSize(16).fillColor(NAVY).text('LAUDO DE REPASSE', LX, y, { width: W, align: 'center' });
+    doc.font('Helvetica').fontSize(8).fillColor(BLUE).text('Oportunidade de compra abaixo do valor de mercado', LX, y + 20, { width: W, align: 'center' });
+    y += 38;
+
+    const cell = (x, w, label, value) => {
+      doc.rect(x, y, w, 24).lineWidth(0.5).strokeColor(LINE).stroke();
+      doc.font('Helvetica').fontSize(5.5).fillColor(LABEL).text(String(label).toUpperCase(), x + 5, y + 4, { width: w - 10, lineBreak: false });
+      doc.font('Helvetica-Bold').fontSize(8.5).fillColor(INK).text(value || '—', x + 5, y + 12, { width: w - 10, height: 10, ellipsis: true, lineBreak: false });
+    };
+    const end = [dados.endereco, dados.bairro].filter(Boolean).join(', ');
+    cell(LX, W * 0.6, 'Imóvel', `${cap(dados.tipo)} — ${end || txt(dados.bairro)}, ${txt(dados.cidade || 'Anápolis')}/GO`);
+    cell(LX + W * 0.6, W * 0.4, 'Solicitante', txt(solicitante)); y += 24;
+    cell(LX, W, 'Características', `${num(dados.metragem)}m²${dados.quartos ? ` · ${num(dados.quartos)} quartos` : ''}${dados.vagas ? ` · ${num(dados.vagas)} vaga(s)` : ''} · ${cap(dados.conservacao)}`); y += 24;
+    y += 10;
+
+    // Dois quadros: mercado x repasse
+    const halfBox = (W - 12) / 2;
+    ensure(64);
+    doc.roundedRect(LX, y, halfBox, 58, 8).lineWidth(1).strokeColor(LINE).stroke();
+    doc.font('Helvetica').fontSize(8).fillColor(MUTED).text('VALOR DE MERCADO', LX + 14, y + 12);
+    doc.font('Helvetica-Bold').fontSize(17).fillColor(NAVY).text(brl(r.valorMercado), LX + 14, y + 24);
+    doc.font('Helvetica').fontSize(7).fillColor(MUTED).text(`venda em ~${r.tempoMercadoDias} dias`, LX + 14, y + 46);
+    doc.roundedRect(LX + halfBox + 12, y, halfBox, 58, 8).fill(BLUE);
+    doc.font('Helvetica').fontSize(8).fillColor('#cfe0ff').text(`PREÇO DE REPASSE (-${r.desconto}%)`, LX + halfBox + 26, y + 12);
+    doc.font('Helvetica-Bold').fontSize(17).fillColor(WHITE).text(brl(r.repasse), LX + halfBox + 26, y + 24);
+    doc.font('Helvetica').fontSize(7).fillColor('#cfe0ff').text(`venda em ~${r.tempoRepasseDias} dias`, LX + halfBox + 26, y + 46);
+    y += 68;
+
+    ensure(34);
+    doc.roundedRect(LX, y, W, 28, 6).fill(BAND);
+    doc.font('Helvetica-Bold').fontSize(11).fillColor(NAVY).text(`O comprador economiza ${brl(r.economia)}  (${r.desconto}% abaixo do mercado)`, LX, y + 9, { width: W, align: 'center' });
+    y += 38;
+
+    if (estrategia) { band('ESTRATÉGIA DE VENDA'); paragraph(estrategia); }
+
+    // Fontes do valor de mercado
+    try {
+      const ff = require('./fontes').fontesAvaliacao(dados, resultado);
+      band('FONTES E METODOLOGIA');
+      kv('Valor de mercado', ff.metodo);
+      kv('Base', `${ff.amostra} · coletado em ${ff.data} · fundamentação ${ff.grau}`);
+      if (ff.bases && ff.bases.length) ff.bases.forEach((b) => { ensure(12); doc.font('Helvetica').fontSize(8).fillColor(INK).text(`• ${clean(b)}`, LX + 10, y, { width: W - 14 }); y = doc.y + 2; });
+    } catch {}
+
+    band('RESSALVAS');
+    paragraph('O valor de mercado é um parecer por amostragem (ABNT NBR 14653-2). O preço de repasse é uma sugestão comercial de venda rápida, definida com o vendedor — não é obrigação. O tempo de venda é estimativa baseada na liquidez da região.', 8);
+
+    ensure(56);
+    y += 14;
+    const half = W / 2;
+    doc.lineWidth(0.7).strokeColor(NAVY).moveTo(LX + half / 2 - 80, y).lineTo(LX + half / 2 + 80, y).stroke();
+    doc.font('Helvetica').fontSize(8).fillColor(LABEL).text('CORRETOR RESPONSÁVEL', LX + half / 2 - 80, y + 5, { width: 160, align: 'center' });
+    doc.font('Helvetica-Bold').fontSize(9).fillColor(INK).text(CORRETOR, LX + half / 2 - 90, y + 16, { width: 180, align: 'center' });
+    doc.font('Helvetica').fontSize(8).fillColor(MUTED).text(`${CRECI_F} · ${RAZAO} (${CRECI_J})`, LX + half / 2 - 90, y + 28, { width: 180, align: 'center' });
+
+    const range = doc.bufferedPageRange();
+    for (let i = 0; i < range.count; i++) { doc.switchToPage(range.start + i); chrome(); }
+    doc.flushPages();
+    doc.end();
+  });
+}
+
+module.exports = { gerarRelatorioPdf, gerarDossiePdf, gerarEmpresaPdf, gerarRepassePdf };
