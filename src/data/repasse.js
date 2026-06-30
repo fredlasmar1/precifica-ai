@@ -58,8 +58,8 @@ async function estrategiaRepasse(dados, r) {
     const resp = await client.chat.completions.create({
       model: 'gpt-4o-mini',
       messages: [
-        { role: 'system', content: 'Você é um consultor de vendas imobiliárias em Anápolis-GO. Escreva de forma SIMPLES e prática, em tópicos curtos.' },
-        { role: 'user', content: `Um corretor vai vender um(a) ${dados.tipo} no bairro ${dados.bairro} (Anápolis) como REPASSE (venda rápida). Valor de mercado: R$ ${r.valorMercado.toLocaleString('pt-BR')}. Preço de repasse: R$ ${r.repasse.toLocaleString('pt-BR')} (${r.desconto}% abaixo, comprador economiza R$ ${r.economia.toLocaleString('pt-BR')}). Escreva uma estratégia de venda em 4 tópicos curtos: (1) como anunciar destacando a oportunidade, (2) o público certo, (3) o gatilho de urgência, (4) uma dica para fechar rápido. Sem enrolação.` },
+        { role: 'system', content: 'Você é um consultor de vendas imobiliárias em Anápolis-GO. Escreva de forma SIMPLES e prática, em tópicos curtos. NÃO use markdown (nada de ###, **, nem títulos) — use apenas "• " no começo de cada tópico.' },
+        { role: 'user', content: `Um corretor vai vender um(a) ${dados.tipo} no bairro ${dados.bairro} (Anápolis) como REPASSE (venda rápida). Valor de mercado: R$ ${r.valorMercado.toLocaleString('pt-BR')}. Preço de repasse: R$ ${r.repasse.toLocaleString('pt-BR')} (${r.desconto}% abaixo, comprador economiza R$ ${r.economia.toLocaleString('pt-BR')}). Escreva uma estratégia de venda em 4 tópicos curtos, cada um começando com "• ": (1) como anunciar destacando a oportunidade, (2) o público certo, (3) o gatilho de urgência, (4) uma dica para fechar rápido. Sem títulos, sem markdown, direto ao ponto.` },
       ],
       temperature: 0.5, max_tokens: 320,
     });
