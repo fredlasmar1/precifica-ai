@@ -65,8 +65,12 @@ async function infraestruturaProxima(lat, lng) {
       const { results } = await placesNearby({ lat, lng, keyword: c.kw, radius: 1500 });
       const qtd = (results || []).length;
       let maisProximoM = null;
-      const loc = qtd && results[0].geometry && results[0].geometry.location;
-      if (loc) maisProximoM = Math.round(distM(lat, lng, loc.lat, loc.lng));
+      for (const r of (results || [])) {
+        const loc = r.geometry && r.geometry.location;
+        if (!loc) continue;
+        const dm = Math.round(distM(lat, lng, loc.lat, loc.lng));
+        if (maisProximoM == null || dm < maisProximoM) maisProximoM = dm;
+      }
       out.push({ categoria: c.categoria, qtd, maisProximoM });
     } catch { out.push({ categoria: c.categoria, qtd: 0, maisProximoM: null }); }
   }
