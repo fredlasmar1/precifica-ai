@@ -338,6 +338,7 @@
         <button class="tab active" id="tab-form" onclick="switchTab('form')"><svg viewBox="0 0 24 24"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 13l2 2 4-4"/></svg>Avaliar</button>
         <button class="tab" id="tab-comercial" onclick="switchTab('comercial')"><svg viewBox="0 0 24 24"><path d="M4 9V20h16V9"/><path d="M2 9l2-5h16l2 5a3 3 0 0 1-6 0 3 3 0 0 1-6 0 3 3 0 0 1-6 0z"/><path d="M9 20v-5h6v5"/></svg>Comercial</button>
         <button class="tab" id="tab-predio" onclick="switchTab('predio')"><svg viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="1"/><path d="M9 7h2M13 7h2M9 11h2M13 11h2M9 15h2M13 15h2"/></svg>Prédios</button>
+        <button class="tab" id="tab-terreno" onclick="switchTab('terreno')"><svg viewBox="0 0 24 24"><path d="M3 20h18"/><path d="M5 20V9l7-5 7 5v11"/><path d="M9 20v-5h6v5"/></svg>Terrenos</button>
         <button class="tab" id="tab-fipe" onclick="switchTab('fipe')"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><rect x="7" y="11" width="3" height="7" rx="1"/><rect x="12" y="7" width="3" height="11" rx="1"/><rect x="17" y="4" width="3" height="14" rx="1"/></svg>FIPE</button>
         <button class="tab" id="tab-empresa" onclick="switchTab('empresa')"><svg viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M3 13h18"/></svg>Empresa</button>
         <button class="tab" id="tab-historico" onclick="switchTab('historico')"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Histórico</button>
@@ -502,6 +503,64 @@
         </form>
       </div>
 
+      <!-- Terrenos / Lotes -->
+      <div class="pane" id="pane-terreno">
+        <form onsubmit="analisarTerreno(event)">
+          <div class="row">
+            <div class="field">
+              <label>Bairro</label>
+              <input id="t-bairro" placeholder="Ex: Jundiaí" />
+            </div>
+            <div class="field">
+              <label>Área do terreno (m²)</label>
+              <input id="t-area" type="number" min="0" placeholder="450" />
+            </div>
+          </div>
+          <div class="field">
+            <label>Endereço <span class="opt">(opcional, refina o preço)</span></label>
+            <input id="t-endereco" placeholder="Ex: Rua 7, Qd 12 Lt 5" />
+          </div>
+          <div class="row">
+            <div class="field">
+              <label>Zona / densidade</label>
+              <select id="t-zona" onchange="t_zonaInfo()">
+                <option value="residencial-baixa">Residencial baixa (CA 1,0)</option>
+                <option value="residencial-media" selected>Residencial/mista média (CA 1,8)</option>
+                <option value="corredor">Corredor comercial (CA 3,0)</option>
+                <option value="central">Central / alta densidade (CA 4,0)</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>Coef. aproveitamento <span class="opt">(opcional, sobrepõe a zona)</span></label>
+              <input id="t-ca" type="number" min="0" step="0.1" placeholder="ex: 2.0" />
+            </div>
+          </div>
+          <div class="row">
+            <div class="field">
+              <label>Padrão da obra</label>
+              <select id="t-padrao">
+                <option value="popular">Popular (CUB ~R$1.900/m²)</option>
+                <option value="normal" selected>Normal (CUB ~R$2.500/m²)</option>
+                <option value="alto">Alto (CUB ~R$3.400/m²)</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>Área média da unidade (m²) <span class="opt">(opcional)</span></label>
+              <input id="t-unidade" type="number" min="0" placeholder="ex: 60" />
+            </div>
+          </div>
+          <div class="field">
+            <label>Valor pedido pelo terreno (R$) <span class="opt">(opcional)</span></label>
+            <input id="t-pedido" type="number" min="0" placeholder="Se souber, entra na conta do incorporador" />
+          </div>
+          <button class="btn-primary" id="btn-terreno" type="submit">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 20h18"/><path d="M5 20V9l7-5 7 5v11"/></svg>
+            Analisar terreno
+          </button>
+          <div class="hint">Valor de mercado + potencial construtivo (quanto dá pra erguer) + estudo de viabilidade de incorporação (VGV × custos = margem). O coeficiente é estimado por zona — confirme no Plano Diretor.</div>
+        </form>
+      </div>
+
       <!-- FIPE Anápolis -->
       <div class="pane" id="pane-fipe">
         <div class="row">
@@ -643,13 +702,14 @@
     toggleCondominio();
 
     function switchTab(which) {
-      for (const t of ['form', 'chat', 'comercial', 'predio', 'fipe', 'empresa', 'historico']) {
+      for (const t of ['form', 'chat', 'comercial', 'predio', 'terreno', 'fipe', 'empresa', 'historico']) {
         document.getElementById('tab-' + t).classList.toggle('active', which === t);
         document.getElementById('pane-' + t).classList.toggle('active', which === t);
       }
       const head = document.getElementById('result-title');
       if (head) head.textContent = which === 'comercial' ? 'Análise de Ponto Comercial'
         : which === 'predio' ? 'Ficha do Prédio'
+        : which === 'terreno' ? 'Terreno — Viabilidade'
         : which === 'fipe' ? 'FIPE Anápolis'
         : which === 'empresa' ? 'Avaliação de Empresa' : 'Laudo de Precificação';
       if (which === 'historico') carregarHistorico();
@@ -925,6 +985,10 @@
             main = `💼 Empresa: ${l.titulo || ''}`;
             sub = `${l.bairro || ''} — ${l.cidade || 'Anápolis'} · ${data}`;
             val = valor;
+          } else if (l.kind === 'terreno') {
+            main = `🌳 ${l.titulo || 'Terreno'}`;
+            sub = `${l.bairro || ''} — ${l.cidade || 'Anápolis'} · ${data}`;
+            val = valor;
           } else {
             const local = [l.endereco, l.bairro].filter(Boolean).join(', ') || l.bairro || '—';
             main = `${TIPOS_LABEL[l.tipo] || l.tipo || ''} · ${l.finalidade === 'aluguel' ? 'Aluguel' : 'Venda'}`;
@@ -955,6 +1019,8 @@
         } else if (data.kind === 'empresa') {
           showLaudo(data.response);
           empresaAtual = data.resultado; mostrarAcoesPdfEmpresa();
+        } else if (data.kind === 'terreno') {
+          showLaudo(data.response);
         } else {
           showLaudo(data.response);
           avaliacaoAtual = { dados: data.dados, resultado: data.resultado, laudoTexto: data.response }; mostrarAcoesPdf();
@@ -989,6 +1055,44 @@
         `<div class="laudo"><div class="fipe-head">📊 FIPE Anápolis — ${tipoLabel} · ${isAluguel ? 'Aluguel' : 'Venda'}</div>` +
         `<table class="fipe-table"><thead><tr><th>#</th><th>Bairro</th><th>${isAluguel ? 'Aluguel' : 'Valor'}</th></tr></thead><tbody>${rows}</tbody></table>` +
         `<div class="fipe-foot">Referência de mercado por bairro — bases EBM/Aderni-GO e Planta Genérica de Valores (Prefeitura de Anápolis, 2023). Valores médios de referência; a avaliação de um imóvel específico refina com anúncios reais. Consulta em ${new Date().toLocaleDateString('pt-BR')}.</div></div>`;
+    }
+
+    // ── Terrenos / Lotes ──
+    function t_zonaInfo() { /* placeholder p/ futura dica de CA por zona */ }
+    async function analisarTerreno(e) {
+      e.preventDefault();
+      if (busy) return;
+      const payload = {
+        cidade: 'Anápolis',
+        bairro: document.getElementById('t-bairro').value.trim(),
+        area: document.getElementById('t-area').value,
+        endereco: document.getElementById('t-endereco').value.trim(),
+        zona: document.getElementById('t-zona').value,
+        ca: document.getElementById('t-ca').value,
+        padrao: document.getElementById('t-padrao').value,
+        areaUnidade: document.getElementById('t-unidade').value,
+        valorPedido: document.getElementById('t-pedido').value
+      };
+      if (!payload.bairro || !(Number(payload.area) > 0)) {
+        showError('Informe o *bairro* e a *área do terreno* (m²).');
+        return;
+      }
+      busy = true;
+      document.getElementById('btn-terreno').disabled = true;
+      showSpinner('Avaliando o terreno e calculando o potencial construtivo…');
+      try {
+        const res = await fetch('/api/terreno', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (data.error) showError(data.error); else showLaudo(data.response);
+      } catch (err) {
+        showError('Erro de conexão. Tente novamente.');
+      } finally {
+        busy = false;
+        document.getElementById('btn-terreno').disabled = false;
+      }
     }
 
     async function avaliarEmpresa(e) {

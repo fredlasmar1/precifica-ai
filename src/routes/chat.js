@@ -356,6 +356,34 @@ router.get('/fipe', (req, res) => {
 });
 
 /**
+ * POST /api/terreno — Estudo de viabilidade de terreno/lote (potencial construtivo).
+ */
+router.post('/terreno', async (req, res) => {
+  const b = req.body || {};
+  if (!b.bairro || !(Number(b.area) > 0)) {
+    return res.status(400).json({ error: 'Informe o bairro e a área do terreno (m²).' });
+  }
+  try {
+    const { analisarTerreno, formatarTerreno } = require('../data/terreno');
+    const resultado = await analisarTerreno(b);
+    if (resultado.erro) return res.status(422).json({ error: resultado.erro });
+    try {
+      require('../data/database').salvarLaudo({
+        kind: 'terreno', titulo: `Terreno ${resultado.area}m²`, tipo: 'terreno',
+        finalidade: 'venda', cidade: resultado.cidade, bairro: resultado.bairro,
+        endereco: resultado.endereco, valor: resultado.valorTerreno,
+        dados: { bairro: resultado.bairro, area: resultado.area, zona: resultado.zonaKey },
+        resultado,
+      });
+    } catch (e) { console.warn('[Terreno] salvar:', e.message); }
+    return res.json({ type: 'terreno', response: formatarTerreno(resultado), resultado });
+  } catch (err) {
+    console.error('[Terreno API] Erro:', err);
+    return res.status(500).json({ error: '⚠️ Erro ao analisar o terreno. Tente novamente.' });
+  }
+});
+
+/**
  * GET /api/uso — status de consumo das APIs (para monitorar custos).
  */
 router.get('/uso', async (req, res) => {
@@ -438,6 +466,7 @@ router.get('/laudos/:id', async (req, res) => {
     let response;
     if (l.kind === 'comercial') response = require('../data/pontoComercial').formatarRelatorioComercial(l.resultado);
     else if (l.kind === 'empresa') response = require('../data/valuationEmpresa').formatarEmpresa(l.resultado);
+    else if (l.kind === 'terreno') response = require('../data/terreno').formatarTerreno(l.resultado);
     else response = gerarLaudo(l.dados, l.resultado);
     res.json({ id: l.id, criado_em: l.criado_em, kind: l.kind, dados: l.dados, resultado: l.resultado, response });
   } catch (err) { res.status(500).json({ error: err.message }); }
