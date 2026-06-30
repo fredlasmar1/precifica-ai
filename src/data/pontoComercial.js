@@ -572,4 +572,4 @@ function formatarMelhorBairro(d) {
   return t;
 }
 
-module.exports = { analisarPontoComercial, formatarRelatorioComercial, melhorBairro, formatarMelhorBairro, extrairRamo, coordsBairro };
+module.exports = { analisarPontoComercial, formatarRelatorioComercial, melhorBairro, formatarMelhorBairro, extrairRamo, coordsBairro, placesNearby };
