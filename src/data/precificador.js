@@ -605,8 +605,24 @@ async function calcularPreco(dadosImovel) {
     } catch (e) { console.warn('[FichaPredio] erro:', e.message); }
   }
 
+  // ─── ENRIQUECIMENTO: rentabilidade, infraestrutura, tendência, financiamento ──
+  let enriquecimento = null;
+  try {
+    let lat = geoInfo?.lat, lng = geoInfo?.lng;
+    if (lat == null) {
+      try { const { coordsBairro } = require('./pontoComercial'); const c = coordsBairro(bairro); if (c) { lat = c.lat; lng = c.lng; } } catch {}
+    }
+    const { enriquecer } = require('./enriquecimento');
+    enriquecimento = await enriquecer({
+      tipo, cidade, bairro, metragem,
+      valorVenda: finalidade === 'venda' ? precoRecomendado : null,
+      precoM2: precoM2Mercado, lat, lng,
+    });
+  } catch (e) { console.warn('[Enriquecimento] erro:', e.message); }
+
   return {
     precoMinimo, precoRecomendado, precoMaximo,
+    enriquecimento,
     fichaPredio, fichaPredioTexto,
     precoM2Mercado, precoM2Imovel: precoM2Final,
     precoAlqMercado: tipo === 'rural' ? Math.round(precoM2Mercado * 48400) : null,

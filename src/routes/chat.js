@@ -535,6 +535,33 @@ function gerarLaudo(dados, resultado) {
     laudo += '\n';
   }
 
+  // Enriquecimento: dados extras (rentabilidade, infra, tendência, financiamento)
+  const enr = resultado.enriquecimento;
+  if (enr) {
+    if (enr.rentabilidade) {
+      const r = enr.rentabilidade;
+      laudo += `💸 *Rentabilidade (venda × aluguel):*\n`;
+      laudo += `• Aluguel estimado: R$ ${r.aluguelMensal.toLocaleString('pt-BR')}/mês\n`;
+      laudo += `• Rentabilidade: ${r.yieldAnual.toLocaleString('pt-BR')}% ao ano\n`;
+      laudo += `• Payback: o aluguel paga o imóvel em ~${r.paybackAnos} anos\n\n`;
+    }
+    if (enr.infraestrutura && enr.infraestrutura.some(i => i.qtd > 0)) {
+      laudo += `🏗️ *Infraestrutura por perto (até 1,5 km):*\n`;
+      enr.infraestrutura.forEach(i => {
+        if (i.qtd > 0) laudo += `• ${i.categoria}: ${i.qtd}${i.maisProximoM ? ` (mais perto ~${i.maisProximoM} m)` : ''}\n`;
+      });
+      laudo += '\n';
+    }
+    if (enr.tendencia) laudo += `📈 *Tendência do bairro:*\n• ${enr.tendencia}\n\n`;
+    if (enr.financiamento) {
+      const f = enr.financiamento;
+      laudo += `🏦 *Financiamento estimado:*\n`;
+      laudo += `• Entrada (${f.entradaPct}%): R$ ${f.entrada.toLocaleString('pt-BR')}\n`;
+      laudo += `• Parcela: ~R$ ${f.parcela.toLocaleString('pt-BR')}/mês (${Math.round(f.prazoMeses / 12)} anos · ${f.taxaAnual}% a.a.)\n`;
+      laudo += `• Renda necessária: ~R$ ${f.rendaNecessaria.toLocaleString('pt-BR')}/mês\n\n`;
+    }
+  }
+
   // FIPE da região (referência de R$/m² venda + aluguel do bairro)
   try {
     const { getAncora } = require('../data/baseAnapolis');
