@@ -351,7 +351,7 @@
           <div class="row">
             <div class="field">
               <label>Tipo do imóvel</label>
-              <select id="f-tipo" onchange="toggleCondominio()">
+              <select id="f-tipo" onchange="toggleCamposTipo()">
                 <option value="apartamento">Apartamento</option>
                 <option value="casa">Casa</option>
                 <option value="terreno">Terreno</option>
@@ -390,10 +390,10 @@
 
           <div class="row">
             <div class="field">
-              <label>Metragem (m²)</label>
+              <label id="lbl-metragem">Metragem construída (m²)</label>
               <input id="f-metragem" type="number" min="1" placeholder="90" />
             </div>
-            <div class="field">
+            <div class="field" id="campo-conservacao">
               <label>Conservação</label>
               <select id="f-conservacao">
                 <option value="novo">Novo</option>
@@ -404,7 +404,19 @@
             </div>
           </div>
 
-          <div class="row">
+          <!-- Específico de CASA: terreno + idade (método evolutivo: terra + benfeitoria) -->
+          <div class="row" id="campo-casa" style="display:none">
+            <div class="field">
+              <label>Área do terreno (m²) <span class="opt">(opcional)</span></label>
+              <input id="f-arealote" type="number" min="0" placeholder="ex: 250" />
+            </div>
+            <div class="field">
+              <label>Idade do imóvel (anos) <span class="opt">(deprecia a construção)</span></label>
+              <input id="f-idade" type="number" min="0" placeholder="ex: 15" />
+            </div>
+          </div>
+
+          <div class="row" id="campo-quartos">
             <div class="field">
               <label>Quartos</label>
               <input id="f-quartos" type="number" min="0" placeholder="3" />
@@ -425,6 +437,7 @@
             Avaliar imóvel
           </button>
           <div class="hint">A pesquisa de mercado pode levar de 20 a 60 segundos.</div>
+          <div class="hint" id="hint-terreno" style="display:none">💡 Para terreno, a aba <b>Terrenos</b> faz o estudo completo (potencial construtivo + viabilidade de incorporação).</div>
         </form>
       </div>
 
@@ -700,12 +713,24 @@
       if (u.alertas && u.alertas.length) c.classList.add('alerta');
     }).catch(() => {});
 
-    // Campo "Prédio/Condomínio" só aparece para apartamento
-    function toggleCondominio() {
+    // Formulário adaptativo: cada tipo mostra só os campos que fazem sentido.
+    function toggleCamposTipo() {
       const tipo = document.getElementById('f-tipo').value;
-      document.getElementById('campo-condominio').style.display = (tipo === 'apartamento') ? '' : 'none';
+      const show = (id, on) => { const el = document.getElementById(id); if (el) el.style.display = on ? '' : 'none'; };
+      const isApto = tipo === 'apartamento';
+      const isCasa = tipo === 'casa';
+      const isTerreno = tipo === 'terreno' || tipo === 'lote';
+      show('campo-condominio', isApto);                 // prédio só p/ apartamento
+      show('campo-casa', isCasa);                        // terreno+idade só p/ casa
+      show('campo-quartos', !isTerreno);                 // quartos/vagas não p/ terreno
+      show('campo-conservacao', !isTerreno);             // conservação não p/ terreno
+      document.getElementById('lbl-metragem').textContent =
+        isTerreno ? 'Área do terreno (m²)' : 'Metragem construída (m²)';
+      // dica de aba dedicada para terreno
+      const hint = document.getElementById('hint-terreno');
+      if (hint) hint.style.display = isTerreno ? '' : 'none';
     }
-    toggleCondominio();
+    toggleCamposTipo();
 
     function switchTab(which) {
       for (const t of ['form', 'chat', 'comercial', 'predio', 'terreno', 'fipe', 'empresa', 'historico']) {
@@ -764,6 +789,8 @@
         endereco: document.getElementById('f-endereco').value.trim(),
         condominio: document.getElementById('f-condominio').value.trim(),
         metragem: document.getElementById('f-metragem').value,
+        areaLote: document.getElementById('f-arealote').value,
+        idade: document.getElementById('f-idade').value,
         conservacao: document.getElementById('f-conservacao').value,
         quartos: document.getElementById('f-quartos').value,
         vagas: document.getElementById('f-vagas').value,
@@ -1018,7 +1045,7 @@
         const data = await res.json();
         if (data.error) { showError(data.error); return; }
         // limpa os "atuais" antes
-        avaliacaoAtual = comercialAtual = empresaAtual = null;
+        avaliacaoAtual = comercialAtual = empresaAtual = terrenoAtual = null;
         if (data.kind === 'comercial') {
           showLaudo(data.response, data.resultado && data.resultado.mapaDataUri);
           comercialAtual = data.resultado; mostrarAcoesPdfComercial();
@@ -1027,6 +1054,7 @@
           empresaAtual = data.resultado; mostrarAcoesPdfEmpresa();
         } else if (data.kind === 'terreno') {
           showLaudo(data.response);
+          terrenoAtual = data.resultado; mostrarAcoesPdfTerreno();
         } else {
           showLaudo(data.response);
           avaliacaoAtual = { dados: data.dados, resultado: data.resultado, laudoTexto: data.response }; mostrarAcoesPdf();
@@ -1093,7 +1121,8 @@
           body: JSON.stringify(payload)
         });
         const data = await res.json();
-        if (data.error) showError(data.error); else showLaudo(data.response);
+        if (data.error) { showError(data.error); terrenoAtual = null; }
+        else { showLaudo(data.response); terrenoAtual = data.resultado; mostrarAcoesPdfTerreno(); }
       } catch (err) {
         showError('Erro de conexão. Tente novamente.');
       } finally {
@@ -1163,6 +1192,39 @@
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url; a.download = 'avaliacao-empresa.pdf';
+        document.body.appendChild(a); a.click(); a.remove();
+        URL.revokeObjectURL(url);
+      } catch (err) {
+        alert('Erro de conexão ao gerar o PDF.');
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    // ── PDF do estudo de terreno ──
+    let terrenoAtual = null;
+    function mostrarAcoesPdfTerreno() {
+      const laudo = document.querySelector('#result-body .laudo');
+      if (!laudo) return;
+      const bar = document.createElement('div');
+      bar.className = 'pdf-bar';
+      bar.innerHTML = '<button class="btn-pdf" onclick="baixarTerrenoPdf(this)">📄 Baixar estudo (PDF)</button>';
+      laudo.prepend(bar);
+    }
+    async function baixarTerrenoPdf(btn) {
+      if (!terrenoAtual) return;
+      const solicitante = prompt('Nome do cliente/solicitante (opcional — aparece no PDF):', '') || '';
+      btn.disabled = true;
+      try {
+        const res = await fetch('/api/relatorio-terreno', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ resultado: terrenoAtual, solicitante })
+        });
+        if (!res.ok) { alert('Não foi possível gerar o PDF. Tente de novo.'); return; }
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = 'estudo-terreno.pdf';
         document.body.appendChild(a); a.click(); a.remove();
         URL.revokeObjectURL(url);
       } catch (err) {

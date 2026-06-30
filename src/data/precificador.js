@@ -26,7 +26,7 @@ const db = require('./database');
  * A inteligência local complementa com contexto, não com preço fixo.
  */
 async function calcularPreco(dadosImovel) {
-  const { tipo, finalidade, cidade, bairro, endereco, condominio, metragem, areaLote, quartos, vagas, diferenciais, conservacao } = dadosImovel;
+  const { tipo, finalidade, cidade, bairro, endereco, condominio, metragem, areaLote, quartos, vagas, diferenciais, conservacao, idade } = dadosImovel;
 
   // 1. Validar endereço e analisar rua via Google Maps
   let geoInfo = null;
@@ -399,6 +399,19 @@ async function calcularPreco(dadosImovel) {
       precoM2Final = Math.round(precoM2Final * fatorConservacao);
       if (descConservacao) ajustesDescricao.push(descConservacao);
       console.log(`[Precificador] Ajuste conservação (${conservacao}): ×${fatorConservacao} → R$ ${precoM2Final}/m²`);
+    }
+  }
+
+  // ─── Depreciação por idade (método evolutivo: só a benfeitoria deprecia) ─────
+  // A casa = terreno (não deprecia) + construção (deprecia com a idade). Aplica
+  // ~0,5%/ano sobre o total após 5 anos de uso, teto -25%. Imóvel novo/recém
+  // construído já é tratado pela conservação — não acumula aqui.
+  if (tipo === 'casa' && idade != null && idade > 5 && conservacao !== 'novo') {
+    const fatorIdade = 1 - Math.min(0.25, (idade - 5) * 0.005);
+    if (fatorIdade < 1.0) {
+      precoM2Final = Math.round(precoM2Final * fatorIdade);
+      ajustesDescricao.push(`-${Math.round((1 - fatorIdade) * 100)}% depreciação da construção (${idade} anos)`);
+      console.log(`[Precificador] Depreciação idade ${idade}a: ×${fatorIdade.toFixed(3)} → R$ ${precoM2Final}/m²`);
     }
   }
 

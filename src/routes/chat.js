@@ -135,7 +135,8 @@ router.post('/avaliar', async (req, res) => {
     quartos: b.quartos != null && b.quartos !== '' ? Number(b.quartos) : null,
     vagas: b.vagas != null && b.vagas !== '' ? Number(b.vagas) : null,
     diferenciais: String(b.diferenciais || '').trim(),
-    conservacao: String(b.conservacao || 'bom').trim().toLowerCase()
+    conservacao: String(b.conservacao || 'bom').trim().toLowerCase(),
+    idade: b.idade != null && b.idade !== '' ? Number(b.idade) : null
   };
 
   try {
@@ -380,6 +381,22 @@ router.post('/terreno', async (req, res) => {
   } catch (err) {
     console.error('[Terreno API] Erro:', err);
     return res.status(500).json({ error: '⚠️ Erro ao analisar o terreno. Tente novamente.' });
+  }
+});
+
+/** POST /api/relatorio-terreno — PDF do estudo de viabilidade do terreno. */
+router.post('/relatorio-terreno', async (req, res) => {
+  const { resultado, solicitante } = req.body || {};
+  if (!resultado) return res.status(400).json({ error: 'Faça uma análise de terreno primeiro.' });
+  try {
+    const { gerarTerrenoPdf } = require('../data/relatorioPdf');
+    const pdf = await gerarTerrenoPdf(resultado, { solicitante });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="estudo-terreno-${(resultado.bairro || 'anapolis').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-')}.pdf"`);
+    res.send(pdf);
+  } catch (err) {
+    console.error('[RelatTerreno API] Erro:', err);
+    res.status(500).json({ error: '⚠️ Erro ao gerar o PDF. Tente novamente.' });
   }
 });
 
