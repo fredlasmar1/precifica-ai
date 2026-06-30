@@ -350,6 +350,18 @@ router.post('/relatorio-repasse', async (req, res) => {
 });
 
 /**
+ * GET /api/fipe?tipo=&finalidade= — "FIPE de Anápolis": R$/m² por bairro.
+ */
+router.get('/fipe', (req, res) => {
+  try {
+    const { tabelaFipe } = require('../data/baseAnapolis');
+    const tipo = String(req.query.tipo || 'apartamento').toLowerCase();
+    const finalidade = String(req.query.finalidade || 'venda').toLowerCase();
+    res.json({ tipo, finalidade, tabela: tabelaFipe(tipo, finalidade) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/**
  * GET /api/uso — status de consumo das APIs (para monitorar custos).
  */
 router.get('/uso', async (req, res) => {
@@ -522,6 +534,16 @@ function gerarLaudo(dados, resultado) {
     if (geoInfo.viasProximas?.length) laudo += `• Vias próximas: ${geoInfo.viasProximas.join(', ')}\n`;
     laudo += '\n';
   }
+
+  // FIPE da região (referência de R$/m² venda + aluguel do bairro)
+  try {
+    const { getAncora } = require('../data/baseAnapolis');
+    const fv = getAncora(tipo, 'venda', cidade, bairro);
+    const fa = getAncora(tipo, 'aluguel', cidade, bairro);
+    laudo += `\n📊 *FIPE da região (${bairro}):*\n`;
+    laudo += `• Referência de venda: R$ ${fv.m2.toLocaleString('pt-BR')}/m² (${fv.fonte})\n`;
+    laudo += `• Referência de aluguel: R$ ${fa.m2.toLocaleString('pt-BR')}/m²·mês\n\n`;
+  } catch {}
 
   if (resultado.fichaPredioTexto) laudo += `\n${resultado.fichaPredioTexto}`;
 

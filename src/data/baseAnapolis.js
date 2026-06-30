@@ -155,7 +155,29 @@ function getAncora(tipo, finalidade, cidade, bairro) {
 
 function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
 
+// Bairros da FIPE (principais de Anápolis)
+const FIPE_BAIRROS = [
+  'Jundiaí', 'Anápolis City', 'Cidade Jardim', 'Bairro JK', 'Jardim Europa',
+  'Maracanã', 'Bougainville', 'Alphaville Anápolis', 'Jardim Alexandrina',
+  'Vila Jaiara', 'Vila Santa Isabel', 'Parque Brasília', 'Vila Góis',
+  'Centro', 'Vila Brasil', 'Jardim das Américas',
+];
+
+/**
+ * "FIPE de Anápolis": tabela de referência de R$/m² por bairro, para um
+ * (tipo, finalidade). Apartamento/casa = R$/m² construído; terreno/lote =
+ * R$/m² de terreno; aluguel = R$/m²·mês. Instantânea (bases oficiais EBM/PGV).
+ */
+function tabelaFipe(tipo, finalidade) {
+  const linhas = FIPE_BAIRROS.map((b) => {
+    const a = getAncora(tipo, finalidade, 'Anápolis', b);
+    return { bairro: b, m2: a.m2, fonte: a.fonte };
+  });
+  linhas.sort((x, y) => y.m2 - x.m2);
+  return linhas;
+}
+
 module.exports = {
-  getAncora, getBaseVenda, getBaseAluguel, getBaseLote,
-  EBM_VENDA_M2, ALUGUEL_YIELD_MES, LOTE_FRACAO,
+  getAncora, getBaseVenda, getBaseAluguel, getBaseLote, tabelaFipe,
+  EBM_VENDA_M2, ALUGUEL_YIELD_MES, LOTE_FRACAO, FIPE_BAIRROS,
 };

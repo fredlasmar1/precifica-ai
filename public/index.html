@@ -271,6 +271,17 @@
     .hist-row .h-main { font-size: 13px; font-weight: 700; color: var(--ink); }
     .hist-row .h-sub { font-size: 11.5px; color: var(--muted); margin-top: 2px; }
     .hist-row .h-val { font-size: 13px; font-weight: 800; color: var(--blue); white-space: nowrap; }
+    /* FIPE */
+    .fipe-head { font-size: 16px; font-weight: 800; color: var(--ink); margin-bottom: 14px; letter-spacing: -.3px; }
+    .fipe-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+    .fipe-table th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .4px; color: var(--muted); padding: 8px 10px; border-bottom: 2px solid var(--line); }
+    .fipe-table th:last-child, .fipe-table td:last-child { text-align: right; }
+    .fipe-table td { padding: 10px; border-bottom: 1px solid var(--line); color: var(--ink); }
+    .fipe-table tr:nth-child(even) td { background: #fbfcff; }
+    .fipe-table tr:hover td { background: var(--blue-tint); }
+    .fp-rank { color: var(--muted2); font-weight: 700; width: 28px; }
+    .fp-val { font-weight: 800; color: var(--blue); white-space: nowrap; }
+    .fipe-foot { margin-top: 14px; font-size: 11.5px; color: var(--muted); line-height: 1.5; font-style: italic; }
     /* Indicador de uso */
     .uso-chip { font-size: 11px; color: var(--muted2); }
     .uso-chip b { color: var(--ink); font-weight: 600; }
@@ -319,6 +330,7 @@
         <button class="tab active" id="tab-form" onclick="switchTab('form')">📋 Avaliar</button>
         <button class="tab" id="tab-comercial" onclick="switchTab('comercial')">🏪 Ponto Comercial</button>
         <button class="tab" id="tab-predio" onclick="switchTab('predio')">🏢 Prédios/Apt.</button>
+        <button class="tab" id="tab-fipe" onclick="switchTab('fipe')">📊 FIPE Anápolis</button>
         <button class="tab" id="tab-empresa" onclick="switchTab('empresa')">💼 Empresa</button>
         <button class="tab" id="tab-historico" onclick="switchTab('historico')">📁 Histórico</button>
         <button class="tab" id="tab-chat" onclick="switchTab('chat')">💬 Conversar</button>
@@ -482,6 +494,34 @@
         </form>
       </div>
 
+      <!-- FIPE Anápolis -->
+      <div class="pane" id="pane-fipe">
+        <div class="row">
+          <div class="field">
+            <label>Tipo de imóvel</label>
+            <select id="fp-tipo">
+              <option value="apartamento">Apartamento</option>
+              <option value="casa">Casa</option>
+              <option value="terreno">Terreno</option>
+              <option value="lote">Lote</option>
+              <option value="comercial">Comercial</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Finalidade</label>
+            <select id="fp-finalidade">
+              <option value="venda">Venda (R$/m²)</option>
+              <option value="aluguel">Aluguel (R$/m²·mês)</option>
+            </select>
+          </div>
+        </div>
+        <button class="btn-primary" id="btn-fipe" onclick="verFipe()" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 4-6"/></svg>
+          Ver tabela FIPE
+        </button>
+        <div class="hint">Referência de R$/m² por bairro de Anápolis (bases EBM/Aderni e Planta Genérica da Prefeitura). A avaliação refina com anúncios reais.</div>
+      </div>
+
       <!-- Histórico -->
       <div class="pane" id="pane-historico">
         <div style="display:flex; align-items:center; justify-content:space-between; padding: 4px 2px 12px;">
@@ -595,13 +635,14 @@
     toggleCondominio();
 
     function switchTab(which) {
-      for (const t of ['form', 'chat', 'comercial', 'predio', 'empresa', 'historico']) {
+      for (const t of ['form', 'chat', 'comercial', 'predio', 'fipe', 'empresa', 'historico']) {
         document.getElementById('tab-' + t).classList.toggle('active', which === t);
         document.getElementById('pane-' + t).classList.toggle('active', which === t);
       }
       const head = document.getElementById('result-title');
       if (head) head.textContent = which === 'comercial' ? 'Análise de Ponto Comercial'
         : which === 'predio' ? 'Ficha do Prédio'
+        : which === 'fipe' ? 'FIPE Anápolis'
         : which === 'empresa' ? 'Avaliação de Empresa' : 'Laudo de Precificação';
       if (which === 'historico') carregarHistorico();
       if (which === 'chat' && !document.getElementById('thread').dataset.init) {
@@ -913,6 +954,33 @@
       } catch (err) {
         showError('Erro ao abrir.');
       }
+    }
+
+    // ── FIPE Anápolis ──
+    async function verFipe() {
+      if (busy) return;
+      const tipo = document.getElementById('fp-tipo').value;
+      const finalidade = document.getElementById('fp-finalidade').value;
+      busy = true; document.getElementById('btn-fipe').disabled = true;
+      showSpinner('Montando a FIPE de Anápolis…');
+      try {
+        const res = await fetch(`/api/fipe?tipo=${tipo}&finalidade=${finalidade}`);
+        const data = await res.json();
+        if (data.error) showError(data.error); else showFipe(data);
+      } catch (e) { showError('Erro ao carregar a FIPE.'); }
+      finally { busy = false; document.getElementById('btn-fipe').disabled = false; }
+    }
+    function showFipe(data) {
+      document.getElementById('result-tag').textContent = 'FIPE';
+      const isAluguel = data.finalidade === 'aluguel';
+      const unidade = isAluguel ? '/m²·mês' : '/m²';
+      const tipoLabel = { apartamento: 'Apartamento', casa: 'Casa', terreno: 'Terreno', lote: 'Lote', comercial: 'Comercial' }[data.tipo] || data.tipo;
+      const rows = data.tabela.map((r, i) =>
+        `<tr><td class="fp-rank">${i + 1}</td><td>${r.bairro}</td><td class="fp-val">R$ ${Number(r.m2).toLocaleString('pt-BR')}${unidade}</td></tr>`).join('');
+      document.getElementById('result-body').innerHTML =
+        `<div class="laudo"><div class="fipe-head">📊 FIPE Anápolis — ${tipoLabel} · ${isAluguel ? 'Aluguel' : 'Venda'}</div>` +
+        `<table class="fipe-table"><thead><tr><th>#</th><th>Bairro</th><th>${isAluguel ? 'Aluguel' : 'Valor'}</th></tr></thead><tbody>${rows}</tbody></table>` +
+        `<div class="fipe-foot">Referência de mercado por bairro — bases EBM/Aderni-GO e Planta Genérica de Valores (Prefeitura de Anápolis, 2023). Valores médios de referência; a avaliação de um imóvel específico refina com anúncios reais. Consulta em ${new Date().toLocaleDateString('pt-BR')}.</div></div>`;
     }
 
     async function avaliarEmpresa(e) {
