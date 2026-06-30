@@ -100,19 +100,19 @@
     .card { background: var(--card); border: 1px solid var(--line); border-radius: 22px; box-shadow: var(--shadow); overflow: hidden; }
 
     /* ---------------- Tabs ---------------- */
-    .tabs { display: flex; gap: 6px; padding: 12px 12px 0; border-bottom: 1px solid var(--line); }
+    .tabs {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(92px, 1fr));
+      gap: 6px; padding: 12px; border-bottom: 1px solid var(--line);
+    }
     .tab {
-      flex: 1; padding: 12px 14px; text-align: center;
-      font-size: 14px; font-weight: 700; color: var(--muted);
-      cursor: pointer; background: transparent; border: none;
-      border-radius: 12px 12px 0 0; position: relative; transition: color .15s;
+      padding: 9px 8px; text-align: center;
+      font-size: 12.5px; font-weight: 700; color: var(--muted);
+      cursor: pointer; background: #f4f6fb; border: 1px solid transparent;
+      border-radius: 10px; transition: all .15s;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
-    .tab:hover { color: var(--ink); }
-    .tab.active { color: var(--blue); }
-    .tab.active::after {
-      content: ''; position: absolute; left: 14px; right: 14px; bottom: -1px; height: 3px;
-      background: var(--blue); border-radius: 3px;
-    }
+    .tab:hover { color: var(--ink); background: var(--blue-tint); }
+    .tab.active { color: #fff; background: var(--blue); border-color: var(--blue); }
     .pane { display: none; }
     .pane.active { display: block; }
 
@@ -328,9 +328,9 @@
     <div class="card">
       <div class="tabs">
         <button class="tab active" id="tab-form" onclick="switchTab('form')">📋 Avaliar</button>
-        <button class="tab" id="tab-comercial" onclick="switchTab('comercial')">🏪 Ponto Comercial</button>
-        <button class="tab" id="tab-predio" onclick="switchTab('predio')">🏢 Prédios/Apt.</button>
-        <button class="tab" id="tab-fipe" onclick="switchTab('fipe')">📊 FIPE Anápolis</button>
+        <button class="tab" id="tab-comercial" onclick="switchTab('comercial')">🏪 Comercial</button>
+        <button class="tab" id="tab-predio" onclick="switchTab('predio')">🏢 Prédios</button>
+        <button class="tab" id="tab-fipe" onclick="switchTab('fipe')">📊 FIPE</button>
         <button class="tab" id="tab-empresa" onclick="switchTab('empresa')">💼 Empresa</button>
         <button class="tab" id="tab-historico" onclick="switchTab('historico')">📁 Histórico</button>
         <button class="tab" id="tab-chat" onclick="switchTab('chat')">💬 Conversar</button>
