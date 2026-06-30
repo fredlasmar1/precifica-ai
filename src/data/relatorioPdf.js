@@ -214,6 +214,40 @@ function gerarRelatorioPdf(dados, resultado, opts = {}) {
       );
     }
 
+    // ── DADOS DA REGIÃO E DO IMÓVEL (enriquecimento) ──
+    try {
+      const enr = resultado.enriquecimento || {};
+      const linha = (k, v) => { ensure(13); doc.font('Helvetica-Bold').fontSize(8).fillColor(INK).text(`${k}: `, LX + 4, y, { continued: true, width: W - 8 }); doc.font('Helvetica').fontSize(8).fillColor(INK).text(clean(String(v))); y = doc.y + 3; };
+      const brlF = (v) => 'R$ ' + Number(v).toLocaleString('pt-BR');
+
+      if (enr.rentabilidade || enr.financiamento) {
+        band('RENTABILIDADE E FINANCIAMENTO');
+        if (enr.rentabilidade) {
+          const r = enr.rentabilidade;
+          linha('Aluguel estimado', `${brlF(r.aluguelMensal)}/mês`);
+          linha('Rentabilidade', `${r.yieldAnual.toLocaleString('pt-BR')}% ao ano · paga o imóvel em ~${r.paybackAnos} anos`);
+        }
+        if (enr.financiamento) {
+          const f = enr.financiamento;
+          linha('Financiamento', `entrada ${brlF(f.entrada)} (${f.entradaPct}%) · parcela ~${brlF(f.parcela)}/mês em ${Math.round(f.prazoMeses / 12)} anos (${f.taxaAnual}% a.a.)`);
+          linha('Renda necessária', `~${brlF(f.rendaNecessaria)}/mês`);
+        }
+      }
+
+      let fipeV = null, fipeA = null;
+      try { const ba = require('./baseAnapolis'); fipeV = ba.getAncora(dados.tipo, 'venda', dados.cidade, dados.bairro); fipeA = ba.getAncora(dados.tipo, 'aluguel', dados.cidade, dados.bairro); } catch {}
+      const temInfra = enr.infraestrutura && enr.infraestrutura.some((i) => i.qtd > 0);
+      if (fipeV || temInfra || enr.tendencia) {
+        band('LOCALIZAÇÃO E REGIÃO');
+        if (fipeV) linha(`FIPE da região (${txt(dados.bairro)})`, `venda ${brlF(fipeV.m2)}/m² · aluguel R$ ${fipeA.m2.toLocaleString('pt-BR')}/m²·mês`);
+        if (temInfra) {
+          const partes = enr.infraestrutura.filter((i) => i.qtd > 0).map((i) => `${i.categoria} ${i.qtd}${i.maisProximoM ? ` (${i.maisProximoM}m)` : ''}`);
+          linha('Infraestrutura (1,5 km)', partes.join(' · '));
+        }
+        if (enr.tendencia) { ensure(20); doc.font('Helvetica-Bold').fontSize(8).fillColor(INK).text('Tendência: ', LX + 4, y, { continued: true, width: W - 8 }); doc.font('Helvetica').fontSize(8).fillColor(INK).text(clean(enr.tendencia)); y = doc.y + 4; }
+      }
+    } catch {}
+
     // ── FONTES E REFERÊNCIAS (técnica e cliente) ──
     try {
       const ff = require('./fontes').fontesAvaliacao(dados, resultado);
