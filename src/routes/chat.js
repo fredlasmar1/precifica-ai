@@ -44,6 +44,7 @@ router.post('/chat', async (req, res) => {
         return res.json({ response: resultado.mensagem, type: 'text' });
       }
       const laudo = gerarLaudo(dadosImovel, resultado);
+      salvarLaudoImovel(dadosImovel, resultado);
 
       addMessage(sessionId, 'assistant', laudo);
       return res.json({ response: laudo, type: 'laudo', dados: dadosImovel, resultado });
@@ -64,6 +65,7 @@ router.post('/chat', async (req, res) => {
           return res.json({ response: resposta, followUp: resultado.mensagem, type: 'text' });
         }
         const laudo = gerarLaudo(dadosImovel, resultado);
+        salvarLaudoImovel(dadosImovel, resultado);
         addMessage(sessionId, 'assistant', laudo);
 
         return res.json({
@@ -142,15 +144,7 @@ router.post('/avaliar', async (req, res) => {
       return res.status(422).json({ error: resultado.mensagem });
     }
     const laudo = gerarLaudo(dadosImovel, resultado);
-    // Salva no histórico (best-effort, não bloqueia a resposta)
-    try {
-      require('../data/database').salvarLaudo({
-        kind: 'imovel',
-        tipo: dadosImovel.tipo, finalidade: dadosImovel.finalidade, cidade: dadosImovel.cidade,
-        bairro: dadosImovel.bairro, endereco: dadosImovel.endereco, condominio: dadosImovel.condominio,
-        valor: resultado.precoRecomendado, dados: dadosImovel, resultado,
-      });
-    } catch {}
+    salvarLaudoImovel(dadosImovel, resultado);
     return res.json({ type: 'laudo', response: laudo, dados: dadosImovel, resultado });
   } catch (err) {
     console.error('[Avaliar API] Erro:', err);
@@ -448,6 +442,18 @@ router.get('/laudos/:id', async (req, res) => {
     res.json({ id: l.id, criado_em: l.criado_em, kind: l.kind, dados: l.dados, resultado: l.resultado, response });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
+
+/** Salva uma avaliação de imóvel no histórico (best-effort, todos os fluxos). */
+function salvarLaudoImovel(dados, resultado) {
+  try {
+    require('../data/database').salvarLaudo({
+      kind: 'imovel',
+      tipo: dados.tipo, finalidade: dados.finalidade, cidade: dados.cidade,
+      bairro: dados.bairro, endereco: dados.endereco, condominio: dados.condominio,
+      valor: resultado.precoRecomendado, dados, resultado,
+    });
+  } catch (e) { console.warn('[salvarLaudo] erro:', e.message); }
+}
 
 function gerarLaudo(dados, resultado) {
   const { tipo, finalidade, cidade, bairro, endereco, metragem, quartos, vagas } = dados;
