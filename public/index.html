@@ -589,8 +589,9 @@
           .bts-sub-btn.active{background:#013EF8;border-color:#013EF8;color:#fff;box-shadow:0 2px 6px rgba(1,62,248,.25)}
         </style>
         <div class="bts-sub">
-          <button type="button" id="bts-sub-viab" class="bts-sub-btn active" onclick="btsSub('viab')">Viabilidade do imóvel</button>
-          <button type="button" id="bts-sub-radar" class="bts-sub-btn" onclick="btsSub('radar')">🎯 Radar de Expansão</button>
+          <button type="button" id="bts-sub-viab" class="bts-sub-btn active" onclick="btsSub('viab')">🏢 Viabilidade</button>
+          <button type="button" id="bts-sub-radar" class="bts-sub-btn" onclick="btsSub('radar')">🎯 Radar</button>
+          <button type="button" id="bts-sub-capt" class="bts-sub-btn" onclick="btsSub('capt')">🏗️ Captação</button>
         </div>
         <div id="bts-viab">
         <form onsubmit="analisarBTS(event)">
@@ -686,6 +687,15 @@
                 <input id="r-ramo" placeholder="Ex: atacarejo, academia, farmácia" />
               </div>
             </div>
+            <div class="field">
+              <label>Porte do imóvel que buscam <span class="opt">(opcional)</span></label>
+              <select id="r-porte">
+                <option value="">Todos os portes</option>
+                <option value="G">🟥 Grande — ≥3.000m² (atacarejo, galpão, home center)</option>
+                <option value="M">🟨 Médio — 600–3.000m² (academia, loja âncora)</option>
+                <option value="P">🟩 Pequeno — &lt;600m² (farmácia, fast-food, clínica)</option>
+              </select>
+            </div>
             <button class="btn-primary" id="btn-radar" type="submit">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.3-4.3"/></svg>
               Buscar empresas em expansão
@@ -706,6 +716,45 @@
               <div class="hint">Cruza com a <b>Receita Federal</b>: acha os CNPJs da rede na sua região e confirma município + data de abertura (<b>🆕</b> = aberta nos últimos 24 meses = expansão ativa). <b>Sinal duro</b> de que a rede já pousou aqui — ou, se não achar nada, é um <b>alvo de prospecção</b>.</div>
             </form>
           </div>
+        </div>
+
+        <div id="bts-capt" style="display:none">
+          <form onsubmit="capturarArea(event)">
+            <div class="row">
+              <div class="field">
+                <label>Cidade</label>
+                <select id="ca-cidade">
+                  <option value="Anápolis" selected>Anápolis</option>
+                  <option value="Goiânia">Goiânia</option>
+                  <option value="Aparecida de Goiânia">Aparecida de Goiânia</option>
+                  <option value="Senador Canedo">Senador Canedo</option>
+                  <option value="Trindade">Trindade</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>Tipo de imóvel</label>
+                <select id="ca-tipo">
+                  <option value="terreno" selected>Terreno / lote</option>
+                  <option value="comercial">Comercial / galpão</option>
+                </select>
+              </div>
+            </div>
+            <div class="row">
+              <div class="field">
+                <label>Área mínima (m²)</label>
+                <input id="ca-areamin" type="number" min="0" placeholder="3000" />
+              </div>
+              <div class="field">
+                <label>Bairros <span class="opt">(opcional, separados por vírgula)</span></label>
+                <input id="ca-bairro" placeholder="Ex: Jardim Europa, Maracanã" />
+              </div>
+            </div>
+            <button class="btn-primary" id="btn-captacao" type="submit">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21V7l8-4v18"/><path d="M19 21V11l-6-4"/></svg>
+              Buscar áreas à venda
+            </button>
+            <div class="hint">Fecha o funil: depois do Radar dizer <b>quem quer vir e que imóvel busca</b>, aqui o app <b>vai atrás da área</b> — busca terrenos/galpões à venda na região que batem com o spec (área, tipo). Anúncios reais com link.</div>
+          </form>
         </div>
       </div>
 
@@ -1374,19 +1423,21 @@
     // ── BTS — Build to Suit ──
     let btsAtual = null;
     function btsSub(which) {
-      document.getElementById('bts-sub-viab').classList.toggle('active', which === 'viab');
-      document.getElementById('bts-sub-radar').classList.toggle('active', which === 'radar');
-      document.getElementById('bts-viab').style.display = which === 'viab' ? '' : 'none';
-      document.getElementById('bts-radar').style.display = which === 'radar' ? '' : 'none';
+      ['viab', 'radar', 'capt'].forEach(k => {
+        document.getElementById('bts-sub-' + k).classList.toggle('active', which === k);
+        document.getElementById('bts-' + k).style.display = which === k ? '' : 'none';
+      });
       const head = document.getElementById('result-title');
-      if (head) head.textContent = which === 'radar' ? 'Radar de Expansão' : 'BTS — Build to Suit';
+      if (head) head.textContent = which === 'radar' ? 'Radar de Expansão' : which === 'capt' ? 'Captação de Área' : 'BTS — Build to Suit';
     }
+    let radarAtual = null;
     async function rodarRadar(e) {
       e.preventDefault();
       if (busy) return;
       const payload = {
         regiao: document.getElementById('r-regiao').value,
-        ramo: document.getElementById('r-ramo').value.trim()
+        ramo: document.getElementById('r-ramo').value.trim(),
+        porte: document.getElementById('r-porte').value
       };
       busy = true;
       document.getElementById('btn-radar').disabled = true;
@@ -1397,13 +1448,67 @@
           body: JSON.stringify(payload)
         });
         const data = await res.json();
+        if (data.error) { showError(data.error); radarAtual = null; }
+        else { showLaudo(data.response); radarAtual = data.resultado; mostrarAcoesPdfRadar(); }
+      } catch (err) {
+        showError('Erro de conexão. Tente novamente.');
+      } finally {
+        busy = false;
+        document.getElementById('btn-radar').disabled = false;
+      }
+    }
+    function mostrarAcoesPdfRadar() {
+      if (!radarAtual || !radarAtual.empresas || !radarAtual.empresas.length) return;
+      const laudo = document.querySelector('#result-body .laudo');
+      if (!laudo) return;
+      const bar = document.createElement('div');
+      bar.className = 'pdf-bar';
+      bar.innerHTML = '<button class="btn-pdf" onclick="baixarRadarPdf(this)">📄 Baixar lista de alvos (PDF)</button>';
+      laudo.prepend(bar);
+    }
+    async function baixarRadarPdf(btn) {
+      if (!radarAtual) return;
+      btn.disabled = true;
+      try {
+        const res = await fetch('/api/relatorio-radar', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ resultado: radarAtual })
+        });
+        if (!res.ok) { alert('Não foi possível gerar o PDF. Tente de novo.'); return; }
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = 'alvos-expansao.pdf';
+        document.body.appendChild(a); a.click(); a.remove();
+        URL.revokeObjectURL(url);
+      } catch (err) { alert('Erro de conexão ao gerar o PDF.'); }
+      finally { btn.disabled = false; }
+    }
+    async function capturarArea(e) {
+      e.preventDefault();
+      if (busy) return;
+      const payload = {
+        cidade: document.getElementById('ca-cidade').value,
+        tipo: document.getElementById('ca-tipo').value,
+        areaMin: document.getElementById('ca-areamin').value,
+        bairro: document.getElementById('ca-bairro').value.trim()
+      };
+      busy = true;
+      document.getElementById('btn-captacao').disabled = true;
+      showSpinner('Buscando terrenos/galpões à venda que batem com o spec…');
+      try {
+        const res = await fetch('/api/captacao', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
         if (data.error) showError(data.error);
         else showLaudo(data.response);
       } catch (err) {
         showError('Erro de conexão. Tente novamente.');
       } finally {
         busy = false;
-        document.getElementById('btn-radar').disabled = false;
+        document.getElementById('btn-captacao').disabled = false;
       }
     }
     async function confFiliais(e) {

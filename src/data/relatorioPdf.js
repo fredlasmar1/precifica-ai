@@ -887,4 +887,59 @@ function gerarBtsPdf(r, opts = {}) {
   });
 }
 
-module.exports = { gerarRelatorioPdf, gerarDossiePdf, gerarEmpresaPdf, gerarRepassePdf, gerarTerrenoPdf, gerarBtsPdf };
+function gerarRadarPdf(r) {
+  const dataEmissao = new Date().toLocaleDateString('pt-BR');
+  const PORTE = { G: 'Grande (≥3.000m²)', M: 'Médio (600–3.000m²)', P: 'Pequeno (<600m²)' };
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ size: 'A4', bufferPages: true, margins: { top: TOP, bottom: BOTTOM, left: LX, right: 44 } });
+    const chunks = [];
+    doc.on('data', (d) => chunks.push(d));
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
+    doc.on('error', reject);
+    let y = TOP;
+    const ensure = (need) => { if (y + need > PAGE_H - BOTTOM) { doc.addPage(); y = TOP; } };
+    const chrome = () => {
+      doc.rect(0, 0, PAGE_W, 64).fill(BLUE);
+      try { doc.image(LOGO, LX, 22, { height: 20 }); } catch {}
+      doc.font('Helvetica-Bold').fontSize(13).fillColor(WHITE).text('Radar de Expansão — Lista de Alvos', LX, 21, { width: W, align: 'right' });
+      doc.font('Helvetica').fontSize(7.5).fillColor('#cfe0ff').text('Bens Imóveis Corporativos · Prospecção de inquilinos Build to Suit', LX, 38, { width: W, align: 'right' });
+      const fy = PAGE_H - 46; doc.page.margins.bottom = 0;
+      doc.moveTo(LX, fy).lineTo(RX, fy).lineWidth(0.5).strokeColor(LINE).stroke();
+      doc.font('Helvetica').fontSize(6.8).fillColor(MUTED).text(`${RAZAO} · ${CRECI_J} · ${ENDERECO}`, LX, fy + 5, { width: W, lineBreak: false });
+      doc.font('Helvetica').fontSize(6.8).fillColor(MUTED).text(`${CONTATO}  ·  documento gerado por Precifica Aí`, LX, fy + 15, { width: W * 0.8, lineBreak: false });
+      doc.font('Helvetica').fontSize(6.8).fillColor(MUTED).text(`Emitido em ${dataEmissao}`, RX - 120, fy + 15, { width: 120, align: 'right' });
+    };
+    const kv = (k, v) => { ensure(12); doc.font('Helvetica-Bold').fontSize(8).fillColor(INK).text(`${k}: `, LX + 8, y, { continued: true, width: W - 16 }); doc.font('Helvetica').fontSize(8).fillColor(INK).text(clean(String(v))); y = doc.y + 2; };
+
+    doc.font('Helvetica-Bold').fontSize(16).fillColor(NAVY).text('LISTA DE ALVOS — EXPANSÃO', LX, y, { width: W, align: 'center' });
+    doc.font('Helvetica').fontSize(8).fillColor(BLUE).text(`${txt(r.regiao)}${r.ramo ? ' · ' + txt(r.ramo) : ''}${r.porte ? ' · porte ' + (PORTE[r.porte] || '') : ''}`, LX, y + 20, { width: W, align: 'center' });
+    y += 40;
+
+    doc.font('Helvetica').fontSize(8.5).fillColor(INK).text(`${(r.empresas || []).length} empresa(s) em modo-expansão que poderiam querer um imóvel na região.`, LX, y, { width: W });
+    y = doc.y + 8;
+
+    (r.empresas || []).forEach((e, i) => {
+      ensure(56);
+      doc.rect(LX, y, W, 15).fill(BLUE);
+      doc.font('Helvetica-Bold').fontSize(8.5).fillColor(WHITE).text(`${i + 1}. ${clean(e.nome)}${e.ramo ? '  ·  ' + clean(e.ramo) : ''}${e.porte ? '  ·  porte ' + e.porte : ''}`, LX + 8, y + 4, { width: W - 16, lineBreak: false });
+      y += 19;
+      if (e.sinal) kv('Sinal', e.sinal);
+      if (e.cidadeAlvo) kv('Alvo', e.cidadeAlvo);
+      if (e.imovelBuscado) kv('Imóvel que busca', e.imovelBuscado);
+      if (e.statusRegiao) kv('Status na região', e.statusRegiao);
+      if (e.fonte) kv('Fonte', e.fonte);
+      y += 6;
+    });
+
+    ensure(40);
+    doc.moveTo(LX, y).lineTo(RX, y).lineWidth(0.5).strokeColor(LINE).stroke(); y += 8;
+    doc.font('Helvetica').fontSize(7).fillColor(MUTED).text('Leads de inteligência de mercado (sinais de expansão), NÃO demanda confirmada. Confirme o interesse direto com a empresa. Fonte: busca web (Perplexity) sobre notícias e anúncios públicos de expansão.', LX, y, { width: W, align: 'justify' });
+
+    const range = doc.bufferedPageRange();
+    for (let i = 0; i < range.count; i++) { doc.switchToPage(range.start + i); chrome(); }
+    doc.flushPages();
+    doc.end();
+  });
+}
+
+module.exports = { gerarRelatorioPdf, gerarDossiePdf, gerarEmpresaPdf, gerarRepassePdf, gerarTerrenoPdf, gerarBtsPdf, gerarRadarPdf };

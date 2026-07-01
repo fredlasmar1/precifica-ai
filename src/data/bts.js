@@ -242,6 +242,18 @@ function normRegiao(s) {
   return 'todas';
 }
 
+// Classifica o porte do imóvel que a empresa busca (pela 1ª metragem citada):
+// G = grande (≥3.000m², atacarejo/galpão), M = médio (600-3.000), P = pequeno (<600).
+function porteDoImovel(imovelBuscado) {
+  const m = String(imovelBuscado || '').match(/(\d[\d.]{2,})\s*m/);
+  const a = m ? parseInt(m[1].replace(/\D/g, ''), 10) : 0;
+  if (a >= 3000) return 'G';
+  if (a >= 600) return 'M';
+  if (a > 0) return 'P';
+  return null;
+}
+const PORTE_LABEL = { G: 'grande (≥3.000m²)', M: 'médio (600–3.000m²)', P: 'pequeno (<600m²)' };
+
 /**
  * Radar de expansão: empresas em modo-expansão que poderiam querer um imóvel na região.
  * @param {string} regiao - anapolis | goiania | rmg | todas
@@ -271,19 +283,24 @@ async function _radarQuery(reg, ramoTxt, alvoMax) {
   if (i >= 0 && j > i) s = s.slice(i, j + 1);
   let empresas = [];
   try {
-    empresas = (JSON.parse(s).empresas || []).map(e => ({
-      nome: semCit(e.nome), ramo: semCit(e.ramo), sinal: semCit(e.sinal),
-      cidadeAlvo: semCit(e.cidadeAlvo), imovelBuscado: semCit(e.imovelBuscado),
-      statusRegiao: semCit(e.statusRegiao), fonte: semCit(e.fonte),
-    })).filter(e => e.nome);
+    empresas = (JSON.parse(s).empresas || []).map(e => {
+      const imovelBuscado = semCit(e.imovelBuscado);
+      return {
+        nome: semCit(e.nome), ramo: semCit(e.ramo), sinal: semCit(e.sinal),
+        cidadeAlvo: semCit(e.cidadeAlvo), imovelBuscado,
+        statusRegiao: semCit(e.statusRegiao), fonte: semCit(e.fonte),
+        porte: porteDoImovel(imovelBuscado),
+      };
+    }).filter(e => e.nome);
   } catch {}
   return { empresas, fontes: (data.citations || []).slice(0, 6) };
 }
 
-async function radarExpansao(regiao, ramo) {
+async function radarExpansao(regiao, ramo, porte) {
   const apiKey = process.env.PERPLEXITY_API_KEY;
   const reg = REGIOES[normRegiao(regiao)] || REGIOES.todas;
   const ramoTxt = String(ramo || '').trim();
+  const porteFiltro = ['P', 'M', 'G'].includes(String(porte || '').toUpperCase()) ? String(porte).toUpperCase() : null;
   if (!apiKey) return { erro: 'Busca web indisponível (PERPLEXITY_API_KEY não configurada).' };
 
   try {
@@ -293,22 +310,27 @@ async function radarExpansao(regiao, ramo) {
       const r = await _radarQuery(reg, ramoTxt, 8);
       empresas = r.empresas; fontes = r.fontes;
     } else {
-      // Amplo → varre os ramos-chave em paralelo e junta (dedup por nome).
+      // Amplo → varre os ramos-chave em paralelo e junta (dedup por nome normalizado).
       const results = await Promise.all(
         RAMOS_RADAR.map(rm => _radarQuery(reg, rm, 4).catch(() => ({ empresas: [], fontes: [] })))
       );
       const seen = new Set();
+      const chave = (n) => _normTxt(n).replace(/\b(grupo|rede|redes|supermercados?|atacarejo|lojas?)\b/g, '').replace(/\s+/g, ' ').trim();
       for (const r of results) {
         for (const e of r.empresas) {
-          const k = (e.nome || '').toLowerCase();
+          const k = chave(e.nome);
           if (k && !seen.has(k)) { seen.add(k); empresas.push(e); }
         }
         fontes.push(...r.fontes);
       }
       fontes = [...new Set(fontes)].slice(0, 12);
-      empresas = empresas.slice(0, 16);
     }
-    return { regiao: reg.label, ramo: ramoTxt || null, empresas, fontes };
+    // Afinamento: filtra por porte (se pedido) e ordena — quem tem fonte + porte maior primeiro.
+    if (porteFiltro) empresas = empresas.filter(e => e.porte === porteFiltro);
+    const pRank = { G: 3, M: 2, P: 1 };
+    empresas.sort((a, b) => (b.fonte ? 1 : 0) - (a.fonte ? 1 : 0) || (pRank[b.porte] || 0) - (pRank[a.porte] || 0));
+    empresas = empresas.slice(0, 16);
+    return { regiao: reg.label, ramo: ramoTxt || null, porte: porteFiltro, empresas, fontes };
   } catch (e) {
     console.warn('[Radar] erro:', e.message);
     return { erro: 'Não consegui buscar agora. Tente de novo em instantes.' };
@@ -317,14 +339,15 @@ async function radarExpansao(regiao, ramo) {
 
 function formatarRadar(r) {
   if (!r || r.erro) return `⚠️ ${r?.erro || 'Não foi possível rodar o radar.'}`;
-  let t = `🎯 *RADAR DE EXPANSÃO*\n${r.regiao}${r.ramo ? ` · ${r.ramo}` : ''}\n\n`;
+  let t = `🎯 *RADAR DE EXPANSÃO*\n${r.regiao}${r.ramo ? ` · ${r.ramo}` : ''}${r.porte ? ` · porte ${PORTE_LABEL[r.porte]}` : ''}\n\n`;
   if (!r.empresas || !r.empresas.length) {
-    t += `Nenhuma empresa em expansão clara encontrada agora para esse filtro. Tente uma região mais ampla ou outro ramo.\n`;
+    t += `Nenhuma empresa em expansão clara encontrada agora para esse filtro. Tente uma região mais ampla, outro ramo ou tire o filtro de porte.\n`;
     return t;
   }
   t += `*${r.empresas.length} empresa(s) em modo-expansão* que poderiam querer um imóvel aqui:\n\n`;
+  const badge = { G: '🟥 grande', M: '🟨 médio', P: '🟩 pequeno' };
   r.empresas.forEach((e, i) => {
-    t += `*${i + 1}. ${e.nome}*${e.ramo ? ` — ${e.ramo}` : ''}\n`;
+    t += `*${i + 1}. ${e.nome}*${e.ramo ? ` — ${e.ramo}` : ''}${e.porte ? ` · ${badge[e.porte]}` : ''}\n`;
     if (e.sinal) t += `   📈 ${e.sinal}\n`;
     if (e.cidadeAlvo) t += `   📍 Alvo: ${e.cidadeAlvo}\n`;
     if (e.imovelBuscado) t += `   🏗️ Busca: ${e.imovelBuscado}\n`;
@@ -436,6 +459,71 @@ function formatarBTS(r) {
   return t;
 }
 
+// ── CAPTAÇÃO DE ÁREA — acha imóveis à venda que batem com o spec ──────
+// Fecha o funil: depois do Radar dizer QUEM quer vir e QUE imóvel busca, aqui o
+// app vai atrás da ÁREA — busca terrenos/galpões à venda na região (scraping real
+// VivaReal/ZAP) filtrando por área mínima. Reusa o motor de comparativos.
+const CAPTACAO_BAIRROS = {
+  anapolis: ['Jardim Europa', 'Maracanã', 'Cidade Jardim', 'Vila Jaiara', 'Centro'],
+  goiania: ['Setor Bueno', 'Jardim Goiás', 'Setor Marista', 'Setor Oeste', 'Setor Central'],
+};
+
+async function captarArea(input = {}) {
+  const cidade = String(input.cidade || 'Anápolis').trim();
+  const tipo = (input.tipo === 'comercial' || input.tipo === 'galpao') ? 'comercial' : 'terreno';
+  const areaMin = Number(input.areaMin) > 0 ? Number(input.areaMin) : 0;
+  const areaMax = Number(input.areaMax) > 0 ? Number(input.areaMax) : Infinity;
+  let bairros = String(input.bairro || '').split(',').map(s => s.trim()).filter(Boolean);
+  if (!bairros.length) {
+    const ck = cidade.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
+    bairros = CAPTACAO_BAIRROS[ck] || ['Centro'];
+  }
+  bairros = bairros.slice(0, 5);
+
+  const { buscarComparativos } = require('./portais');
+  const results = await Promise.all(bairros.map(async (b) => {
+    try {
+      const r = await buscarComparativos({ cidade, bairro: b, tipo, finalidade: 'venda', metragem: 0 });
+      return (r && Array.isArray(r.imoveis) ? r.imoveis : []).map(i => ({ ...i, bairro: b }));
+    } catch (e) { console.warn('[Captacao]', b, e.message); return []; }
+  }));
+  let imoveis = results.flat().filter(i => i.area >= areaMin && i.area <= areaMax);
+  const seen = new Set(), uniq = [];
+  for (const i of imoveis) { const k = `${i.area}_${i.preco}`; if (!seen.has(k)) { seen.add(k); uniq.push(i); } }
+  uniq.sort((a, b) => b.area - a.area);
+  return { cidade, tipo, areaMin, areaMax: isFinite(areaMax) ? areaMax : null, bairros, imoveis: uniq.slice(0, 15) };
+}
+
+function formatarCaptacao(r) {
+  if (!r || r.erro) return `⚠️ ${r?.erro || 'Não foi possível buscar áreas.'}`;
+  const m = (v) => `R$ ${Number(v).toLocaleString('pt-BR')}`;
+  const n = (v) => Number(v).toLocaleString('pt-BR');
+  const tipoLabel = r.tipo === 'comercial' ? 'imóvel comercial/galpão' : 'terreno/lote';
+  let t = `🏗️ *CAPTAÇÃO DE ÁREA*\n${r.cidade} · ${tipoLabel}${r.areaMin ? ` · a partir de ${n(r.areaMin)} m²` : ''}\n`;
+  t += `_Bairros varridos: ${r.bairros.join(', ')}_\n\n`;
+  if (!r.imoveis.length) {
+    t += `Nenhum ${tipoLabel} à venda com o filtro atual encontrado agora nesses bairros.\nDicas: reduza a área mínima, troque de tipo (terreno ↔ comercial) ou informe outros bairros.\n`;
+    return t;
+  }
+  t += `*${r.imoveis.length} imóvel(is) à venda* que batem com o spec:\n\n`;
+  r.imoveis.forEach((i, k) => {
+    t += `*${k + 1}.* ${n(i.area)} m² — *${m(i.preco)}*${i.precoM2 ? ` (${m(i.precoM2)}/m²)` : ''}\n`;
+    t += `   📍 ${i.bairro}${i.fonte ? ` · ${i.fonte}` : ''}\n`;
+    if (i.url) t += `   🔗 ${i.url}\n`;
+    t += `\n`;
+  });
+  try {
+    const { textoFontes } = require('./fontes');
+    t += textoFontes({
+      metodo: 'Busca de imóveis à venda por amostragem (anúncios reais), filtrada por área.',
+      data: new Date().toLocaleDateString('pt-BR'),
+      bases: ['VivaReal / ZAP (anúncios de venda)'],
+      obs: 'Anúncios de mercado — confirme disponibilidade, metragem e situação (matrícula/zoneamento) direto com o anunciante. Preço de anúncio costuma ficar acima do de fechamento.',
+    });
+  } catch {}
+  return t;
+}
+
 // ── CAMADA CNPJ — confirma filiais na Receita ────────────────────────
 // Sinal DURO: filial registrada na Receita = expansão confirmada. Free APIs não
 // buscam por município, então a verificação é DIRIGIDA por lead: acha os CNPJs da
@@ -535,4 +623,4 @@ function formatarFiliais(r) {
   return t;
 }
 
-module.exports = { analisarBTS, formatarBTS, CATALOGO_BTS, radarExpansao, formatarRadar, confirmarFiliais, formatarFiliais };
+module.exports = { analisarBTS, formatarBTS, CATALOGO_BTS, radarExpansao, formatarRadar, confirmarFiliais, formatarFiliais, captarArea, formatarCaptacao };

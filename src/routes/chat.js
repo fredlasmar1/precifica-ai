@@ -421,7 +421,7 @@ router.post('/radar', async (req, res) => {
   const b = req.body || {};
   try {
     const { radarExpansao, formatarRadar } = require('../data/bts');
-    const resultado = await radarExpansao(b.regiao, b.ramo);
+    const resultado = await radarExpansao(b.regiao, b.ramo, b.porte);
     if (resultado.erro) return res.status(422).json({ error: resultado.erro });
     return res.json({ type: 'radar', response: formatarRadar(resultado), resultado });
   } catch (err) {
@@ -445,6 +445,39 @@ router.post('/filiais', async (req, res) => {
   } catch (err) {
     console.error('[Filiais API] Erro:', err);
     return res.status(500).json({ error: '⚠️ Erro ao confirmar filiais na Receita. Tente novamente.', debug: err.message });
+  }
+});
+
+/**
+ * POST /api/captacao — Captação de área: busca imóveis à venda que batem com o
+ * spec do inquilino-alvo. body: { cidade, bairro, tipo, areaMin, areaMax }
+ */
+router.post('/captacao', async (req, res) => {
+  const b = req.body || {};
+  try {
+    const { captarArea, formatarCaptacao } = require('../data/bts');
+    const resultado = await captarArea(b);
+    if (resultado.erro) return res.status(422).json({ error: resultado.erro });
+    return res.json({ type: 'captacao', response: formatarCaptacao(resultado), resultado });
+  } catch (err) {
+    console.error('[Captacao API] Erro:', err);
+    return res.status(500).json({ error: '⚠️ Erro ao buscar áreas. Tente novamente.', debug: err.message });
+  }
+});
+
+/** POST /api/relatorio-radar — PDF da lista de alvos do Radar de Expansão. */
+router.post('/relatorio-radar', async (req, res) => {
+  const { resultado } = req.body || {};
+  if (!resultado || !Array.isArray(resultado.empresas)) return res.status(400).json({ error: 'Rode o Radar primeiro.' });
+  try {
+    const { gerarRadarPdf } = require('../data/relatorioPdf');
+    const pdf = await gerarRadarPdf(resultado);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="alvos-expansao-${(resultado.regiao || 'regiao').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-')}.pdf"`);
+    res.send(pdf);
+  } catch (err) {
+    console.error('[RelatRadar API] Erro:', err);
+    res.status(500).json({ error: '⚠️ Erro ao gerar o PDF. Tente novamente.' });
   }
 });
 
