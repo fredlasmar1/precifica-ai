@@ -252,6 +252,14 @@ function porteDoImovel(imovelBuscado) {
   if (a > 0) return 'P';
   return null;
 }
+// Fallback quando o texto não traz metragem: classifica o porte pelo RAMO.
+function porteDoRamo(ramo) {
+  const r = String(ramo || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  if (/atacarejo|supermerc|home ?center|constru|logist|galp|distribu|departament|atacado|hiper/.test(r)) return 'G';
+  if (/academ|varejo|educac|ensino|loja/.test(r)) return 'M';
+  if (/farmac|drogaria|fast|restaurante|lanchonete|\bpet\b|clinic|laborat|posto|conveni|saude/.test(r)) return 'P';
+  return null;
+}
 const PORTE_LABEL = { G: 'grande (≥3.000m²)', M: 'médio (600–3.000m²)', P: 'pequeno (<600m²)' };
 
 /**
@@ -289,7 +297,7 @@ async function _radarQuery(reg, ramoTxt, alvoMax) {
         nome: semCit(e.nome), ramo: semCit(e.ramo), sinal: semCit(e.sinal),
         cidadeAlvo: semCit(e.cidadeAlvo), imovelBuscado,
         statusRegiao: semCit(e.statusRegiao), fonte: semCit(e.fonte),
-        porte: porteDoImovel(imovelBuscado),
+        porte: porteDoImovel(imovelBuscado) || porteDoRamo(e.ramo),
       };
     }).filter(e => e.nome);
   } catch {}
