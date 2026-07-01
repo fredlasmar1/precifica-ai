@@ -257,20 +257,23 @@ async function radarExpansao(regiao, ramo) {
     ? `Foque no ramo: ${ramoTxt}.`
     : `Cubra varejo, atacarejo/supermercado, home center/construção, academia, farmácia, fast-food/restaurante, pet, saúde/clínica/laboratório, educação, logística/centro de distribuição e franquias em expansão.`;
   const prompt = `Liste empresas e redes REAIS que estão em expansão e poderiam querer abrir/instalar uma unidade em ${reg.alvo} em 2025-2026 (anúncios de expansão, novas lojas, busca de pontos, contratação local, franquias buscando a região). ${foco} `
-    + `Priorize quem opera por Build to Suit ou locação de longo prazo. `
-    + `Para cada empresa responda em JSON: {"empresas":[{"nome":"...","ramo":"...","sinal":"o sinal concreto de expansão e a data","cidadeAlvo":"cidade(s) de interesse na região","imovelBuscado":"tipo/área de imóvel que costumam usar (ex: loja 300m² em avenida, galpão 3000m²)","statusRegiao":"já tem unidade na região? está abrindo?","fonte":"URL da notícia/fonte"}]}. `
-    + `Máximo 10. Use SOMENTE informação real e verificável; se não encontrar, retorne lista vazia. Não invente.`;
+    + `Priorize quem opera por Build to Suit ou locação de longo prazo, e redes conhecidas por expandir no Centro-Oeste/Goiás. `
+    + `Responda APENAS com JSON válido, sem texto antes ou depois: {"empresas":[{"nome":"...","ramo":"...","sinal":"sinal concreto de expansão + data","cidadeAlvo":"cidade(s) de interesse na região","imovelBuscado":"tipo/área de imóvel típico (ex: loja 300m² em avenida, galpão 3000m²)","statusRegiao":"já tem unidade na região? está abrindo?","fonte":"URL da fonte"}]}. `
+    + `Liste de 5 a 8 empresas que você conhece estarem em expansão no Centro-Oeste. Não invente empresas nem fontes; se não souber a fonte de uma, deixe "fonte" vazia mas mantenha a empresa.`;
 
   try {
     const { data } = await axios.post('https://api.perplexity.ai/chat/completions', {
       model: 'sonar-pro',
       messages: [
-        { role: 'system', content: 'Pesquisador de expansão de varejo e franquias no Brasil, especialista no interior/Centro-Oeste. SOMENTE dados reais e verificáveis, com fonte. Nunca invente. Retorne SOMENTE JSON.' },
+        { role: 'system', content: 'Pesquisador de expansão de varejo e franquias no Brasil, especialista no interior/Centro-Oeste. Use dados reais. Nunca invente empresas ou fontes. Retorne SOMENTE JSON válido, começando com { e terminando com }.' },
         { role: 'user', content: prompt },
       ],
-      temperature: 0.1, max_tokens: 1500,
+      temperature: 0.2, max_tokens: 2600,
     }, { timeout: 90000, headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' } });
-    const s = data.choices[0].message.content.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
+    let s = String(data.choices[0].message.content || '').replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
+    // Extrai o bloco {...} mesmo se vier com texto em volta (robusto a prosa/truncamento)
+    const i = s.indexOf('{'), j = s.lastIndexOf('}');
+    if (i >= 0 && j > i) s = s.slice(i, j + 1);
     let empresas = [];
     try {
       empresas = (JSON.parse(s).empresas || []).map(e => ({
