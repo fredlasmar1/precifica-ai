@@ -481,6 +481,24 @@ router.post('/relatorio-radar', async (req, res) => {
   }
 });
 
+/**
+ * POST /api/contato — Como chegar na rede: canal de expansão/imóveis + email e
+ * telefone do CNPJ (Receita). body: { empresa }
+ */
+router.post('/contato', async (req, res) => {
+  const b = req.body || {};
+  if (!String(b.empresa || '').trim()) return res.status(400).json({ error: 'Informe o nome da rede/empresa.' });
+  try {
+    const { buscarContato, formatarContato } = require('../data/bts');
+    const resultado = await buscarContato(b.empresa);
+    if (resultado.erro) return res.status(422).json({ error: resultado.erro });
+    return res.json({ type: 'contato', response: formatarContato(resultado), resultado });
+  } catch (err) {
+    console.error('[Contato API] Erro:', err);
+    return res.status(500).json({ error: '⚠️ Erro ao buscar contato. Tente novamente.', debug: err.message });
+  }
+});
+
 /** POST /api/relatorio-bts — PDF do estudo de viabilidade BTS. */
 router.post('/relatorio-bts', async (req, res) => {
   const { resultado, solicitante } = req.body || {};

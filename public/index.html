@@ -727,6 +727,20 @@
               <div class="hint">Cruza com a <b>Receita Federal</b>: acha os CNPJs da rede na sua região e confirma município + data de abertura (<b>🆕</b> = aberta nos últimos 24 meses = expansão ativa). <b>Sinal duro</b> de que a rede já pousou aqui — ou, se não achar nada, é um <b>alvo de prospecção</b>.</div>
             </form>
           </div>
+
+          <div style="margin-top:18px;padding-top:16px;border-top:1px solid #e5e9f0">
+            <form onsubmit="buscarContatoRede(event)">
+              <div class="field">
+                <label>📧 Como chegar na rede <span class="opt">(canal de expansão + email/telefone do CNPJ)</span></label>
+                <input id="ct-empresa" placeholder="Ex: Grupo Mateus, Atacadão, Smart Fit" />
+              </div>
+              <button class="btn-primary" id="btn-contato" type="submit">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>
+                Buscar contato
+              </button>
+              <div class="hint">Acha o <b>canal de "Expansão / Ofereça seu Imóvel"</b> (o caminho certo pra propor um BTS) + o <b>email e telefone registrados no CNPJ</b> (Receita). Pra email de um decisor específico, dá pra enriquecer com o Explorium sob demanda.</div>
+            </form>
+          </div>
         </div>
 
         <div id="bts-capt" style="display:none">
@@ -1549,6 +1563,29 @@
       } finally {
         busy = false;
         document.getElementById('btn-filiais').disabled = false;
+      }
+    }
+    async function buscarContatoRede(e) {
+      e.preventDefault();
+      if (busy) return;
+      const empresa = document.getElementById('ct-empresa').value.trim();
+      if (!empresa) { showError('Digite o nome da rede/empresa.'); return; }
+      busy = true;
+      document.getElementById('btn-contato').disabled = true;
+      showSpinner('Procurando o canal de expansão e os contatos registrados na Receita…');
+      try {
+        const res = await fetch('/api/contato', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ empresa })
+        });
+        const data = await res.json();
+        if (data.error) showError(data.error);
+        else showLaudo(data.response);
+      } catch (err) {
+        showError('Erro de conexão. Tente novamente.');
+      } finally {
+        busy = false;
+        document.getElementById('btn-contato').disabled = false;
       }
     }
     async function analisarBTS(e) {

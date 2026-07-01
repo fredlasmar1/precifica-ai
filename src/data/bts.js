@@ -600,6 +600,92 @@ async function confirmarFiliais(empresa, regiao) {
   return { empresa: emp, regiao: reg.label, filiais, checou: digs.length };
 }
 
+// ── CONTATO — como chegar na rede (canal de expansão + email/telefone do CNPJ) ──
+async function buscarContato(empresa) {
+  const apiKey = process.env.PERPLEXITY_API_KEY;
+  const emp = String(empresa || '').trim();
+  if (!emp) return { erro: 'Informe o nome da rede/empresa.' };
+
+  let dados = {};
+  if (apiKey) {
+    try {
+      const prompt = `Para a rede/empresa "${emp}" no Brasil, retorne SOMENTE JSON válido: `
+        + `{"cnpjMatriz":"XX.XXX.XXX/XXXX-XX ou vazio","site":"","canalExpansao":"URL da página de EXPANSÃO / NOVOS PONTOS / OFEREÇA SEU IMÓVEL (onde proprietários oferecem terreno para novas lojas) ou vazio","emailExpansao":"email do setor de expansão/novos negócios/imóveis ou vazio","emailGeral":"email de contato geral ou vazio","telefone":"telefone principal ou vazio"}. `
+        + `Priorize o CANAL DE EXPANSÃO/IMÓVEIS. Use SOMENTE dados reais e verificáveis; campo sem info = string vazia. NUNCA invente email, CNPJ ou telefone.`;
+      const { data } = await axios.post('https://api.perplexity.ai/chat/completions', {
+        model: 'sonar-pro',
+        messages: [
+          { role: 'system', content: 'Pesquisador de dados públicos de empresas no Brasil. Responda SOMENTE JSON válido. NUNCA invente email, CNPJ ou telefone — só cite o que encontrar em fonte real.' },
+          { role: 'user', content: prompt },
+        ],
+        temperature: 0, max_tokens: 500,
+      }, { timeout: 60000, headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' } });
+      let s = String(data.choices[0].message.content || '').replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
+      const i = s.indexOf('{'), j = s.lastIndexOf('}');
+      if (i >= 0 && j > i) s = s.slice(i, j + 1);
+      try { dados = JSON.parse(s) || {}; } catch {}
+    } catch (e) { console.warn('[Contato] perplexity:', e.message); }
+  }
+
+  // Email/telefone REGISTRADOS na Receita (verificável) via BrasilAPI
+  let cnpjEmail = null, cnpjTel = null, cnpjMun = null, cnpjRazao = null;
+  const cnpjDig = String(dados.cnpjMatriz || '').replace(/\D/g, '');
+  if (cnpjDig.length === 14) {
+    try {
+      const { data } = await axios.get(`https://brasilapi.com.br/api/cnpj/v1/${cnpjDig}`, { timeout: 15000 });
+      cnpjEmail = data.email || null;
+      cnpjTel = data.ddd_telefone_1 || null;
+      cnpjMun = data.municipio ? `${data.municipio}-${data.uf}` : null;
+      cnpjRazao = data.razao_social || null;
+    } catch (e) { console.warn('[Contato] brasilapi:', e.message); }
+  }
+
+  return {
+    empresa: emp,
+    site: semCit(dados.site) || null,
+    canalExpansao: semCit(dados.canalExpansao) || null,
+    emailExpansao: semCit(dados.emailExpansao) || null,
+    emailGeral: semCit(dados.emailGeral) || null,
+    telefone: semCit(dados.telefone) || null,
+    cnpjMatriz: dados.cnpjMatriz && cnpjDig.length === 14 ? dados.cnpjMatriz : null,
+    cnpjRazao, cnpjMun, cnpjEmail, cnpjTel,
+  };
+}
+
+function formatarContato(r) {
+  if (!r || r.erro) return `⚠️ ${r?.erro || 'Não foi possível buscar contato.'}`;
+  let t = `📧 *CONTATO — ${r.empresa}*\n\n`;
+  const temAlgo = r.canalExpansao || r.emailExpansao || r.emailGeral || r.telefone || r.cnpjEmail || r.cnpjTel || r.site;
+  if (!temAlgo) {
+    t += `Não encontrei canais públicos agora. Tente pelo site da rede (área "Expansão / Fornecedores / Ofereça seu imóvel") ou peça o enriquecimento com email de decisor (Explorium, sob demanda).\n`;
+    return t;
+  }
+  t += `🏗️ *Canal de expansão / oferecer imóvel* — _o caminho certo pra BTS:_\n`;
+  if (r.canalExpansao) t += `   • ${r.canalExpansao}\n`;
+  if (r.emailExpansao) t += `   • ✉️ ${r.emailExpansao}\n`;
+  if (!r.canalExpansao && !r.emailExpansao) t += `   • _não localizado — veja "Expansão/Novos Negócios" no site abaixo_\n`;
+  t += `\n📇 *Contato geral:*\n`;
+  if (r.site) t += `   • 🌐 ${r.site}\n`;
+  if (r.emailGeral) t += `   • ✉️ ${r.emailGeral}\n`;
+  if (r.telefone) t += `   • 📞 ${r.telefone}\n`;
+  if (r.cnpjMatriz) {
+    t += `\n🏛️ *Registro na Receita (matriz ${r.cnpjMatriz}${r.cnpjMun ? ` · ${r.cnpjMun}` : ''}):*\n`;
+    if (r.cnpjEmail) t += `   • ✉️ ${r.cnpjEmail} _(email registrado no CNPJ)_\n`;
+    if (r.cnpjTel) t += `   • 📞 ${r.cnpjTel}\n`;
+    if (!r.cnpjEmail && !r.cnpjTel) t += `   • _sem email/telefone públicos no cadastro_\n`;
+  }
+  try {
+    const { textoFontes } = require('./fontes');
+    t += textoFontes({
+      metodo: 'Canal de expansão e contatos por busca web; email/telefone da matriz confirmados na Receita Federal.',
+      data: new Date().toLocaleDateString('pt-BR'),
+      bases: ['Perplexity (site e canal de expansão)', 'Receita Federal via BrasilAPI (email/telefone do CNPJ)'],
+      obs: 'O email do CNPJ costuma ser administrativo/contábil — o canal de EXPANSÃO/IMÓVEIS é o ideal pra ofertar um ponto. Para email de um decisor específico (Gerente de Expansão), use o enriquecimento Explorium sob demanda.',
+    });
+  } catch {}
+  return t;
+}
+
 function formatarFiliais(r) {
   if (!r || r.erro) return `⚠️ ${r?.erro || 'Não foi possível confirmar filiais.'}`;
   let t = `🏢 *FILIAIS NA RECEITA — ${r.empresa}*\n${r.regiao}\n\n`;
@@ -631,4 +717,4 @@ function formatarFiliais(r) {
   return t;
 }
 
-module.exports = { analisarBTS, formatarBTS, CATALOGO_BTS, radarExpansao, formatarRadar, confirmarFiliais, formatarFiliais, captarArea, formatarCaptacao };
+module.exports = { analisarBTS, formatarBTS, CATALOGO_BTS, radarExpansao, formatarRadar, confirmarFiliais, formatarFiliais, captarArea, formatarCaptacao, buscarContato, formatarContato };
