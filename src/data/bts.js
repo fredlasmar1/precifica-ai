@@ -686,6 +686,46 @@ function formatarContato(r) {
   return t;
 }
 
+// ── E-MAIL DE PROSPECÇÃO PERSONALIZADO (por IA, cada caso é um caso) ──
+async function gerarEmailProspeccao(input = {}) {
+  const client = getOpenAI();
+  if (!client) return { erro: 'IA indisponível (OPENAI_API_KEY não configurada).' };
+  const empresa = String(input.empresa || '').trim();
+  if (!empresa) return { erro: 'Informe a rede/empresa-alvo.' };
+  const formato = input.formato === 'whatsapp' ? 'whatsapp' : 'email';
+  const spec = [
+    input.tipo ? `tipo: ${input.tipo}` : '',
+    Number(input.area) > 0 ? `área: ${Number(input.area).toLocaleString('pt-BR')} m²` : '',
+    (input.bairro || input.cidade) ? `local: ${[input.bairro, input.cidade || 'Anápolis'].filter(Boolean).join(', ')}-GO` : '',
+    input.endereco ? `endereço: ${input.endereco}` : '',
+    input.detalhes ? `detalhes do imóvel: ${input.detalhes}` : '',
+  ].filter(Boolean).join(' · ');
+
+  const sys = 'Você é Frederico Lasmar, corretor de imóveis corporativos da Bens Imóveis Corporativos (Anápolis-GO). Escreve mensagens de prospecção B2B para oferecer um imóvel a uma rede em expansão, no modelo Build to Suit. Português do Brasil, tom profissional, direto e caloroso. Nunca invente dados que não foram fornecidos.';
+  const regras = formato === 'whatsapp'
+    ? 'Escreva uma mensagem CURTA de WhatsApp (3 a 5 linhas), sem "Assunto", emojis com moderação.'
+    : 'Escreva um E-MAIL: primeira linha "Assunto: ..." depois o corpo (máx ~150 palavras) e a assinatura.';
+  const user = `Rede-alvo: ${empresa}. Imóvel oferecido: ${spec || '(não detalhado — seja mais genérico sobre o imóvel)'}. `
+    + `${input.sinal ? `Momento/estratégia de expansão da rede: ${input.sinal}. ` : ''}`
+    + `Personalize DE VERDADE: cite por que ESTE imóvel serve pra ESSA rede (porte, localização, perfil) e conecte ao momento de expansão dela; ofereça enviar o estudo de viabilidade completo; peça o contato do setor de Expansão/Novos Pontos em Goiás; NÃO cite preço nem invente números. ${regras} `
+    + `Assinatura: Frederico Ivan Lasmar Alves — Bens Imóveis Corporativos · CRECI-J 43.934 (corretor CRECI-F 41.009) · (62) 9973-9596 · benscorporativos.com.br.`;
+  try {
+    const resp = await client.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: [{ role: 'system', content: sys }, { role: 'user', content: user }],
+      temperature: 0.6, max_tokens: 550,
+    });
+    return { empresa, formato, texto: resp.choices[0].message.content.trim() };
+  } catch (e) { console.warn('[EmailProsp]', e.message); return { erro: 'Não consegui gerar agora. Tente de novo.' }; }
+}
+
+function formatarEmailProspeccao(r) {
+  if (!r || r.erro) return `⚠️ ${r?.erro || 'Não foi possível gerar o e-mail.'}`;
+  let t = `✉️ *${r.formato === 'whatsapp' ? 'MENSAGEM DE WHATSAPP' : 'E-MAIL'} — ${r.empresa}*\n\n${r.texto}\n`;
+  t += `\n_Gerado para este caso específico — revise e ajuste antes de enviar. Pegue o email/canal de destino na aba 📧 Contato._`;
+  return t;
+}
+
 function formatarFiliais(r) {
   if (!r || r.erro) return `⚠️ ${r?.erro || 'Não foi possível confirmar filiais.'}`;
   let t = `🏢 *FILIAIS NA RECEITA — ${r.empresa}*\n${r.regiao}\n\n`;
@@ -717,4 +757,4 @@ function formatarFiliais(r) {
   return t;
 }
 
-module.exports = { analisarBTS, formatarBTS, CATALOGO_BTS, radarExpansao, formatarRadar, confirmarFiliais, formatarFiliais, captarArea, formatarCaptacao, buscarContato, formatarContato };
+module.exports = { analisarBTS, formatarBTS, CATALOGO_BTS, radarExpansao, formatarRadar, confirmarFiliais, formatarFiliais, captarArea, formatarCaptacao, buscarContato, formatarContato, gerarEmailProspeccao, formatarEmailProspeccao };

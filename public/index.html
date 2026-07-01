@@ -741,6 +741,55 @@
               <div class="hint">Acha o <b>canal de "Expansão / Ofereça seu Imóvel"</b> (o caminho certo pra propor um BTS) + o <b>email e telefone registrados no CNPJ</b> (Receita). Pra email de um decisor específico, dá pra enriquecer com o Explorium sob demanda.</div>
             </form>
           </div>
+
+          <div style="margin-top:18px;padding-top:16px;border-top:1px solid #e5e9f0">
+            <form onsubmit="gerarEmail(event)">
+              <div class="field">
+                <label>✉️ Gerar e-mail personalizado <span class="opt">(cada caso é um caso)</span></label>
+                <input id="em-empresa" placeholder="Rede-alvo — ex: Grupo Mateus, Smart Fit" />
+              </div>
+              <div class="row">
+                <div class="field">
+                  <label>Cidade</label>
+                  <input id="em-cidade" placeholder="Anápolis" />
+                </div>
+                <div class="field">
+                  <label>Bairro / Setor</label>
+                  <input id="em-bairro" placeholder="Ex: Jardim Europa" />
+                </div>
+              </div>
+              <div class="row">
+                <div class="field">
+                  <label>Área (m²)</label>
+                  <input id="em-area" type="number" min="0" placeholder="4000" />
+                </div>
+                <div class="field">
+                  <label>Tipo</label>
+                  <select id="em-tipo">
+                    <option value="terreno">Terreno / lote</option>
+                    <option value="galpão">Galpão / logístico</option>
+                    <option value="loja">Loja / ponto comercial</option>
+                  </select>
+                </div>
+              </div>
+              <div class="field full">
+                <label>Detalhes do imóvel <span class="opt">(esquina, avenida, frente, estacionamento, acesso…)</span></label>
+                <textarea id="em-detalhes" rows="2" placeholder="Ex: esquina em avenida de alto fluxo, 40m de frente, ao lado do DAIA, acesso pela BR-153"></textarea>
+              </div>
+              <div class="field">
+                <label>Formato</label>
+                <select id="em-formato">
+                  <option value="email">E-mail</option>
+                  <option value="whatsapp">WhatsApp (curto)</option>
+                </select>
+              </div>
+              <button class="btn-primary" id="btn-email" type="submit">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v16H4z"/><path d="M22 6l-10 7L2 6"/></svg>
+                Gerar e-mail
+              </button>
+              <div class="hint">A IA escreve um e-mail <b>sob medida</b> pra rede-alvo + este imóvel — cita o momento de expansão dela e por que o ponto serve, oferece o estudo de viabilidade e pede o contato certo. Sem preço no 1º contato.</div>
+            </form>
+          </div>
         </div>
 
         <div id="bts-capt" style="display:none">
@@ -1563,6 +1612,38 @@
       } finally {
         busy = false;
         document.getElementById('btn-filiais').disabled = false;
+      }
+    }
+    async function gerarEmail(e) {
+      e.preventDefault();
+      if (busy) return;
+      const empresa = document.getElementById('em-empresa').value.trim();
+      if (!empresa) { showError('Digite a rede/empresa-alvo.'); return; }
+      const payload = {
+        empresa,
+        cidade: document.getElementById('em-cidade').value.trim(),
+        bairro: document.getElementById('em-bairro').value.trim(),
+        area: document.getElementById('em-area').value,
+        tipo: document.getElementById('em-tipo').value,
+        detalhes: document.getElementById('em-detalhes').value.trim(),
+        formato: document.getElementById('em-formato').value
+      };
+      busy = true;
+      document.getElementById('btn-email').disabled = true;
+      showSpinner('Escrevendo um e-mail sob medida pra rede-alvo e este imóvel…');
+      try {
+        const res = await fetch('/api/email-prospeccao', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (data.error) showError(data.error);
+        else showLaudo(data.response);
+      } catch (err) {
+        showError('Erro de conexão. Tente novamente.');
+      } finally {
+        busy = false;
+        document.getElementById('btn-email').disabled = false;
       }
     }
     async function buscarContatoRede(e) {
