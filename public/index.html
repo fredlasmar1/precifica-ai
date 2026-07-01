@@ -97,6 +97,15 @@
       display: grid; grid-template-columns: minmax(440px, 600px) 1fr; gap: 26px;
       align-items: start;
     }
+    /* OCIOSO (sem resultado ainda): o formulário ocupa a largura toda, campos em
+       várias colunas, e o painel de resultado fica oculto — sem vão vazio. */
+    .wrap:not(.has-result) { max-width: 1140px; grid-template-columns: 1fr; }
+    .wrap:not(.has-result) .result { display: none; }
+    .wrap:not(.has-result) form { display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); column-gap: 18px; align-items: start; }
+    .wrap:not(.has-result) form .row { display: contents; }
+    .wrap:not(.has-result) form > .btn-primary,
+    .wrap:not(.has-result) form > .hint,
+    .wrap:not(.has-result) form .field.full { grid-column: 1 / -1; }
     .card { background: var(--card); border: 1px solid var(--line); border-radius: 22px; box-shadow: var(--shadow); overflow: hidden; }
 
     /* ---------------- Tabs ---------------- */
@@ -297,7 +306,8 @@
 
     /* ---------------- Responsive ---------------- */
     @media (max-width: 940px) {
-      .wrap { grid-template-columns: 1fr; padding: 18px; }
+      .wrap, .wrap.has-result { grid-template-columns: 1fr; padding: 18px; }
+      .wrap:not(.has-result) form { grid-template-columns: 1fr; }
       .tabs { grid-template-columns: repeat(2, 1fr); }
       .hero { padding: 22px 18px 0; }
       .hero h2 { font-size: 24px; }
@@ -924,6 +934,7 @@
         : which === 'fipe' ? 'FIPE Anápolis'
         : which === 'empresa' ? 'Avaliação de Empresa' : 'Laudo de Precificação';
       if (which === 'historico') carregarHistorico();
+      if (which === 'chat') usarResultado();
       if (which === 'chat' && !document.getElementById('thread').dataset.init) {
         addMsg('agent', 'Olá! Sou o *Precifica Aí* 🏠\nDescreva o imóvel (tipo, cidade, bairro, m², quartos, vagas, estado) que eu pesquiso o mercado e gero o laudo.');
         document.getElementById('thread').dataset.init = '1';
@@ -938,12 +949,15 @@
         .replace(/_(.*?)_/g, '<em>$1</em>');
     }
 
+    function usarResultado() { const w = document.querySelector('.wrap'); if (w) w.classList.add('has-result'); }
     function showSpinner(msg) {
+      usarResultado();
       document.getElementById('result-tag').textContent = 'consultando…';
       document.getElementById('result-body').innerHTML =
         '<div class="spinner"><div class="ring"></div><div><div class="s-ttl">Consultando o mercado…</div><div style="margin-top:6px">' + (msg || '') + '</div></div></div>';
     }
     function showLaudo(text, mapUrl) {
+      usarResultado();
       document.getElementById('result-tag').textContent = '✓ concluído';
       const div = document.createElement('div');
       div.className = 'laudo';
@@ -953,6 +967,7 @@
       body.appendChild(div);
     }
     function showError(text) {
+      usarResultado();
       document.getElementById('result-tag').textContent = 'erro';
       document.getElementById('result-body').innerHTML =
         '<div class="empty err-box"><div style="font-size:42px">⚠️</div><div class="sub">' + fmt(text) + '</div></div>';
