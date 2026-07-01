@@ -234,10 +234,11 @@ function getMultiplicadorBairro(cidade, bairro) {
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   const bairroKey = bairro.toLowerCase().trim();
 
-  // Busca cidade com ou sem acentos
-  const cidadeBairros = BAIRROS[cidadeKey] ||
-    BAIRROS[cidade.toLowerCase().trim()] ||
-    BAIRROS_ANAPOLIS; // Padrão: Anápolis
+  // Busca cidade com ou sem acentos. Cidade DESCONHECIDA (ex: RMG fora do mapa)
+  // fica NEUTRA (mult 1.0) — NÃO herda os bairros de Anápolis, senão um bairro
+  // homônimo pegaria o multiplicador errado. O scraping de mercado calibra.
+  const cidadeBairros = BAIRROS[cidadeKey] || BAIRROS[cidade.toLowerCase().trim()];
+  if (!cidadeBairros) return { mult: 1.0, perfil: null, zona: null, conhecido: false };
 
   // Match exato
   if (cidadeBairros[bairroKey]) {

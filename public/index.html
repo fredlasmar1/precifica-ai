@@ -586,17 +586,32 @@
         <form onsubmit="analisarBTS(event)">
           <div class="row">
             <div class="field">
-              <label>Bairro</label>
-              <input id="b-bairro" placeholder="Ex: Jundiaí" />
+              <label>Cidade</label>
+              <select id="b-cidade">
+                <option value="Anápolis" selected>Anápolis</option>
+                <option value="Goiânia">Goiânia</option>
+                <option value="Aparecida de Goiânia">Aparecida de Goiânia</option>
+                <option value="Senador Canedo">Senador Canedo</option>
+                <option value="Trindade">Trindade</option>
+                <option value="Goianira">Goianira</option>
+                <option value="Nerópolis">Nerópolis</option>
+                <option value="Hidrolândia">Hidrolândia</option>
+              </select>
             </div>
+            <div class="field">
+              <label>Bairro / Setor</label>
+              <input id="b-bairro" placeholder="Ex: Jundiaí, Setor Bueno" />
+            </div>
+          </div>
+          <div class="row">
             <div class="field">
               <label>Área do terreno (m²)</label>
               <input id="b-area" type="number" min="0" placeholder="1500" />
             </div>
-          </div>
-          <div class="field">
-            <label>Endereço <span class="opt">(opcional, refina preço + análise do ponto)</span></label>
-            <input id="b-endereco" placeholder="Ex: Av. Brasil, 1200" />
+            <div class="field">
+              <label>Endereço <span class="opt">(opcional, refina preço)</span></label>
+              <input id="b-endereco" placeholder="Ex: Av. Brasil, 1200" />
+            </div>
           </div>
           <div class="row">
             <div class="field">
@@ -1312,7 +1327,7 @@
       e.preventDefault();
       if (busy) return;
       const payload = {
-        cidade: 'Anápolis',
+        cidade: document.getElementById('b-cidade').value,
         bairro: document.getElementById('b-bairro').value.trim(),
         area: document.getElementById('b-area').value,
         endereco: document.getElementById('b-endereco').value.trim(),

@@ -59,6 +59,12 @@ function norm(s) {
     .replace(/\s+/g, ' ');
 }
 
+// As âncoras oficiais EBM (venda) e PGV (terreno) são de ANÁPOLIS. Só podem casar
+// quando a cidade é Anápolis — senão um bairro homônimo de Goiânia/RMG (ex: "Jardim
+// Europa", "Cidade Jardim") pegaria o valor de Anápolis. Fora de Anápolis: só o
+// multiplicador de bairro (BAIRROS_GOIANIA etc.) + scraping de mercado.
+function isAnapolis(cidade) { return norm(cidade).includes('anapolis'); }
+
 /**
  * Âncora de VENDA (R$/m² construído) para o bairro.
  * Retorna { m2, fonte: 'EBM'|'derivado', confianca: 'alta'|'media' }.
@@ -66,14 +72,16 @@ function norm(s) {
 function getBaseVenda(cidade, bairro) {
   const key = norm(bairro);
 
-  // 1) Match direto na tabela EBM (inclui aliases simples)
-  if (EBM_VENDA_M2[key]) {
-    return { m2: EBM_VENDA_M2[key], fonte: 'EBM/Aderni-GO', confianca: 'alta' };
-  }
-  // match por "contém" (ex: "vila jaiara setor norte" → "vila jaiara")
-  for (const ebmKey of Object.keys(EBM_VENDA_M2)) {
-    if (key.includes(ebmKey)) {
-      return { m2: EBM_VENDA_M2[ebmKey], fonte: 'EBM/Aderni-GO (região)', confianca: 'alta' };
+  // 1) Match na tabela EBM — SOMENTE Anápolis (a EBM/Aderni é de Anápolis).
+  if (isAnapolis(cidade)) {
+    if (EBM_VENDA_M2[key]) {
+      return { m2: EBM_VENDA_M2[key], fonte: 'EBM/Aderni-GO', confianca: 'alta' };
+    }
+    // match por "contém" (ex: "vila jaiara setor norte" → "vila jaiara")
+    for (const ebmKey of Object.keys(EBM_VENDA_M2)) {
+      if (key.includes(ebmKey)) {
+        return { m2: EBM_VENDA_M2[ebmKey], fonte: 'EBM/Aderni-GO (região)', confianca: 'alta' };
+      }
     }
   }
 
@@ -123,7 +131,8 @@ function pgvVenal(bairro) {
  * convertida para mercado. Fallback: fração do R$/m² construído.
  */
 function getBaseLote(cidade, bairro) {
-  const venal = pgvVenal(bairro);
+  // PGV é a Planta Genérica da Prefeitura de ANÁPOLIS — só casa em Anápolis.
+  const venal = isAnapolis(cidade) ? pgvVenal(bairro) : null;
   if (venal > 0) {
     const m2 = clamp(Math.round(venal * PGV_FATOR_MERCADO), LOTE_MIN, LOTE_MAX);
     return { m2, fonte: `Prefeitura/PGV (venal R$ ${venal}/m² × ${PGV_FATOR_MERCADO})`, confianca: 'alta', venal };

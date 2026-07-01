@@ -293,9 +293,12 @@ function formatarBTS(r) {
 
   try {
     const { textoFontes } = require('./fontes');
+    const ehAnapolis = String(r.cidade || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').includes('anapolis');
     const bases = [
       'Google Maps (concorrência e fluxo do entorno)',
-      'EBM/Aderni-GO · Planta Genérica de Valores — Anápolis (terreno e aluguel comercial)',
+      ehAnapolis
+        ? 'EBM/Aderni-GO · Planta Genérica de Valores — Anápolis (terreno e aluguel comercial)'
+        : 'Mercado (VivaReal/ZAP) + multiplicador de bairro por cidade (terreno e aluguel comercial)',
       'CUB-GO / Sinduscon (custo de obra)',
     ];
     if (r.empresas && r.empresas.live && r.empresas.live.length) bases.push('Perplexity (busca web de expansão de redes)');
