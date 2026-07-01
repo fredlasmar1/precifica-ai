@@ -436,4 +436,103 @@ function formatarBTS(r) {
   return t;
 }
 
-module.exports = { analisarBTS, formatarBTS, CATALOGO_BTS, radarExpansao, formatarRadar };
+// ── CAMADA CNPJ — confirma filiais na Receita ────────────────────────
+// Sinal DURO: filial registrada na Receita = expansão confirmada. Free APIs não
+// buscam por município, então a verificação é DIRIGIDA por lead: acha os CNPJs da
+// rede na região (Perplexity) e confirma CADA UM na Receita (BrasilAPI). CNPJ
+// inventado/errado não passa (a Receita filtra por município + situação).
+const RMG_CIDADES = ['aparecida de goiania', 'senador canedo', 'trindade', 'goianira', 'neropolis', 'goianapolis', 'hidrolandia', 'bela vista de goias', 'nova veneza', 'santo antonio de goias', 'abadia de goias', 'bonfinopolis', 'guapo', 'inhumas', 'terezopolis de goias'];
+function _normTxt(s) { return String(s == null ? '' : s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim(); }
+function cidadesDaRegiao(regKey) {
+  if (regKey === 'anapolis') return ['anapolis'];
+  if (regKey === 'goiania') return ['goiania'];
+  if (regKey === 'rmg') return RMG_CIDADES;
+  return ['anapolis', 'goiania', ...RMG_CIDADES];
+}
+const CUTOFF_NOVA = '2024-07-01'; // aberta nos últimos ~24 meses = "nova"
+
+async function confirmarFiliais(empresa, regiao) {
+  const apiKey = process.env.PERPLEXITY_API_KEY;
+  const emp = String(empresa || '').trim();
+  if (!emp) return { erro: 'Informe o nome da rede/empresa.' };
+  const regKey = normRegiao(regiao);
+  const reg = REGIOES[regKey] || REGIOES.todas;
+  const cidades = cidadesDaRegiao(regKey);
+
+  // 1) CNPJs candidatos da rede na região (Perplexity)
+  let candidatos = [];
+  if (apiKey) {
+    try {
+      const prompt = `Liste os CNPJs (14 dígitos, formato XX.XXX.XXX/XXXX-XX) de lojas, unidades ou filiais da rede "${emp}" localizadas em ${reg.alvo}. Inclua o CNPJ da matriz se ela ficar nessa região. Responda APENAS JSON válido: {"cnpjs":["..."]}. Só CNPJs REAIS e verificáveis; se não souber, retorne lista vazia. NUNCA invente CNPJ.`;
+      const { data } = await axios.post('https://api.perplexity.ai/chat/completions', {
+        model: 'sonar-pro',
+        messages: [
+          { role: 'system', content: 'Pesquisador de dados públicos de empresas (CNPJ) no Brasil. Responda SOMENTE JSON válido. NUNCA invente CNPJ — só cite CNPJ que você encontrar em fonte real.' },
+          { role: 'user', content: prompt },
+        ],
+        temperature: 0, max_tokens: 500,
+      }, { timeout: 60000, headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' } });
+      let s = String(data.choices[0].message.content || '').replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
+      const i = s.indexOf('{'), j = s.lastIndexOf('}');
+      if (i >= 0 && j > i) s = s.slice(i, j + 1);
+      try { candidatos = JSON.parse(s).cnpjs || []; } catch {}
+    } catch (e) { console.warn('[Filiais] perplexity:', e.message); }
+  }
+  const digs = [...new Set(candidatos.map(c => String(c).replace(/\D/g, '')).filter(c => c.length === 14))].slice(0, 12);
+
+  // 2) Confirma cada CNPJ na Receita (BrasilAPI) — filtra por município + situação
+  const empTok = _normTxt(emp).split(' ').filter(w => w.length >= 3)[0] || _normTxt(emp);
+  const verif = await Promise.all(digs.map(async (cnpj) => {
+    try {
+      const { data } = await axios.get(`https://brasilapi.com.br/api/cnpj/v1/${cnpj}`, { timeout: 15000 });
+      const mun = _normTxt(data.municipio);
+      const ativa = /ATIVA/i.test(data.descricao_situacao_cadastral || '');
+      const naRegiao = cidades.some(c => mun.includes(c) || c.includes(mun));
+      if (!ativa || !naRegiao) return null;
+      const nomeBate = _normTxt(`${data.razao_social || ''} ${data.nome_fantasia || ''}`).includes(empTok);
+      const abertura = data.data_inicio_atividade || '';
+      return {
+        cnpj: cnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5'),
+        razao: data.razao_social, fantasia: data.nome_fantasia || null,
+        municipio: data.municipio, uf: data.uf, abertura,
+        cnae: data.cnae_fiscal_descricao, matrizFilial: data.descricao_identificador_matriz_filial,
+        nova: abertura >= CUTOFF_NOVA, nomeBate,
+      };
+    } catch { return null; }
+  }));
+  const filiais = verif.filter(Boolean).sort((a, b) => (b.abertura || '').localeCompare(a.abertura || ''));
+  return { empresa: emp, regiao: reg.label, filiais, checou: digs.length };
+}
+
+function formatarFiliais(r) {
+  if (!r || r.erro) return `⚠️ ${r?.erro || 'Não foi possível confirmar filiais.'}`;
+  let t = `🏢 *FILIAIS NA RECEITA — ${r.empresa}*\n${r.regiao}\n\n`;
+  if (!r.filiais || !r.filiais.length) {
+    t += `Nenhuma filial ativa de *${r.empresa}* confirmada na Receita para ${r.regiao}`;
+    t += r.checou ? ` (checamos ${r.checou} CNPJ candidato(s)).\n` : `.\n`;
+    t += `Pode ainda não ter unidade aqui — o que faz dela um *alvo de prospecção*, não um concorrente instalado.\n`;
+    return t;
+  }
+  const novas = r.filiais.filter(f => f.nova).length;
+  t += `*${r.filiais.length} unidade(s) confirmada(s)* na Receita${novas ? ` · ${novas} 🆕 nova(s) (últimos 24 meses)` : ''}:\n\n`;
+  r.filiais.forEach((f) => {
+    t += `• *${f.fantasia || f.razao}* — CNPJ ${f.cnpj}\n`;
+    t += `   📍 ${f.municipio}-${f.uf} · ${f.matrizFilial || ''}\n`;
+    t += `   📅 Aberta em ${f.abertura ? f.abertura.split('-').reverse().join('/') : '—'}${f.nova ? ' *🆕 NOVA*' : ''}\n`;
+    if (f.cnae) t += `   🏷️ ${f.cnae}\n`;
+    if (!f.nomeBate) t += `   ⚠️ _Razão social não bate exatamente com o nome buscado — confira._\n`;
+    t += `\n`;
+  });
+  try {
+    const { textoFontes } = require('./fontes');
+    t += textoFontes({
+      metodo: 'CNPJs da rede na região (busca web) confirmados individualmente na Receita Federal (município, situação, data de abertura).',
+      data: new Date().toLocaleDateString('pt-BR'),
+      bases: ['Receita Federal via BrasilAPI', 'Perplexity (localização dos CNPJs)'],
+      obs: 'Confirmação por lead (não é varredura de todas as aberturas da cidade). Uma filial 🆕 recente é sinal duro de expansão ativa na região. CNPJ não localizado na busca pode existir mesmo assim.',
+    });
+  } catch {}
+  return t;
+}
+
+module.exports = { analisarBTS, formatarBTS, CATALOGO_BTS, radarExpansao, formatarRadar, confirmarFiliais, formatarFiliais };

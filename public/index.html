@@ -692,6 +692,20 @@
             </button>
             <div class="hint">Busca <b>reversa</b>: acha empresas em modo-expansão que poderiam querer um imóvel na sua região — com o <b>sinal</b> de expansão, a <b>fonte</b> e <b>que imóvel elas buscam</b>. Depois é só casar com os lotes/galpões que você tem. Enriquecimento com eventos datados (Explorium) sob demanda.</div>
           </form>
+
+          <div style="margin-top:18px;padding-top:16px;border-top:1px solid #e5e9f0">
+            <form onsubmit="confFiliais(event)">
+              <div class="field">
+                <label>🔎 Confirmar filiais de uma rede na Receita <span class="opt">(usa a região selecionada acima)</span></label>
+                <input id="cf-empresa" placeholder="Ex: Grupo Mateus, Assaí, Smart Fit, Pague Menos" />
+              </div>
+              <button class="btn-primary" id="btn-filiais" type="submit">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+                Confirmar na Receita
+              </button>
+              <div class="hint">Cruza com a <b>Receita Federal</b>: acha os CNPJs da rede na sua região e confirma município + data de abertura (<b>🆕</b> = aberta nos últimos 24 meses = expansão ativa). <b>Sinal duro</b> de que a rede já pousou aqui — ou, se não achar nada, é um <b>alvo de prospecção</b>.</div>
+            </form>
+          </div>
         </div>
       </div>
 
@@ -1390,6 +1404,30 @@
       } finally {
         busy = false;
         document.getElementById('btn-radar').disabled = false;
+      }
+    }
+    async function confFiliais(e) {
+      e.preventDefault();
+      if (busy) return;
+      const empresa = document.getElementById('cf-empresa').value.trim();
+      if (!empresa) { showError('Digite o nome da rede/empresa.'); return; }
+      const payload = { empresa, regiao: document.getElementById('r-regiao').value };
+      busy = true;
+      document.getElementById('btn-filiais').disabled = true;
+      showSpinner('Localizando os CNPJs da rede e conferindo na Receita Federal…');
+      try {
+        const res = await fetch('/api/filiais', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (data.error) showError(data.error);
+        else showLaudo(data.response);
+      } catch (err) {
+        showError('Erro de conexão. Tente novamente.');
+      } finally {
+        busy = false;
+        document.getElementById('btn-filiais').disabled = false;
       }
     }
     async function analisarBTS(e) {
