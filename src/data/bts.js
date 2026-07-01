@@ -707,7 +707,8 @@ async function gerarEmailProspeccao(input = {}) {
     : 'Escreva um E-MAIL: primeira linha "Assunto: ..." depois o corpo (máx ~150 palavras) e a assinatura.';
   const user = `Rede-alvo: ${empresa}. Imóvel oferecido: ${spec || '(não detalhado — seja mais genérico sobre o imóvel)'}. `
     + `${input.sinal ? `Momento/estratégia de expansão da rede: ${input.sinal}. ` : ''}`
-    + `Personalize DE VERDADE: cite por que ESTE imóvel serve pra ESSA rede (porte, localização, perfil) e conecte ao momento de expansão dela; ofereça enviar o estudo de viabilidade completo; peça o contato do setor de Expansão/Novos Pontos em Goiás; NÃO cite preço nem invente números. ${regras} `
+    + `Personalize DE VERDADE: cite por que ESTE imóvel serve pra ESSA rede (porte, localização, perfil) e conecte ao momento de expansão dela; ofereça enviar o estudo de viabilidade completo; peça o contato do setor de Expansão/Novos Pontos em Goiás; NÃO cite preço nem invente números. `
+    + `NÃO use "[Nome do Contato]" nem placeholders de nome — comece com saudação à EQUIPE (ex: "Prezados, equipe de Expansão da ${empresa},"), pois ainda não temos o nome do contato. ${regras} `
     + `Assinatura: Frederico Ivan Lasmar Alves — Bens Imóveis Corporativos · CRECI-J 43.934 (corretor CRECI-F 41.009) · (62) 9973-9596 · benscorporativos.com.br.`;
   try {
     const resp = await client.chat.completions.create({
