@@ -927,6 +927,8 @@ function gerarRadarPdf(r) {
       if (e.cidadeAlvo) kv('Alvo', e.cidadeAlvo);
       if (e.imovelBuscado) kv('Imóvel que busca', e.imovelBuscado);
       if (e.statusRegiao) kv('Status na região', e.statusRegiao);
+      const contato = [e.site, e.telefone, e.email].filter(Boolean).join('  ·  ');
+      if (contato) kv('Contato', contato);
       if (e.fonte) kv('Fonte', e.fonte);
       y += 6;
     });

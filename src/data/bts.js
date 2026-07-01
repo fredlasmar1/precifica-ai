@@ -276,15 +276,15 @@ async function _radarQuery(reg, ramoTxt, alvoMax) {
   const apiKey = process.env.PERPLEXITY_API_KEY;
   const prompt = `Liste empresas e redes REAIS do ramo "${ramoTxt}" que estão em expansão e poderiam querer abrir/instalar uma unidade em ${reg.alvo} em 2025-2026 (anúncios de expansão, novas lojas, busca de pontos, contratação local, franquias buscando a região). `
     + `Priorize quem opera por Build to Suit ou locação de longo prazo, e redes conhecidas por expandir no Centro-Oeste/Goiás. `
-    + `Responda APENAS com JSON válido, sem texto antes ou depois: {"empresas":[{"nome":"...","ramo":"${ramoTxt}","sinal":"sinal concreto de expansão + data","cidadeAlvo":"cidade(s) de interesse na região","imovelBuscado":"tipo/área de imóvel típico (ex: loja 300m² em avenida, galpão 3000m²)","statusRegiao":"já tem unidade na região? está abrindo?","fonte":"URL da fonte"}]}. `
-    + `Liste de 2 a ${alvoMax} empresas reais que você conhece estarem em expansão no Centro-Oeste. Não invente empresas nem fontes; se não souber a fonte, deixe "fonte" vazia mas mantenha a empresa.`;
+    + `Responda APENAS com JSON válido, sem texto antes ou depois: {"empresas":[{"nome":"...","ramo":"${ramoTxt}","sinal":"sinal concreto de expansão + data","cidadeAlvo":"cidade(s) de interesse na região","imovelBuscado":"tipo/área de imóvel típico (ex: loja 300m² em avenida, galpão 3000m²)","statusRegiao":"já tem unidade na região? está abrindo?","fonte":"URL da fonte","site":"site oficial da rede","telefone":"telefone de contato (comercial/expansão se souber, senão geral)","email":"email de contato (expansão/novos negócios se souber, senão geral)"}]}. `
+    + `Preencha site, telefone e email SEMPRE que souber (dados públicos das redes). Liste de 2 a ${alvoMax} empresas reais que você conhece estarem em expansão no Centro-Oeste. Não invente empresas, fontes, telefones nem emails; se não souber um campo, deixe-o vazio mas mantenha a empresa.`;
   const { data } = await axios.post('https://api.perplexity.ai/chat/completions', {
     model: 'sonar-pro',
     messages: [
       { role: 'system', content: 'Pesquisador de expansão de varejo e franquias no Brasil, especialista no interior/Centro-Oeste. Use dados reais. Nunca invente empresas ou fontes. Retorne SOMENTE JSON válido, começando com { e terminando com }.' },
       { role: 'user', content: prompt },
     ],
-    temperature: 0.2, max_tokens: 1600,
+    temperature: 0.2, max_tokens: 2000,
   }, { timeout: 75000, headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' } });
   let s = String(data.choices[0].message.content || '').replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
   const i = s.indexOf('{'), j = s.lastIndexOf('}');
@@ -297,6 +297,7 @@ async function _radarQuery(reg, ramoTxt, alvoMax) {
         nome: semCit(e.nome), ramo: semCit(e.ramo), sinal: semCit(e.sinal),
         cidadeAlvo: semCit(e.cidadeAlvo), imovelBuscado,
         statusRegiao: semCit(e.statusRegiao), fonte: semCit(e.fonte),
+        site: semCit(e.site) || null, telefone: semCit(e.telefone) || null, email: semCit(e.email) || null,
         porte: porteDoImovel(imovelBuscado) || porteDoRamo(e.ramo),
       };
     }).filter(e => e.nome);
@@ -360,6 +361,8 @@ function formatarRadar(r) {
     if (e.cidadeAlvo) t += `   📍 Alvo: ${e.cidadeAlvo}\n`;
     if (e.imovelBuscado) t += `   🏗️ Busca: ${e.imovelBuscado}\n`;
     if (e.statusRegiao) t += `   🔎 Status: ${e.statusRegiao}\n`;
+    const contato = [e.site ? `🌐 ${e.site}` : '', e.telefone ? `📞 ${e.telefone}` : '', e.email ? `✉️ ${e.email}` : ''].filter(Boolean).join('   ·   ');
+    if (contato) t += `   📇 ${contato}\n`;
     if (e.fonte) t += `   🔗 ${e.fonte}\n`;
     t += `\n`;
   });
