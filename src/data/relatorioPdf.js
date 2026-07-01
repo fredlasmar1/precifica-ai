@@ -870,7 +870,7 @@ function gerarBtsPdf(r, opts = {}) {
     kv('Consulta em', dataEmissao);
 
     band('RESSALVAS');
-    paragraph('Estudo preliminar de viabilidade BTS, de apoio à decisão. O cap rate depende de fechar um contrato de locação longo (10-20 anos) com inquilino sólido — sem contrato, o retorno é apenas potencial. Coeficiente/taxa de ocupação, custo de obra (CUB) e eficiência são ESTIMATIVAS — confirme no Plano Diretor de Anápolis e com orçamento de obra. A lista de empresas é inteligência de mercado (leads qualificados), NÃO demanda confirmada. NÃO substitui projeto, viabilidade técnica/jurídica nem due diligence do inquilino.', 8);
+    paragraph(`Estudo preliminar de viabilidade BTS, de apoio à decisão. O cap rate depende de fechar um contrato de locação longo (10-20 anos) com inquilino sólido — sem contrato, o retorno é apenas potencial. Coeficiente/taxa de ocupação, custo de obra (CUB) e eficiência são ESTIMATIVAS — confirme no Plano Diretor de ${txt(r.cidade) || 'Anápolis'} e com orçamento de obra. A lista de empresas é inteligência de mercado (leads qualificados), NÃO demanda confirmada. NÃO substitui projeto, viabilidade técnica/jurídica nem due diligence do inquilino.`, 8);
 
     ensure(56);
     y += 14;

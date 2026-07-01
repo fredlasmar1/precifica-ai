@@ -309,7 +309,7 @@ function formatarBTS(r) {
       portais: r.fontesPreco,
       bases,
       links: (r.empresas && r.empresas.fontes) || [],
-      obs: 'Cap rate depende de fechar contrato de locação longo (10-20 anos) com inquilino sólido. Coeficiente/taxa de ocupação e custo de obra são ESTIMATIVAS — confirmar no Plano Diretor de Anápolis e com orçamento de obra. Lista de empresas é inteligência de mercado (leads), não demanda confirmada.',
+      obs: `Cap rate depende de fechar contrato de locação longo (10-20 anos) com inquilino sólido. Coeficiente/taxa de ocupação e custo de obra são ESTIMATIVAS — confirmar no Plano Diretor de ${r.cidade || 'Anápolis'} e com orçamento de obra. Lista de empresas é inteligência de mercado (leads), não demanda confirmada.`,
     });
   } catch {}
   return t;
