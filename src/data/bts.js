@@ -247,42 +247,67 @@ function normRegiao(s) {
  * @param {string} regiao - anapolis | goiania | rmg | todas
  * @param {string} ramo - opcional (ex: "atacarejo", "academia"); vazio = amplo
  */
+// Ramos varridos em paralelo quando o usuário NÃO especifica um ramo (busca ampla).
+// Uma query por ramo é MUITO mais confiável que uma query genérica gigante.
+const RAMOS_RADAR = ['atacarejo e supermercado', 'academia', 'farmácia e drogaria', 'fast-food e restaurante', 'home center e material de construção', 'logística e centro de distribuição'];
+
+/** Uma consulta de radar (uma região, um ramo). Retorna { empresas, fontes }. */
+async function _radarQuery(reg, ramoTxt, alvoMax) {
+  const apiKey = process.env.PERPLEXITY_API_KEY;
+  const prompt = `Liste empresas e redes REAIS do ramo "${ramoTxt}" que estão em expansão e poderiam querer abrir/instalar uma unidade em ${reg.alvo} em 2025-2026 (anúncios de expansão, novas lojas, busca de pontos, contratação local, franquias buscando a região). `
+    + `Priorize quem opera por Build to Suit ou locação de longo prazo, e redes conhecidas por expandir no Centro-Oeste/Goiás. `
+    + `Responda APENAS com JSON válido, sem texto antes ou depois: {"empresas":[{"nome":"...","ramo":"${ramoTxt}","sinal":"sinal concreto de expansão + data","cidadeAlvo":"cidade(s) de interesse na região","imovelBuscado":"tipo/área de imóvel típico (ex: loja 300m² em avenida, galpão 3000m²)","statusRegiao":"já tem unidade na região? está abrindo?","fonte":"URL da fonte"}]}. `
+    + `Liste de 2 a ${alvoMax} empresas reais que você conhece estarem em expansão no Centro-Oeste. Não invente empresas nem fontes; se não souber a fonte, deixe "fonte" vazia mas mantenha a empresa.`;
+  const { data } = await axios.post('https://api.perplexity.ai/chat/completions', {
+    model: 'sonar-pro',
+    messages: [
+      { role: 'system', content: 'Pesquisador de expansão de varejo e franquias no Brasil, especialista no interior/Centro-Oeste. Use dados reais. Nunca invente empresas ou fontes. Retorne SOMENTE JSON válido, começando com { e terminando com }.' },
+      { role: 'user', content: prompt },
+    ],
+    temperature: 0.2, max_tokens: 1600,
+  }, { timeout: 75000, headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' } });
+  let s = String(data.choices[0].message.content || '').replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
+  const i = s.indexOf('{'), j = s.lastIndexOf('}');
+  if (i >= 0 && j > i) s = s.slice(i, j + 1);
+  let empresas = [];
+  try {
+    empresas = (JSON.parse(s).empresas || []).map(e => ({
+      nome: semCit(e.nome), ramo: semCit(e.ramo), sinal: semCit(e.sinal),
+      cidadeAlvo: semCit(e.cidadeAlvo), imovelBuscado: semCit(e.imovelBuscado),
+      statusRegiao: semCit(e.statusRegiao), fonte: semCit(e.fonte),
+    })).filter(e => e.nome);
+  } catch {}
+  return { empresas, fontes: (data.citations || []).slice(0, 6) };
+}
+
 async function radarExpansao(regiao, ramo) {
   const apiKey = process.env.PERPLEXITY_API_KEY;
   const reg = REGIOES[normRegiao(regiao)] || REGIOES.todas;
   const ramoTxt = String(ramo || '').trim();
   if (!apiKey) return { erro: 'Busca web indisponível (PERPLEXITY_API_KEY não configurada).' };
 
-  const foco = ramoTxt
-    ? `Foque no ramo: ${ramoTxt}.`
-    : `Cubra varejo, atacarejo/supermercado, home center/construção, academia, farmácia, fast-food/restaurante, pet, saúde/clínica/laboratório, educação, logística/centro de distribuição e franquias em expansão.`;
-  const prompt = `Liste empresas e redes REAIS que estão em expansão e poderiam querer abrir/instalar uma unidade em ${reg.alvo} em 2025-2026 (anúncios de expansão, novas lojas, busca de pontos, contratação local, franquias buscando a região). ${foco} `
-    + `Priorize quem opera por Build to Suit ou locação de longo prazo, e redes conhecidas por expandir no Centro-Oeste/Goiás. `
-    + `Responda APENAS com JSON válido, sem texto antes ou depois: {"empresas":[{"nome":"...","ramo":"...","sinal":"sinal concreto de expansão + data","cidadeAlvo":"cidade(s) de interesse na região","imovelBuscado":"tipo/área de imóvel típico (ex: loja 300m² em avenida, galpão 3000m²)","statusRegiao":"já tem unidade na região? está abrindo?","fonte":"URL da fonte"}]}. `
-    + `Liste de 5 a 8 empresas que você conhece estarem em expansão no Centro-Oeste. Não invente empresas nem fontes; se não souber a fonte de uma, deixe "fonte" vazia mas mantenha a empresa.`;
-
   try {
-    const { data } = await axios.post('https://api.perplexity.ai/chat/completions', {
-      model: 'sonar-pro',
-      messages: [
-        { role: 'system', content: 'Pesquisador de expansão de varejo e franquias no Brasil, especialista no interior/Centro-Oeste. Use dados reais. Nunca invente empresas ou fontes. Retorne SOMENTE JSON válido, começando com { e terminando com }.' },
-        { role: 'user', content: prompt },
-      ],
-      temperature: 0.2, max_tokens: 2600,
-    }, { timeout: 90000, headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' } });
-    let s = String(data.choices[0].message.content || '').replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
-    // Extrai o bloco {...} mesmo se vier com texto em volta (robusto a prosa/truncamento)
-    const i = s.indexOf('{'), j = s.lastIndexOf('}');
-    if (i >= 0 && j > i) s = s.slice(i, j + 1);
-    let empresas = [];
-    try {
-      empresas = (JSON.parse(s).empresas || []).map(e => ({
-        nome: semCit(e.nome), ramo: semCit(e.ramo), sinal: semCit(e.sinal),
-        cidadeAlvo: semCit(e.cidadeAlvo), imovelBuscado: semCit(e.imovelBuscado),
-        statusRegiao: semCit(e.statusRegiao), fonte: semCit(e.fonte),
-      })).filter(e => e.nome);
-    } catch {}
-    const fontes = (data.citations || []).slice(0, 10);
+    let empresas = [], fontes = [];
+    if (ramoTxt) {
+      // Ramo específico → uma consulta focada (até 8).
+      const r = await _radarQuery(reg, ramoTxt, 8);
+      empresas = r.empresas; fontes = r.fontes;
+    } else {
+      // Amplo → varre os ramos-chave em paralelo e junta (dedup por nome).
+      const results = await Promise.all(
+        RAMOS_RADAR.map(rm => _radarQuery(reg, rm, 4).catch(() => ({ empresas: [], fontes: [] })))
+      );
+      const seen = new Set();
+      for (const r of results) {
+        for (const e of r.empresas) {
+          const k = (e.nome || '').toLowerCase();
+          if (k && !seen.has(k)) { seen.add(k); empresas.push(e); }
+        }
+        fontes.push(...r.fontes);
+      }
+      fontes = [...new Set(fontes)].slice(0, 12);
+      empresas = empresas.slice(0, 16);
+    }
     return { regiao: reg.label, ramo: ramoTxt || null, empresas, fontes };
   } catch (e) {
     console.warn('[Radar] erro:', e.message);
