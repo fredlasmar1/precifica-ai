@@ -322,7 +322,7 @@ async function calcularPreco(dadosImovel) {
       const mercadoBruto = precoM2Base;
       const dadosReaisFortes = confiancaFonte === 'alta' && amostras >= 10;
 
-      let ancorado;
+      let ancorado, wMercado = null;
       if (dadosReaisFortes) {
         // Muitos anúncios REAIS verificados → confia no mercado; a âncora só
         // evita absurdo (banda larga ±50/60%), não puxa o valor.
@@ -331,7 +331,6 @@ async function calcularPreco(dadosImovel) {
         ancorado = Math.max(piso, Math.min(teto, mercadoBruto));
       } else {
         // Dado fraco/fabricado → blend ponderado, banda estreita ±40%.
-        let wMercado;
         if (confiancaFonte === 'baixa')  wMercado = 0.25;
         else if (amostras >= 5)          wMercado = 0.70;
         else if (amostras >= 3)          wMercado = 0.55;

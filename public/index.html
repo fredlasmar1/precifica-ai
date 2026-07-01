@@ -339,6 +339,7 @@
         <button class="tab" id="tab-comercial" onclick="switchTab('comercial')"><svg viewBox="0 0 24 24"><path d="M4 9V20h16V9"/><path d="M2 9l2-5h16l2 5a3 3 0 0 1-6 0 3 3 0 0 1-6 0 3 3 0 0 1-6 0z"/><path d="M9 20v-5h6v5"/></svg>Comercial</button>
         <button class="tab" id="tab-predio" onclick="switchTab('predio')"><svg viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="1"/><path d="M9 7h2M13 7h2M9 11h2M13 11h2M9 15h2M13 15h2"/></svg>Prédios</button>
         <button class="tab" id="tab-terreno" onclick="switchTab('terreno')"><svg viewBox="0 0 24 24"><path d="M3 20h18"/><path d="M5 20V9l7-5 7 5v11"/><path d="M9 20v-5h6v5"/></svg>Terrenos</button>
+        <button class="tab" id="tab-bts" onclick="switchTab('bts')"><svg viewBox="0 0 24 24"><rect x="3" y="8" width="8" height="12" rx="1"/><rect x="13" y="4" width="8" height="16" rx="1"/><path d="M6 12h2M6 16h2M16 8h2M16 12h2M16 16h2"/><path d="M2 20h20"/></svg>BTS</button>
         <button class="tab" id="tab-fipe" onclick="switchTab('fipe')"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><rect x="7" y="11" width="3" height="7" rx="1"/><rect x="12" y="7" width="3" height="11" rx="1"/><rect x="17" y="4" width="3" height="14" rx="1"/></svg>FIPE</button>
         <button class="tab" id="tab-empresa" onclick="switchTab('empresa')"><svg viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M3 13h18"/></svg>Empresa</button>
         <button class="tab" id="tab-historico" onclick="switchTab('historico')"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Histórico</button>
@@ -580,6 +581,69 @@
         </form>
       </div>
 
+      <!-- BTS — Build to Suit -->
+      <div class="pane" id="pane-bts">
+        <form onsubmit="analisarBTS(event)">
+          <div class="row">
+            <div class="field">
+              <label>Bairro</label>
+              <input id="b-bairro" placeholder="Ex: Jundiaí" />
+            </div>
+            <div class="field">
+              <label>Área do terreno (m²)</label>
+              <input id="b-area" type="number" min="0" placeholder="1500" />
+            </div>
+          </div>
+          <div class="field">
+            <label>Endereço <span class="opt">(opcional, refina preço + análise do ponto)</span></label>
+            <input id="b-endereco" placeholder="Ex: Av. Brasil, 1200" />
+          </div>
+          <div class="row">
+            <div class="field">
+              <label>Perfil da construção</label>
+              <select id="b-obra">
+                <option value="galpao">Galpão / logístico (CUB ~R$1.500/m²)</option>
+                <option value="comercial" selected>Comercial / loja (CUB ~R$2.300/m²)</option>
+                <option value="loja">Loja padrão alto (CUB ~R$2.700/m²)</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>Zona / eixo</label>
+              <select id="b-zona">
+                <option value="residencial-media">Via de bairro (TO 60%)</option>
+                <option value="corredor" selected>Corredor comercial (TO 70%)</option>
+                <option value="central">Central / alta densidade (TO 70%)</option>
+              </select>
+            </div>
+          </div>
+          <div class="row">
+            <div class="field">
+              <label>Pavimentos <span class="opt">(BTS costuma ser térreo)</span></label>
+              <input id="b-pav" type="number" min="1" placeholder="1" />
+            </div>
+            <div class="field">
+              <label>Coef. aproveitamento <span class="opt">(opcional, sobrepõe zona/pav.)</span></label>
+              <input id="b-ca" type="number" min="0" step="0.1" placeholder="ex: 1.0" />
+            </div>
+          </div>
+          <div class="row">
+            <div class="field">
+              <label>Obra até o contrato (meses)</label>
+              <input id="b-prazo" type="number" min="3" placeholder="12" />
+            </div>
+            <div class="field">
+              <label>Valor pedido pelo terreno (R$) <span class="opt">(opcional)</span></label>
+              <input id="b-pedido" type="number" min="0" placeholder="Entra no investimento" />
+            </div>
+          </div>
+          <button class="btn-primary" id="btn-bts" type="submit">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="8" width="8" height="12" rx="1"/><rect x="13" y="4" width="8" height="16" rx="1"/><path d="M2 20h20"/></svg>
+            Montar estudo BTS
+          </button>
+          <div class="hint"><b>Build to Suit</b>: constrói sob medida e aluga a um inquilino corporativo (contrato longo). Calcula investimento × aluguel de mercado (<b>cap rate</b>), aponta o <b>melhor uso</b> do ponto e lista <b>empresas em expansão</b> que poderiam querer o imóvel (base curada + busca web com fontes).</div>
+        </form>
+      </div>
+
       <!-- FIPE Anápolis -->
       <div class="pane" id="pane-fipe">
         <div class="row">
@@ -733,7 +797,7 @@
     toggleCamposTipo();
 
     function switchTab(which) {
-      for (const t of ['form', 'chat', 'comercial', 'predio', 'terreno', 'fipe', 'empresa', 'historico']) {
+      for (const t of ['form', 'chat', 'comercial', 'predio', 'terreno', 'bts', 'fipe', 'empresa', 'historico']) {
         document.getElementById('tab-' + t).classList.toggle('active', which === t);
         document.getElementById('pane-' + t).classList.toggle('active', which === t);
       }
@@ -741,6 +805,7 @@
       if (head) head.textContent = which === 'comercial' ? 'Análise de Ponto Comercial'
         : which === 'predio' ? 'Ficha do Prédio'
         : which === 'terreno' ? 'Terreno — Viabilidade'
+        : which === 'bts' ? 'BTS — Build to Suit'
         : which === 'fipe' ? 'FIPE Anápolis'
         : which === 'empresa' ? 'Avaliação de Empresa' : 'Laudo de Precificação';
       if (which === 'historico') carregarHistorico();
@@ -1022,6 +1087,10 @@
             main = `🌳 ${l.titulo || 'Terreno'}`;
             sub = `${l.bairro || ''} — ${l.cidade || 'Anápolis'} · ${data}`;
             val = valor;
+          } else if (l.kind === 'bts') {
+            main = `🏢 ${l.titulo || 'BTS'}`;
+            sub = `${l.bairro || ''} — ${l.cidade || 'Anápolis'} · ${data}`;
+            val = valor;
           } else {
             const local = [l.endereco, l.bairro].filter(Boolean).join(', ') || l.bairro || '—';
             main = `${TIPOS_LABEL[l.tipo] || l.tipo || ''} · ${l.finalidade === 'aluguel' ? 'Aluguel' : 'Venda'}`;
@@ -1045,7 +1114,7 @@
         const data = await res.json();
         if (data.error) { showError(data.error); return; }
         // limpa os "atuais" antes
-        avaliacaoAtual = comercialAtual = empresaAtual = terrenoAtual = null;
+        avaliacaoAtual = comercialAtual = empresaAtual = terrenoAtual = btsAtual = null;
         if (data.kind === 'comercial') {
           showLaudo(data.response, data.resultado && data.resultado.mapaDataUri);
           comercialAtual = data.resultado; mostrarAcoesPdfComercial();
@@ -1055,6 +1124,9 @@
         } else if (data.kind === 'terreno') {
           showLaudo(data.response);
           terrenoAtual = data.resultado; mostrarAcoesPdfTerreno();
+        } else if (data.kind === 'bts') {
+          showLaudo(data.response);
+          btsAtual = data.resultado; mostrarAcoesPdfBts();
         } else {
           showLaudo(data.response);
           avaliacaoAtual = { dados: data.dados, resultado: data.resultado, laudoTexto: data.response }; mostrarAcoesPdf();
@@ -1225,6 +1297,76 @@
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url; a.download = 'estudo-terreno.pdf';
+        document.body.appendChild(a); a.click(); a.remove();
+        URL.revokeObjectURL(url);
+      } catch (err) {
+        alert('Erro de conexão ao gerar o PDF.');
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    // ── BTS — Build to Suit ──
+    let btsAtual = null;
+    async function analisarBTS(e) {
+      e.preventDefault();
+      if (busy) return;
+      const payload = {
+        cidade: 'Anápolis',
+        bairro: document.getElementById('b-bairro').value.trim(),
+        area: document.getElementById('b-area').value,
+        endereco: document.getElementById('b-endereco').value.trim(),
+        obra: document.getElementById('b-obra').value,
+        zona: document.getElementById('b-zona').value,
+        pavimentos: document.getElementById('b-pav').value,
+        ca: document.getElementById('b-ca').value,
+        prazoMeses: document.getElementById('b-prazo').value,
+        valorPedido: document.getElementById('b-pedido').value
+      };
+      if (!payload.bairro || !(Number(payload.area) > 0)) {
+        showError('Informe o *bairro* e a *área do terreno* (m²).');
+        return;
+      }
+      busy = true;
+      document.getElementById('btn-bts').disabled = true;
+      showSpinner('Avaliando o terreno, o aluguel de mercado, o melhor uso e as empresas em expansão…');
+      try {
+        const res = await fetch('/api/bts', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (data.error) { showError(data.error); btsAtual = null; }
+        else { showLaudo(data.response); btsAtual = data.resultado; mostrarAcoesPdfBts(); }
+      } catch (err) {
+        showError('Erro de conexão. Tente novamente.');
+      } finally {
+        busy = false;
+        document.getElementById('btn-bts').disabled = false;
+      }
+    }
+    function mostrarAcoesPdfBts() {
+      const laudo = document.querySelector('#result-body .laudo');
+      if (!laudo) return;
+      const bar = document.createElement('div');
+      bar.className = 'pdf-bar';
+      bar.innerHTML = '<button class="btn-pdf" onclick="baixarBtsPdf(this)">📄 Baixar estudo BTS (PDF)</button>';
+      laudo.prepend(bar);
+    }
+    async function baixarBtsPdf(btn) {
+      if (!btsAtual) return;
+      const solicitante = prompt('Nome do cliente/solicitante (opcional — aparece no PDF):', '') || '';
+      btn.disabled = true;
+      try {
+        const res = await fetch('/api/relatorio-bts', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ resultado: btsAtual, solicitante })
+        });
+        if (!res.ok) { alert('Não foi possível gerar o PDF. Tente de novo.'); return; }
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = 'estudo-bts.pdf';
         document.body.appendChild(a); a.click(); a.remove();
         URL.revokeObjectURL(url);
       } catch (err) {

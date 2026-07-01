@@ -384,6 +384,51 @@ router.post('/terreno', async (req, res) => {
   }
 });
 
+/**
+ * POST /api/bts — Estudo de viabilidade BTS (Build to Suit): investimento × aluguel
+ * de mercado (cap rate) + melhor uso do ponto + empresas em expansão.
+ */
+router.post('/bts', async (req, res) => {
+  const b = req.body || {};
+  if (!b.bairro || !(Number(b.area) > 0)) {
+    return res.status(400).json({ error: 'Informe o bairro e a área do terreno (m²).' });
+  }
+  try {
+    const { analisarBTS, formatarBTS } = require('../data/bts');
+    const resultado = await analisarBTS(b);
+    if (resultado.erro) return res.status(422).json({ error: resultado.erro });
+    try {
+      require('../data/database').salvarLaudo({
+        kind: 'bts', titulo: `BTS ${resultado.area}m²`, tipo: 'terreno',
+        finalidade: 'aluguel', cidade: resultado.cidade, bairro: resultado.bairro,
+        endereco: resultado.endereco, valor: resultado.investimento,
+        dados: { bairro: resultado.bairro, area: resultado.area, zona: resultado.zonaKey },
+        resultado,
+      });
+    } catch (e) { console.warn('[BTS] salvar:', e.message); }
+    return res.json({ type: 'bts', response: formatarBTS(resultado), resultado });
+  } catch (err) {
+    console.error('[BTS API] Erro:', err);
+    return res.status(500).json({ error: '⚠️ Erro ao montar o estudo BTS. Tente novamente.', debug: err.message });
+  }
+});
+
+/** POST /api/relatorio-bts — PDF do estudo de viabilidade BTS. */
+router.post('/relatorio-bts', async (req, res) => {
+  const { resultado, solicitante } = req.body || {};
+  if (!resultado) return res.status(400).json({ error: 'Faça um estudo BTS primeiro.' });
+  try {
+    const { gerarBtsPdf } = require('../data/relatorioPdf');
+    const pdf = await gerarBtsPdf(resultado, { solicitante });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="estudo-bts-${(resultado.bairro || 'anapolis').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-')}.pdf"`);
+    res.send(pdf);
+  } catch (err) {
+    console.error('[RelatBTS API] Erro:', err);
+    res.status(500).json({ error: '⚠️ Erro ao gerar o PDF. Tente novamente.' });
+  }
+});
+
 /** POST /api/relatorio-terreno — PDF do estudo de viabilidade do terreno. */
 router.post('/relatorio-terreno', async (req, res) => {
   const { resultado, solicitante } = req.body || {};
@@ -484,6 +529,7 @@ router.get('/laudos/:id', async (req, res) => {
     if (l.kind === 'comercial') response = require('../data/pontoComercial').formatarRelatorioComercial(l.resultado);
     else if (l.kind === 'empresa') response = require('../data/valuationEmpresa').formatarEmpresa(l.resultado);
     else if (l.kind === 'terreno') response = require('../data/terreno').formatarTerreno(l.resultado);
+    else if (l.kind === 'bts') response = require('../data/bts').formatarBTS(l.resultado);
     else response = gerarLaudo(l.dados, l.resultado);
     res.json({ id: l.id, criado_em: l.criado_em, kind: l.kind, dados: l.dados, resultado: l.resultado, response });
   } catch (err) { res.status(500).json({ error: err.message }); }

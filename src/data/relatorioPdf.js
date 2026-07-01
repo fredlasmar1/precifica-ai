@@ -784,4 +784,107 @@ function gerarTerrenoPdf(r, opts = {}) {
   });
 }
 
-module.exports = { gerarRelatorioPdf, gerarDossiePdf, gerarEmpresaPdf, gerarRepassePdf, gerarTerrenoPdf };
+function gerarBtsPdf(r, opts = {}) {
+  const solicitante = opts.solicitante || '';
+  const dataEmissao = new Date().toLocaleDateString('pt-BR');
+  const num = (v) => Number(v || 0).toLocaleString('pt-BR');
+  const pct = (v) => `${(Number(v || 0) * 100).toFixed(2)}%`;
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ size: 'A4', bufferPages: true, margins: { top: TOP, bottom: BOTTOM, left: LX, right: 44 } });
+    const chunks = [];
+    doc.on('data', (d) => chunks.push(d));
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
+    doc.on('error', reject);
+    let y = TOP;
+    const ensure = (need) => { if (y + need > PAGE_H - BOTTOM) { doc.addPage(); y = TOP; } };
+    const chrome = () => {
+      doc.rect(0, 0, PAGE_W, 64).fill(BLUE);
+      try { doc.image(LOGO, LX, 22, { height: 20 }); } catch {}
+      doc.font('Helvetica-Bold').fontSize(13).fillColor(WHITE).text('Estudo BTS — Build to Suit', LX, 21, { width: W, align: 'right' });
+      doc.font('Helvetica').fontSize(7.5).fillColor('#cfe0ff').text('Bens Imóveis Corporativos · Viabilidade de investimento por locação', LX, 38, { width: W, align: 'right' });
+      const fy = PAGE_H - 46; doc.page.margins.bottom = 0;
+      doc.moveTo(LX, fy).lineTo(RX, fy).lineWidth(0.5).strokeColor(LINE).stroke();
+      doc.font('Helvetica').fontSize(6.8).fillColor(MUTED).text(`${RAZAO} · ${CRECI_J} · ${ENDERECO}`, LX, fy + 5, { width: W, lineBreak: false });
+      doc.font('Helvetica').fontSize(6.8).fillColor(MUTED).text(`${CONTATO}  ·  documento gerado por Precifica Aí`, LX, fy + 15, { width: W * 0.8, lineBreak: false });
+      doc.font('Helvetica').fontSize(6.8).fillColor(MUTED).text(`Emitido em ${dataEmissao}`, RX - 120, fy + 15, { width: 120, align: 'right' });
+    };
+    const band = (title) => { ensure(22); doc.rect(LX, y, W, 15).fill(BLUE); doc.font('Helvetica-Bold').fontSize(8).fillColor(WHITE).text(title, LX + 8, y + 4, { lineBreak: false }); y += 20; };
+    const paragraph = (t, size = 8.5) => { ensure(28); doc.font('Helvetica').fontSize(size).fillColor(INK).text(clean(t), LX, y, { width: W, align: 'justify', lineGap: 1.5 }); y = doc.y + 8; };
+    const kv = (k, v) => { ensure(13); doc.font('Helvetica-Bold').fontSize(8).fillColor(INK).text(`${k}: `, LX + 4, y, { continued: true, width: W - 8 }); doc.font('Helvetica').fontSize(8).fillColor(INK).text(clean(String(v))); y = doc.y + 3; };
+
+    doc.font('Helvetica-Bold').fontSize(16).fillColor(NAVY).text('ESTUDO DE VIABILIDADE BTS', LX, y, { width: W, align: 'center' });
+    doc.font('Helvetica').fontSize(8).fillColor(BLUE).text('Investimento + custo de obra × aluguel de mercado (cap rate) + melhor uso', LX, y + 20, { width: W, align: 'center' });
+    y += 38;
+
+    const cell = (x, w, label, value) => {
+      doc.rect(x, y, w, 24).lineWidth(0.5).strokeColor(LINE).stroke();
+      doc.font('Helvetica').fontSize(5.5).fillColor(LABEL).text(String(label).toUpperCase(), x + 5, y + 4, { width: w - 10, lineBreak: false });
+      doc.font('Helvetica-Bold').fontSize(8.5).fillColor(INK).text(value || '—', x + 5, y + 12, { width: w - 10, height: 10, ellipsis: true, lineBreak: false });
+    };
+    cell(LX, W * 0.55, 'Local', `${txt(r.bairro)} — ${txt(r.cidade || 'Anápolis')}/GO`);
+    cell(LX + W * 0.55, W * 0.45, 'Solicitante', txt(solicitante)); y += 24;
+    cell(LX, W * 0.55, 'Terreno', `${num(r.area)} m² · locável ${num(r.areaLocavel)} m²`);
+    cell(LX + W * 0.55, W * 0.45, 'Responsável', `${CORRETOR} · ${CRECI_F}`); y += 24;
+    y += 10;
+
+    ensure(58);
+    doc.roundedRect(LX, y, W, 50, 8).fill(BLUE);
+    doc.font('Helvetica').fontSize(8).fillColor('#cfe0ff').text('CAP RATE (RETORNO DO INVESTIDOR)', LX + 16, y + 9);
+    doc.font('Helvetica-Bold').fontSize(20).fillColor(WHITE).text(`${pct(r.yieldMes)}/mês`, LX + 16, y + 20);
+    doc.font('Helvetica').fontSize(7.5).fillColor('#cfe0ff').text('AO ANO / VEREDITO', RX - 200, y + 9, { width: 190, align: 'right' });
+    doc.font('Helvetica-Bold').fontSize(16).fillColor(WHITE).text(`${(r.yieldAno * 100).toFixed(1)}%  ${clean(String(r.veredito || '')).replace(/[^A-Za-zÀ-ÿ ]/g, '').trim()}`, RX - 200, y + 20, { width: 190, align: 'right' });
+    y += 60;
+
+    band('O QUE DÁ PRA CONSTRUIR');
+    kv('Valor do terreno', `${brl(r.custoTerreno)} (${brl(r.precoM2Terreno)}/m²) — confiança ${r.confianca}`);
+    kv('Área construível', `${num(r.areaConstruivel)} m²${r.caEstimado ? ` (TO ${Math.round((r.to || 0) * 100)}%${r.pavimentos > 1 ? ` × ${r.pavimentos} pav.` : ''})` : ` (CA ${r.ca})`}`);
+    kv('Área locável (GLA)', `${num(r.areaLocavel)} m²`);
+
+    band(`CONTA DO INVESTIDOR BTS (OBRA ${r.prazoMeses || 12} MESES)`);
+    kv('(+) Investimento total', brl(r.investimento));
+    kv('   – Terreno', brl(r.custoTerreno));
+    kv('   – Obra', `${txt(r.obraKey)} ${brl(r.cub)}/m² = ${brl(r.custoObra)}`);
+    kv('   – Indiretos da obra', brl(r.custoIndireto));
+    kv('(=) Aluguel de mercado', `${num(r.areaLocavel)} m² × ${brl(r.aluguelM2)}/m² = ${brl(r.aluguelMensal)}/mês`);
+    kv('Cap rate', `${brl(r.aluguelAnual)}/ano ÷ ${brl(r.investimento)} = ${pct(r.yieldMes)}/mês (${(r.yieldAno * 100).toFixed(1)}%/ano)`);
+    kv('Payback (só aluguel)', `${r.paybackAnos} anos`);
+    kv(`Aluguel p/ render ${pct(r.yieldAlvo)}/mês`, `${brl(r.aluguelNecessario)}/mês`);
+
+    if (r.ramos && r.ramos.length) {
+      band('MELHOR USO PARA O PONTO');
+      r.ramos.forEach((x, i) => kv(`${i + 1}. ${txt(x.label)}`, `score ${x.score}/100 · ${x.concorrentes} concorrentes em 1 km`));
+    }
+
+    if (r.empresas && ((r.empresas.live && r.empresas.live.length) || (r.empresas.curadas && r.empresas.curadas.length))) {
+      band('EMPRESAS EM EXPANSÃO (POSSÍVEIS INQUILINOS/COMPRADORES)');
+      (r.empresas.live || []).forEach(e => kv(txt(e.nome), `${txt(e.ramo || '')}${e.status ? ' — ' + txt(e.status) : ''}`));
+      if (r.empresas.curadas && r.empresas.curadas.length) kv('Redes do perfil (referência)', r.empresas.curadas.slice(0, 12).join(', '));
+    }
+
+    if (r.parecer) { band('PARECER BENS'); paragraph(r.parecer); }
+
+    band('FONTES E METODOLOGIA');
+    kv('Método', 'Terreno por amostragem + custo de obra (CUB) × aluguel de mercado = cap rate. Melhor uso por análise de ponto (Google Places); inquilinos por base curada + busca web.');
+    kv('Bases', 'EBM/Aderni-GO, Planta Genérica de Valores (Anápolis), CUB-GO/Sinduscon, Google Maps, IBGE.');
+    if (r.empresas && r.empresas.fontes && r.empresas.fontes.length) kv('Fontes de expansão (web)', r.empresas.fontes.slice(0, 6).join('  ·  '));
+    kv('Consulta em', dataEmissao);
+
+    band('RESSALVAS');
+    paragraph('Estudo preliminar de viabilidade BTS, de apoio à decisão. O cap rate depende de fechar um contrato de locação longo (10-20 anos) com inquilino sólido — sem contrato, o retorno é apenas potencial. Coeficiente/taxa de ocupação, custo de obra (CUB) e eficiência são ESTIMATIVAS — confirme no Plano Diretor de Anápolis e com orçamento de obra. A lista de empresas é inteligência de mercado (leads qualificados), NÃO demanda confirmada. NÃO substitui projeto, viabilidade técnica/jurídica nem due diligence do inquilino.', 8);
+
+    ensure(56);
+    y += 14;
+    const half = W / 2;
+    doc.lineWidth(0.7).strokeColor(NAVY).moveTo(LX + half / 2 - 80, y).lineTo(LX + half / 2 + 80, y).stroke();
+    doc.font('Helvetica').fontSize(8).fillColor(LABEL).text('CORRETOR RESPONSÁVEL', LX + half / 2 - 80, y + 5, { width: 160, align: 'center' });
+    doc.font('Helvetica-Bold').fontSize(9).fillColor(INK).text(CORRETOR, LX + half / 2 - 90, y + 16, { width: 180, align: 'center' });
+    doc.font('Helvetica').fontSize(8).fillColor(MUTED).text(`${CRECI_F} · ${RAZAO} (${CRECI_J})`, LX + half / 2 - 90, y + 28, { width: 180, align: 'center' });
+
+    const range = doc.bufferedPageRange();
+    for (let i = 0; i < range.count; i++) { doc.switchToPage(range.start + i); chrome(); }
+    doc.flushPages();
+    doc.end();
+  });
+}
+
+module.exports = { gerarRelatorioPdf, gerarDossiePdf, gerarEmpresaPdf, gerarRepassePdf, gerarTerrenoPdf, gerarBtsPdf };
