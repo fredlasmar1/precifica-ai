@@ -413,6 +413,23 @@ router.post('/bts', async (req, res) => {
   }
 });
 
+/**
+ * POST /api/radar — Radar de Expansão: busca reversa de empresas em expansão que
+ * poderiam querer um imóvel na região (inquilino/comprador BTS). body: { regiao, ramo }
+ */
+router.post('/radar', async (req, res) => {
+  const b = req.body || {};
+  try {
+    const { radarExpansao, formatarRadar } = require('../data/bts');
+    const resultado = await radarExpansao(b.regiao, b.ramo);
+    if (resultado.erro) return res.status(422).json({ error: resultado.erro });
+    return res.json({ type: 'radar', response: formatarRadar(resultado), resultado });
+  } catch (err) {
+    console.error('[Radar API] Erro:', err);
+    return res.status(500).json({ error: '⚠️ Erro ao rodar o radar. Tente novamente.', debug: err.message });
+  }
+});
+
 /** POST /api/relatorio-bts — PDF do estudo de viabilidade BTS. */
 router.post('/relatorio-bts', async (req, res) => {
   const { resultado, solicitante } = req.body || {};

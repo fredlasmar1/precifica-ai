@@ -583,6 +583,16 @@
 
       <!-- BTS — Build to Suit -->
       <div class="pane" id="pane-bts">
+        <style>
+          .bts-sub{display:flex;gap:8px;margin-bottom:14px}
+          .bts-sub-btn{flex:1;padding:9px 12px;border:1px solid #d5dde8;background:#f4f7fb;border-radius:10px;font-size:13px;font-weight:600;color:#475569;cursor:pointer;transition:.15s}
+          .bts-sub-btn.active{background:#013EF8;border-color:#013EF8;color:#fff;box-shadow:0 2px 6px rgba(1,62,248,.25)}
+        </style>
+        <div class="bts-sub">
+          <button type="button" id="bts-sub-viab" class="bts-sub-btn active" onclick="btsSub('viab')">Viabilidade do imóvel</button>
+          <button type="button" id="bts-sub-radar" class="bts-sub-btn" onclick="btsSub('radar')">🎯 Radar de Expansão</button>
+        </div>
+        <div id="bts-viab">
         <form onsubmit="analisarBTS(event)">
           <div class="row">
             <div class="field">
@@ -657,6 +667,32 @@
           </button>
           <div class="hint"><b>Build to Suit</b>: constrói sob medida e aluga a um inquilino corporativo (contrato longo). Calcula investimento × aluguel de mercado (<b>cap rate</b>), aponta o <b>melhor uso</b> do ponto e lista <b>empresas em expansão</b> que poderiam querer o imóvel (base curada + busca web com fontes).</div>
         </form>
+        </div><!-- /bts-viab -->
+
+        <div id="bts-radar" style="display:none">
+          <form onsubmit="rodarRadar(event)">
+            <div class="row">
+              <div class="field">
+                <label>Região</label>
+                <select id="r-regiao">
+                  <option value="todas" selected>Toda a região (Anápolis + Goiânia + RMG)</option>
+                  <option value="anapolis">Anápolis</option>
+                  <option value="goiania">Goiânia</option>
+                  <option value="rmg">Região Metropolitana de Goiânia</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>Ramo <span class="opt">(opcional)</span></label>
+                <input id="r-ramo" placeholder="Ex: atacarejo, academia, farmácia" />
+              </div>
+            </div>
+            <button class="btn-primary" id="btn-radar" type="submit">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.3-4.3"/></svg>
+              Buscar empresas em expansão
+            </button>
+            <div class="hint">Busca <b>reversa</b>: acha empresas em modo-expansão que poderiam querer um imóvel na sua região — com o <b>sinal</b> de expansão, a <b>fonte</b> e <b>que imóvel elas buscam</b>. Depois é só casar com os lotes/galpões que você tem. Enriquecimento com eventos datados (Explorium) sob demanda.</div>
+          </form>
+        </div>
       </div>
 
       <!-- FIPE Anápolis -->
@@ -1323,6 +1359,39 @@
 
     // ── BTS — Build to Suit ──
     let btsAtual = null;
+    function btsSub(which) {
+      document.getElementById('bts-sub-viab').classList.toggle('active', which === 'viab');
+      document.getElementById('bts-sub-radar').classList.toggle('active', which === 'radar');
+      document.getElementById('bts-viab').style.display = which === 'viab' ? '' : 'none';
+      document.getElementById('bts-radar').style.display = which === 'radar' ? '' : 'none';
+      const head = document.getElementById('result-title');
+      if (head) head.textContent = which === 'radar' ? 'Radar de Expansão' : 'BTS — Build to Suit';
+    }
+    async function rodarRadar(e) {
+      e.preventDefault();
+      if (busy) return;
+      const payload = {
+        regiao: document.getElementById('r-regiao').value,
+        ramo: document.getElementById('r-ramo').value.trim()
+      };
+      busy = true;
+      document.getElementById('btn-radar').disabled = true;
+      showSpinner('Varrendo notícias, vagas e anúncios de expansão na sua região…');
+      try {
+        const res = await fetch('/api/radar', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (data.error) showError(data.error);
+        else showLaudo(data.response);
+      } catch (err) {
+        showError('Erro de conexão. Tente novamente.');
+      } finally {
+        busy = false;
+        document.getElementById('btn-radar').disabled = false;
+      }
+    }
     async function analisarBTS(e) {
       e.preventDefault();
       if (busy) return;

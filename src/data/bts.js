@@ -224,6 +224,99 @@ async function empresasExpansao(cidade, bairro, ramos, area) {
 
 function semCit(s) { return s == null ? s : String(s).replace(/\s*\[\d+\](\[\d+\])*/g, '').replace(/\s{2,}/g, ' ').trim(); }
 
+// ── RADAR DE EXPANSÃO ────────────────────────────────────────────────
+// Busca REVERSA: em vez de partir de um lote, parte da região e acha empresas
+// em expansão que poderiam querer um imóvel aqui (inquilino/comprador BTS).
+const REGIOES = {
+  'anapolis':  { label: 'Anápolis-GO', alvo: 'Anápolis-GO' },
+  'goiania':   { label: 'Goiânia-GO', alvo: 'Goiânia-GO' },
+  'rmg':       { label: 'Região Metropolitana de Goiânia', alvo: 'Região Metropolitana de Goiânia (Aparecida de Goiânia, Senador Canedo, Trindade, Goianira, Nerópolis)' },
+  'todas':     { label: 'Anápolis + Goiânia + RMG', alvo: 'Anápolis, Goiânia e a Região Metropolitana de Goiânia (Goiás)' },
+};
+
+function normRegiao(s) {
+  const k = String(s || 'todas').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
+  if (k.includes('anapolis')) return 'anapolis';
+  if (k.includes('metropolitana') || k === 'rmg') return 'rmg';
+  if (k.includes('goiania')) return 'goiania';
+  return 'todas';
+}
+
+/**
+ * Radar de expansão: empresas em modo-expansão que poderiam querer um imóvel na região.
+ * @param {string} regiao - anapolis | goiania | rmg | todas
+ * @param {string} ramo - opcional (ex: "atacarejo", "academia"); vazio = amplo
+ */
+async function radarExpansao(regiao, ramo) {
+  const apiKey = process.env.PERPLEXITY_API_KEY;
+  const reg = REGIOES[normRegiao(regiao)] || REGIOES.todas;
+  const ramoTxt = String(ramo || '').trim();
+  if (!apiKey) return { erro: 'Busca web indisponível (PERPLEXITY_API_KEY não configurada).' };
+
+  const foco = ramoTxt
+    ? `Foque no ramo: ${ramoTxt}.`
+    : `Cubra varejo, atacarejo/supermercado, home center/construção, academia, farmácia, fast-food/restaurante, pet, saúde/clínica/laboratório, educação, logística/centro de distribuição e franquias em expansão.`;
+  const prompt = `Liste empresas e redes REAIS que estão em expansão e poderiam querer abrir/instalar uma unidade em ${reg.alvo} em 2025-2026 (anúncios de expansão, novas lojas, busca de pontos, contratação local, franquias buscando a região). ${foco} `
+    + `Priorize quem opera por Build to Suit ou locação de longo prazo. `
+    + `Para cada empresa responda em JSON: {"empresas":[{"nome":"...","ramo":"...","sinal":"o sinal concreto de expansão e a data","cidadeAlvo":"cidade(s) de interesse na região","imovelBuscado":"tipo/área de imóvel que costumam usar (ex: loja 300m² em avenida, galpão 3000m²)","statusRegiao":"já tem unidade na região? está abrindo?","fonte":"URL da notícia/fonte"}]}. `
+    + `Máximo 10. Use SOMENTE informação real e verificável; se não encontrar, retorne lista vazia. Não invente.`;
+
+  try {
+    const { data } = await axios.post('https://api.perplexity.ai/chat/completions', {
+      model: 'sonar-pro',
+      messages: [
+        { role: 'system', content: 'Pesquisador de expansão de varejo e franquias no Brasil, especialista no interior/Centro-Oeste. SOMENTE dados reais e verificáveis, com fonte. Nunca invente. Retorne SOMENTE JSON.' },
+        { role: 'user', content: prompt },
+      ],
+      temperature: 0.1, max_tokens: 1500,
+    }, { timeout: 90000, headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' } });
+    const s = data.choices[0].message.content.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
+    let empresas = [];
+    try {
+      empresas = (JSON.parse(s).empresas || []).map(e => ({
+        nome: semCit(e.nome), ramo: semCit(e.ramo), sinal: semCit(e.sinal),
+        cidadeAlvo: semCit(e.cidadeAlvo), imovelBuscado: semCit(e.imovelBuscado),
+        statusRegiao: semCit(e.statusRegiao), fonte: semCit(e.fonte),
+      })).filter(e => e.nome);
+    } catch {}
+    const fontes = (data.citations || []).slice(0, 10);
+    return { regiao: reg.label, ramo: ramoTxt || null, empresas, fontes };
+  } catch (e) {
+    console.warn('[Radar] erro:', e.message);
+    return { erro: 'Não consegui buscar agora. Tente de novo em instantes.' };
+  }
+}
+
+function formatarRadar(r) {
+  if (!r || r.erro) return `⚠️ ${r?.erro || 'Não foi possível rodar o radar.'}`;
+  let t = `🎯 *RADAR DE EXPANSÃO*\n${r.regiao}${r.ramo ? ` · ${r.ramo}` : ''}\n\n`;
+  if (!r.empresas || !r.empresas.length) {
+    t += `Nenhuma empresa em expansão clara encontrada agora para esse filtro. Tente uma região mais ampla ou outro ramo.\n`;
+    return t;
+  }
+  t += `*${r.empresas.length} empresa(s) em modo-expansão* que poderiam querer um imóvel aqui:\n\n`;
+  r.empresas.forEach((e, i) => {
+    t += `*${i + 1}. ${e.nome}*${e.ramo ? ` — ${e.ramo}` : ''}\n`;
+    if (e.sinal) t += `   📈 ${e.sinal}\n`;
+    if (e.cidadeAlvo) t += `   📍 Alvo: ${e.cidadeAlvo}\n`;
+    if (e.imovelBuscado) t += `   🏗️ Busca: ${e.imovelBuscado}\n`;
+    if (e.statusRegiao) t += `   🔎 Status: ${e.statusRegiao}\n`;
+    if (e.fonte) t += `   🔗 ${e.fonte}\n`;
+    t += `\n`;
+  });
+  try {
+    const { textoFontes } = require('./fontes');
+    t += textoFontes({
+      metodo: 'Busca web de sinais de expansão (anúncios, vagas, franquias) por região e ramo.',
+      data: new Date().toLocaleDateString('pt-BR'),
+      bases: ['Perplexity sonar-pro (notícias e fontes públicas)'],
+      links: r.fontes || [],
+      obs: 'Leads de inteligência de mercado — sinais de expansão, NÃO demanda confirmada. Confirme o interesse direto com a empresa. Enriquecimento com eventos datados (Explorium: nova unidade/contratação) disponível sob demanda.',
+    });
+  } catch {}
+  return t;
+}
+
 async function gerarParecerBTS(r) {
   const client = getOpenAI();
   if (!client) return null;
@@ -315,4 +408,4 @@ function formatarBTS(r) {
   return t;
 }
 
-module.exports = { analisarBTS, formatarBTS, CATALOGO_BTS };
+module.exports = { analisarBTS, formatarBTS, CATALOGO_BTS, radarExpansao, formatarRadar };
