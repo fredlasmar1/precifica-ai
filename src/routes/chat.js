@@ -471,6 +471,24 @@ router.post('/relatorio-radar', async (req, res) => {
   if (!resultado || !Array.isArray(resultado.empresas)) return res.status(400).json({ error: 'Rode o Radar primeiro.' });
   try {
     const { gerarRadarPdf } = require('../data/relatorioPdf');
+    const { buscarContato } = require('../data/bts');
+    // Enriquece cada empresa com CONTATO real (site/telefone/email + CNPJ Receita)
+    // na hora de gerar o PDF, em lotes p/ não estourar rate limit.
+    const emp = resultado.empresas;
+    const LOTE = 5;
+    for (let i = 0; i < emp.length; i += LOTE) {
+      const bloco = emp.slice(i, i + LOTE);
+      const contatos = await Promise.all(bloco.map(e => buscarContato(e.nome).catch(() => null)));
+      bloco.forEach((e, k) => {
+        const c = contatos[k]; if (!c || c.erro) return;
+        e.site = e.site || c.site;
+        e.telefone = e.telefone || c.telefone || c.cnpjTel;
+        e.email = e.email || c.emailExpansao || c.emailGeral || c.cnpjEmail;
+        e.canalExpansao = c.canalExpansao || null;
+        e.cnpjMatriz = c.cnpjMatriz || null;
+        e.cnpjEmail = c.cnpjEmail || null;
+      });
+    }
     const pdf = await gerarRadarPdf(resultado);
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="alvos-expansao-${(resultado.regiao || 'regiao').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-')}.pdf"`);

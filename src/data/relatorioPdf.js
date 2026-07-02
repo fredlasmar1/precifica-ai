@@ -927,8 +927,10 @@ function gerarRadarPdf(r) {
       if (e.cidadeAlvo) kv('Alvo', e.cidadeAlvo);
       if (e.imovelBuscado) kv('Imóvel que busca', e.imovelBuscado);
       if (e.statusRegiao) kv('Status na região', e.statusRegiao);
-      const contato = [e.site, e.telefone, e.email].filter(Boolean).join('  ·  ');
+      const contato = [e.telefone ? `📞 ${e.telefone}` : '', e.email ? `✉ ${e.email}` : '', e.site].filter(Boolean).join('   ·   ');
       if (contato) kv('Contato', contato);
+      if (e.canalExpansao) kv('Canal de expansão', e.canalExpansao);
+      if (e.cnpjMatriz) kv('CNPJ matriz', e.cnpjMatriz + (e.cnpjEmail ? ` · e-mail: ${e.cnpjEmail}` : ''));
       if (e.fonte) kv('Fonte', e.fonte);
       y += 6;
     });
