@@ -294,6 +294,13 @@ router.post('/predio', async (req, res) => {
         texto += `\n💡 _As metragens acima são as unidades reais do prédio. Quer o laudo de uma específica? Informe a **área** (e a finalidade)._\n`;
       }
     }
+    try {
+      require('../data/database').salvarLaudo({
+        kind: 'predio', titulo: condominio, tipo: 'predio', cidade, bairro,
+        valor: valorRef || 0, dados: { condominio, bairro, cidade },
+        resultado: { ficha, unidades: comps },
+      });
+    } catch (e) { console.warn('[Predio] salvar:', e.message); }
     return res.json({ type: 'predio', response: texto, ficha, unidades: comps, apto });
   } catch (err) {
     console.error('[Predio API] Erro:', err);
@@ -679,6 +686,21 @@ router.get('/laudos', async (req, res) => {
   try { res.json(await require('../data/database').listarLaudos(60)); }
   catch (err) { res.status(500).json({ error: err.message }); }
 });
+// DELETE /api/laudos — limpa o histórico (tudo, ou só uma pasta via ?kind=)
+router.delete('/laudos', async (req, res) => {
+  try {
+    const kind = req.query.kind ? String(req.query.kind) : null;
+    const n = await require('../data/database').limparLaudos(kind);
+    res.json({ ok: true, removidos: n, kind });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+// DELETE /api/laudos/:id — apaga um item do histórico
+router.delete('/laudos/:id', async (req, res) => {
+  try {
+    const n = await require('../data/database').apagarLaudo(req.params.id);
+    res.json({ ok: true, removidos: n });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
 router.get('/laudos/:id', async (req, res) => {
   try {
     const l = await require('../data/database').buscarLaudo(req.params.id);
@@ -689,6 +711,7 @@ router.get('/laudos/:id', async (req, res) => {
     else if (l.kind === 'empresa') response = require('../data/valuationEmpresa').formatarEmpresa(l.resultado);
     else if (l.kind === 'terreno') response = require('../data/terreno').formatarTerreno(l.resultado);
     else if (l.kind === 'bts') response = require('../data/bts').formatarBTS(l.resultado);
+    else if (l.kind === 'predio') response = require('../data/fichaPredio').formatarBuscaPredio((l.resultado || {}).ficha, { comparativos: (l.resultado || {}).unidades || [] });
     else response = gerarLaudo(l.dados, l.resultado);
     res.json({ id: l.id, criado_em: l.criado_em, kind: l.kind, dados: l.dados, resultado: l.resultado, response });
   } catch (err) { res.status(500).json({ error: err.message }); }

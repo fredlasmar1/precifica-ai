@@ -359,6 +359,16 @@ async function buscarLaudo(id) {
   const r = await pool.query(`SELECT * FROM laudos WHERE id = $1`, [id]);
   return r.rows[0] || null;
 }
+async function limparLaudos(kind) {
+  const r = kind
+    ? await pool.query(`DELETE FROM laudos WHERE kind = $1`, [kind])
+    : await pool.query(`DELETE FROM laudos`);
+  return r.rowCount || 0;
+}
+async function apagarLaudo(id) {
+  const r = await pool.query(`DELETE FROM laudos WHERE id = $1`, [id]);
+  return r.rowCount || 0;
+}
 
 module.exports = {
   pool, inicializar,
@@ -367,5 +377,5 @@ module.exports = {
   salvarAvaliacao, salvarFeedback,
   salvarConhecimentoCidade, buscarConhecimentoCidade,
   stats, registrarUso, obterUso,
-  salvarLaudo, listarLaudos, buscarLaudo
+  salvarLaudo, listarLaudos, buscarLaudo, limparLaudos, apagarLaudo
 };
