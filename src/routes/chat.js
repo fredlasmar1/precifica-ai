@@ -256,8 +256,27 @@ router.post('/predio', async (req, res) => {
     }
 
     const ficha = await gerarFichaPredio({ condominio, bairro, cidade, valorMercado: valorRef });
-    const texto = formatarBuscaPredio(ficha, unidades);
-    return res.json({ type: 'predio', response: texto, ficha, unidades: comps });
+    let texto = formatarBuscaPredio(ficha, unidades);
+
+    // Modo "Prédio + Apartamento": avalia a unidade ancorada NESTE prédio (condomínio)
+    let apto = null;
+    const aptoArea = Number(b.aptoArea) || 0;
+    if (aptoArea > 0) {
+      const { calcularPreco } = require('../data/precificador');
+      const finalidade = b.aptoFinalidade === 'aluguel' ? 'aluguel' : 'venda';
+      const dadosApto = {
+        tipo: 'apartamento', finalidade, cidade, bairro, condominio,
+        metragem: aptoArea, quartos: b.aptoQuartos, vagas: b.aptoVagas, conservacao: b.aptoConservacao || 'bom',
+      };
+      try {
+        apto = await calcularPreco(dadosApto);
+        if (apto && !apto.erro) {
+          texto += `\n\n━━━━━━━━━━━━━━━━━━\n🏠 *AVALIAÇÃO DO APARTAMENTO* (${finalidade === 'aluguel' ? 'aluguel' : 'venda'}, no ${condominio})\n\n` + gerarLaudo(dadosApto, apto);
+          salvarLaudoImovel(dadosApto, apto);
+        }
+      } catch (e) { console.warn('[Predio] avaliação apto:', e.message); }
+    }
+    return res.json({ type: 'predio', response: texto, ficha, unidades: comps, apto });
   } catch (err) {
     console.error('[Predio API] Erro:', err);
     return res.status(500).json({ error: '⚠️ Erro ao pesquisar o prédio. Tente novamente.' });
