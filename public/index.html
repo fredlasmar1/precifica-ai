@@ -525,13 +525,14 @@
             </div>
           </div>
           <div id="pr-apto-fields" style="display:none">
+            <div class="hint" style="margin:0 0 12px">🔎 Deixe vazio pra ver <b>as unidades do prédio</b> (metragens, quartos, venda e aluguel). Só preencha se quiser o <b>laudo de uma unidade específica</b>.</div>
             <div class="row">
               <div class="field">
-                <label>🏠 Área do apto (m²)</label>
-                <input id="pr-apto-area" type="number" min="0" placeholder="70" />
+                <label>🏠 Área da unidade (m²) <span class="opt">(opcional)</span></label>
+                <input id="pr-apto-area" type="number" min="0" placeholder="deixe vazio p/ ver as unidades" />
               </div>
               <div class="field">
-                <label>Finalidade</label>
+                <label>Finalidade <span class="opt">(se avaliar unidade)</span></label>
                 <select id="pr-apto-finalidade">
                   <option value="venda">Venda</option>
                   <option value="aluguel">Aluguel</option>
@@ -540,11 +541,11 @@
             </div>
             <div class="row">
               <div class="field">
-                <label>Quartos</label>
+                <label>Quartos <span class="opt">(opcional)</span></label>
                 <input id="pr-apto-quartos" type="number" min="0" placeholder="2" />
               </div>
               <div class="field">
-                <label>Vagas</label>
+                <label>Vagas <span class="opt">(opcional)</span></label>
                 <input id="pr-apto-vagas" type="number" min="0" placeholder="1" />
               </div>
             </div>
@@ -1790,16 +1791,16 @@
       }
       const comApto = window._predioModo === 'apto';
       if (comApto) {
+        payload.modoApto = true;
         const area = Number(document.getElementById('pr-apto-area').value);
-        if (!(area > 0)) { showError('No modo *Prédio + Apartamento*, informe a *área do apto*.'); return; }
-        payload.aptoArea = area;
+        if (area > 0) payload.aptoArea = area; // opcional: só p/ laudo de unidade específica
         payload.aptoFinalidade = document.getElementById('pr-apto-finalidade').value;
         payload.aptoQuartos = document.getElementById('pr-apto-quartos').value;
         payload.aptoVagas = document.getElementById('pr-apto-vagas').value;
       }
       busy = true;
       document.getElementById('btn-predio').disabled = true;
-      showSpinner(comApto ? 'Montando a ficha do prédio e avaliando o apartamento…' : 'Montando a ficha do prédio (endereço, CNPJ, IPTU, processos, unidades)…');
+      showSpinner(comApto ? 'Montando a ficha do prédio e levantando as unidades (venda e aluguel)…' : 'Montando a ficha do prédio (endereço, CNPJ, IPTU, processos, unidades)…');
       try {
         const res = await fetch('/api/predio', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },

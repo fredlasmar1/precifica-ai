@@ -258,23 +258,41 @@ router.post('/predio', async (req, res) => {
     const ficha = await gerarFichaPredio({ condominio, bairro, cidade, valorMercado: valorRef });
     let texto = formatarBuscaPredio(ficha, unidades);
 
-    // Modo "Prédio + Apartamento": avalia a unidade ancorada NESTE prédio (condomínio)
+    // Modo "Prédio + Apartamento": mostra o panorama das unidades (venda já veio
+    // na ficha; aqui adiciona ALUGUEL) e, SÓ se a área for informada, o laudo da unidade.
     let apto = null;
-    const aptoArea = Number(b.aptoArea) || 0;
-    if (aptoArea > 0) {
-      const { calcularPreco } = require('../data/precificador');
-      const finalidade = b.aptoFinalidade === 'aluguel' ? 'aluguel' : 'venda';
-      const dadosApto = {
-        tipo: 'apartamento', finalidade, cidade, bairro, condominio,
-        metragem: aptoArea, quartos: b.aptoQuartos, vagas: b.aptoVagas, conservacao: b.aptoConservacao || 'bom',
-      };
+    if (b.modoApto) {
       try {
-        apto = await calcularPreco(dadosApto);
-        if (apto && !apto.erro) {
-          texto += `\n\n━━━━━━━━━━━━━━━━━━\n🏠 *AVALIAÇÃO DO APARTAMENTO* (${finalidade === 'aluguel' ? 'aluguel' : 'venda'}, no ${condominio})\n\n` + gerarLaudo(dadosApto, apto);
-          salvarLaudoImovel(dadosApto, apto);
+        const unidadesAlug = await estimarPrecoPredio({ finalidade: 'aluguel', cidade, bairro, condominio });
+        const compsA = (unidadesAlug && unidadesAlug.comparativos) || [];
+        if (compsA.length) {
+          texto += `\n🏠 *Unidades para ALUGUEL neste prédio (${compsA.length}):*\n`;
+          compsA.slice(0, 8).forEach((c, i) => {
+            texto += `  ${i + 1}. ${c.area || '?'}m² • R$ ${Number(c.preco || 0).toLocaleString('pt-BR')}/mês${c.precoM2 ? ` (R$ ${Number(c.precoM2).toLocaleString('pt-BR')}/m²·mês)` : ''}${c.quartos ? ` • ${c.quartos}q` : ''}\n`;
+          });
+        } else {
+          texto += `\n_Nenhuma unidade para aluguel anunciada neste prédio agora._\n`;
         }
-      } catch (e) { console.warn('[Predio] avaliação apto:', e.message); }
+      } catch (e) { console.warn('[Predio] aluguel:', e.message); }
+
+      const aptoArea = Number(b.aptoArea) || 0;
+      if (aptoArea > 0) {
+        const { calcularPreco } = require('../data/precificador');
+        const finalidade = b.aptoFinalidade === 'aluguel' ? 'aluguel' : 'venda';
+        const dadosApto = {
+          tipo: 'apartamento', finalidade, cidade, bairro, condominio,
+          metragem: aptoArea, quartos: b.aptoQuartos, vagas: b.aptoVagas, conservacao: b.aptoConservacao || 'bom',
+        };
+        try {
+          apto = await calcularPreco(dadosApto);
+          if (apto && !apto.erro) {
+            texto += `\n\n━━━━━━━━━━━━━━━━━━\n🏠 *LAUDO DA UNIDADE* (${finalidade === 'aluguel' ? 'aluguel' : 'venda'}, ${aptoArea}m² no ${condominio})\n\n` + gerarLaudo(dadosApto, apto);
+            salvarLaudoImovel(dadosApto, apto);
+          }
+        } catch (e) { console.warn('[Predio] avaliação apto:', e.message); }
+      } else {
+        texto += `\n💡 _As metragens acima são as unidades reais do prédio. Quer o laudo de uma específica? Informe a **área** (e a finalidade)._\n`;
+      }
     }
     return res.json({ type: 'predio', response: texto, ficha, unidades: comps, apto });
   } catch (err) {
