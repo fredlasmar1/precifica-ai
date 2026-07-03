@@ -1,92 +1,215 @@
-// Avaliação de propriedades RURAIS (chácara / sítio / fazenda) para a web.
-// Reusa o motor rural do precificador (base R$/alqueire + ajustes de subtipo,
-// acesso ao asfalto, água, energia e benfeitorias) — o mesmo que o bot do
-// Telegram usa. Unidade canônica: alqueire goiano (1 alq = 48.400 m² = 4,84 ha).
+// Avaliação de imóveis RURAIS no padrão profissional (referência ABNT NBR 14653-3):
+// valor = TERRA NUA (ponderada pela APTIDÃO: lavoura × pastagem × reserva) + BENFEITORIAS,
+// com R$/ha por uso puxado ao vivo (Scot/CEPEA/AgriFatto/INCRA via Perplexity) e base
+// regional de Goiás como fallback. Método da renda (arrendamento) como 2ª opinião.
+// Unidade: alqueire goiano = 4,84 ha.
 
-const { calcularPreco } = require('./precificador');
-const ALQ_M2 = 48400, ALQ_HA = 4.84;
+const axios = require('axios');
+const OpenAI = require('openai');
+const ALQ_HA = 4.84;
 
-/**
- * input: { cidade, referencia (rodovia/região), subtipo (chacara|sitio|fazenda),
- *          area, unidade (alqueire|hectare), acesso (beira|asfalto|chao),
- *          agua (bool), energia (bool), benfeitorias (csv|array), finalidade }
- */
+let _openai = null;
+function getOpenAI() { if (!_openai && process.env.OPENAI_API_KEY) _openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY }); return _openai; }
+function norm(s) { return String(s == null ? '' : s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim(); }
+
+// ── Base regional de Goiás: R$/ha por uso (REFERÊNCIA 2024-25, calibrar) ──
+// Fallback quando a busca ao vivo não retorna. Perplexity refina por município.
+const REGIOES = {
+  sudoeste:   { label: 'Sudoeste goiano (cinturão da soja)', lavoura: 78000, pastagem: 33000, reserva: 11000 },
+  cristalina: { label: 'Cristalina/Chapadão (grãos)',        lavoura: 72000, pastagem: 28000, reserva: 9500 },
+  sudeste:    { label: 'Sudeste goiano (Catalão/Ipameri)',   lavoura: 55000, pastagem: 26000, reserva: 8500 },
+  centro:     { label: 'Centro goiano (Anápolis/entorno)',   lavoura: 45000, pastagem: 23000, reserva: 7500 },
+  matogrosso: { label: 'Mato Grosso de Goiás/São Patrício',  lavoura: 42000, pastagem: 22000, reserva: 7000 },
+  norte:      { label: 'Norte/Nordeste goiano (pecuária)',   lavoura: 32000, pastagem: 16000, reserva: 5500 },
+  default:    { label: 'Goiás (referência geral)',           lavoura: 42000, pastagem: 21000, reserva: 7000 },
+};
+const MUNI_REGIAO = {
+  'rio verde': 'sudoeste', 'jatai': 'sudoeste', 'montividiu': 'sudoeste', 'mineiros': 'sudoeste', 'chapadao do ceu': 'sudoeste', 'santa helena de goias': 'sudoeste', 'quirinopolis': 'sudoeste', 'acreuna': 'sudoeste', 'parauna': 'sudoeste', 'jandaia': 'sudoeste',
+  'cristalina': 'cristalina',
+  'catalao': 'sudeste', 'ipameri': 'sudeste', 'urutai': 'sudeste', 'pires do rio': 'sudeste', 'goiandira': 'sudeste', 'campo alegre de goias': 'sudeste',
+  'anapolis': 'centro', 'silvania': 'centro', 'leopoldo de bulhoes': 'centro', 'goianapolis': 'centro', 'orizona': 'centro', 'vianopolis': 'centro', 'gameleira de goias': 'centro', 'abadiania': 'centro', 'alexania': 'centro', 'corumba de goias': 'centro',
+  'itaberai': 'matogrosso', 'inhumas': 'matogrosso', 'itaucu': 'matogrosso', 'ceres': 'matogrosso', 'rialma': 'matogrosso', 'goianesia': 'matogrosso', 'sao luis de montes belos': 'matogrosso', 'jaragua': 'matogrosso',
+  'sao miguel do araguaia': 'norte', 'porangatu': 'norte', 'uruacu': 'norte', 'niquelandia': 'norte', 'minacu': 'norte', 'mara rosa': 'norte', 'formoso': 'norte', 'crixas': 'norte', 'nova crixas': 'norte',
+};
+function regiaoDe(cidade) {
+  const k = MUNI_REGIAO[norm(cidade)];
+  return k ? { key: k, ...REGIOES[k] } : { key: 'default', ...REGIOES.default };
+}
+
+// R$/ha por uso do município (Perplexity ao vivo; fallback base regional)
+async function precoHaPorUso(cidade) {
+  const reg = regiaoDe(cidade);
+  const base = { lavoura: reg.lavoura, pastagem: reg.pastagem, reserva: reg.reserva, vtn: null, fonteLabel: `Base regional — ${reg.label}`, fontes: [], confianca: 'baixa', regiao: reg.label };
+  const apiKey = process.env.PERPLEXITY_API_KEY;
+  if (!apiKey) return base;
+  try {
+    const prompt = `Valor de mercado da TERRA em ${cidade}, Goiás, em 2025, em R$ por HECTARE, por uso. Responda SOMENTE JSON: {"lavoura": R$/ha de terra de lavoura/agricultura mecanizada, "pastagem": R$/ha de terra de pastagem/pecuária, "reserva": R$/ha de reserva/mata (ou null), "vtn": VTN-INCRA R$/ha do município (ou null)}. Baseie em fontes reais (Scot Consultoria, CEPEA/ESALQ, AgriFatto, INCRA). Só números reais; campo desconhecido = null. Nunca invente.`;
+    const { data } = await axios.post('https://api.perplexity.ai/chat/completions', {
+      model: 'sonar-pro',
+      messages: [
+        { role: 'system', content: 'Especialista em valor de terras agrícolas no Brasil. Responda SOMENTE JSON com números reais de fontes (Scot/CEPEA/AgriFatto/INCRA). Nunca invente.' },
+        { role: 'user', content: prompt },
+      ],
+      temperature: 0.1, max_tokens: 400,
+    }, { timeout: 60000, headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' } });
+    let s = String(data.choices[0].message.content || '').replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
+    const i = s.indexOf('{'), j = s.lastIndexOf('}'); if (i >= 0 && j > i) s = s.slice(i, j + 1);
+    const d = JSON.parse(s);
+    const lav = Number(d.lavoura) || 0, past = Number(d.pastagem) || 0;
+    if (lav > 1000 || past > 1000) {
+      const pastF = past || reg.pastagem;
+      return {
+        lavoura: lav || reg.lavoura, pastagem: pastF,
+        reserva: Number(d.reserva) > 0 ? Number(d.reserva) : Math.round(pastF * 0.35),
+        vtn: Number(d.vtn) > 0 ? Number(d.vtn) : null,
+        fonteLabel: `Mercado de ${cidade} (Scot/CEPEA/AgriFatto)`,
+        fontes: (data.citations || []).slice(0, 5), confianca: 'media', regiao: reg.label,
+      };
+    }
+  } catch (e) { console.warn('[Fazenda] precoHaPorUso:', e.message); }
+  return base;
+}
+
 async function avaliarFazenda(input = {}) {
-  const cidade = String(input.cidade || '').trim() || 'Anápolis';
+  const cidade = String(input.cidade || 'Anápolis').trim() || 'Anápolis';
   const referencia = String(input.referencia || '').trim() || null;
   const subtipo = ['chacara', 'sitio', 'fazenda'].includes(input.subtipo) ? input.subtipo : 'fazenda';
   const unidade = input.unidade === 'hectare' ? 'hectare' : 'alqueire';
+  const finalidade = input.finalidade === 'aluguel' ? 'aluguel' : 'venda';
   const areaIn = Number(input.area) || 0;
   if (areaIn <= 0) return { erro: 'Informe a área da propriedade (alqueires ou hectares).' };
-
   const areaAlq = unidade === 'hectare' ? Math.round((areaIn / ALQ_HA) * 1000) / 1000 : areaIn;
   const areaHa = Math.round(areaAlq * ALQ_HA * 10) / 10;
-  const metragem = Math.round(areaAlq * ALQ_M2);
-  const acesso = input.acesso; // 'beira' | 'asfalto' | 'chao'
-  const finalidade = input.finalidade === 'aluguel' ? 'aluguel' : 'venda';
-  const benfeitorias = Array.isArray(input.benfeitorias)
-    ? input.benfeitorias.filter(Boolean)
-    : String(input.benfeitorias || '').split(',').map(s => s.trim()).filter(Boolean);
 
-  const dados = {
-    tipo: 'rural', finalidade, cidade, bairro: referencia,
-    metragem, subTipoRural: subtipo, areaAlqueires: areaAlq,
-    margemAsfalto: acesso === 'beira',
-    acessoAsfalto: acesso === 'beira' || acesso === 'asfalto',
-    temAgua: !!input.agua, temEnergia: !!input.energia,
-    benfeitorias, rodoviaReferencia: referencia,
+  // Aptidão (% de uso). Sem informar → padrão conservador: pasto + reserva.
+  let pLav = Number(input.pctLavoura) || 0, pPast = Number(input.pctPastagem) || 0, pRes = Number(input.pctReserva) || 0;
+  const soma = pLav + pPast + pRes;
+  if (soma <= 0) { pLav = 0; pPast = 80; pRes = 20; }
+  else if (Math.abs(soma - 100) > 0.5) { pLav = pLav / soma * 100; pPast = pPast / soma * 100; pRes = pRes / soma * 100; }
+  const aptidaoInformada = soma > 0;
+
+  const precos = await precoHaPorUso(cidade);
+  const rHaMix = (pLav * precos.lavoura + pPast * precos.pastagem + pRes * precos.reserva) / 100;
+
+  // Fatores sobre a terra nua
+  const acesso = input.acesso;
+  const fatorAcesso = acesso === 'beira' ? 1.12 : acesso === 'asfalto' ? 1.05 : 0.92;
+  const relevo = input.relevo;
+  const fatorRelevo = relevo === 'plano' ? 1.05 : relevo === 'acidentado' ? 0.82 : 1.0;
+  const fatorAgua = input.agua ? 1.06 : 0.96;
+  const terraNua = Math.round(areaHa * rHaMix);
+  const terraNuaAj = Math.round(terraNua * fatorAcesso * fatorRelevo * fatorAgua);
+
+  // Benfeitorias (uplift por keyword sobre a terra nua)
+  const benfeitorias = Array.isArray(input.benfeitorias) ? input.benfeitorias.filter(Boolean)
+    : String(input.benfeitorias || '').split(',').map(s => s.trim()).filter(Boolean);
+  const bn = benfeitorias.map(norm);
+  let fBenf = 1.0; const bDesc = [];
+  if (bn.some(b => b.includes('irriga') || b.includes('pivo') || b.includes('pivô'))) { fBenf *= 1.12; bDesc.push('irrigação/pivô'); }
+  if (bn.some(b => b.includes('sede') || b.includes('casa'))) { fBenf *= 1.05; bDesc.push('sede'); }
+  if (bn.some(b => b.includes('galp') || b.includes('barrac') || b.includes('armazem') || b.includes('armazém'))) { fBenf *= 1.03; bDesc.push('galpão/armazém'); }
+  if (bn.some(b => b.includes('curral') || b.includes('brete') || b.includes('mangueira'))) { fBenf *= 1.03; bDesc.push('curral'); }
+  if (bn.some(b => b.includes('represa') || b.includes('lago') || b.includes('acude') || b.includes('barrag'))) { fBenf *= 1.03; bDesc.push('represa/açude'); }
+  if (bn.some(b => b.includes('cerca') || b.includes('curva de nivel') || b.includes('curva de nível'))) { fBenf *= 1.02; bDesc.push('cercas/conservação'); }
+  const benfValor = Math.round(terraNuaAj * (fBenf - 1));
+  const total = terraNuaAj + benfValor;
+
+  const rHaFinal = areaHa > 0 ? Math.round(total / areaHa) : 0;
+  const rAlqFinal = areaAlq > 0 ? Math.round(total / areaAlq) : 0;
+
+  // Método da RENDA (arrendamento) — 2ª opinião. R$/ha/ano de referência (calibrar).
+  const arrendLavHa = 3000, arrendPastHa = 550;
+  const rendaAnual = Math.round(areaHa * (pLav * arrendLavHa + pPast * arrendPastHa) / 100);
+  const taxaCap = 0.055;
+  const valorRenda = rendaAnual > 0 ? Math.round(rendaAnual / taxaCap) : 0;
+
+  const r = {
+    cidade, referencia, subtipo, unidade, finalidade, areaAlq, areaHa,
+    aptidao: { lavoura: Math.round(pLav), pastagem: Math.round(pPast), reserva: Math.round(pRes), informada: aptidaoInformada },
+    precos, rHaMix: Math.round(rHaMix),
+    acesso, relevo, agua: !!input.agua, energia: !!input.energia,
+    fatorAcesso, fatorRelevo, fatorAgua,
+    terraNua, terraNuaAj, benfeitorias, benfDesc: bDesc, fBenf, benfValor,
+    total, rHaFinal, rAlqFinal,
+    faixaMin: Math.round(total * 0.9), faixaMax: Math.round(total * 1.1),
+    rendaAnual, valorRenda, vtn: precos.vtn,
+    valorPedido: Number(input.valorPedido) > 0 ? Number(input.valorPedido) : null,
+    dados: { finalidade, subtipo, cidade, bairro: referencia },
   };
-  const resultado = await calcularPreco(dados);
-  return { dados, resultado, areaAlq, areaHa, subtipo, cidade, referencia };
+  r.parecer = await gerarParecerFazenda(r).catch(() => null);
+  return r;
+}
+
+async function gerarParecerFazenda(r) {
+  const client = getOpenAI();
+  if (!client) return null;
+  try {
+    const m = (v) => `R$ ${Number(v).toLocaleString('pt-BR')}`;
+    const resp = await client.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: [
+        { role: 'system', content: 'Você é avaliador de imóveis rurais (ref. NBR 14653-3). Escreve um parecer técnico curto e claro para corretor/investidor. Português do Brasil.' },
+        { role: 'user', content: `Parecer de 3-5 frases sobre ${r.subtipo} de ${r.areaHa} ha (${r.areaAlq} alq) em ${r.cidade}-GO, ${r.aptidao.lavoura}% lavoura / ${r.aptidao.pastagem}% pastagem / ${r.aptidao.reserva}% reserva. Terra nua ${m(r.terraNuaAj)} + benfeitorias ${m(r.benfValor)} = ${m(r.total)} (${m(r.rHaFinal)}/ha). Valor por renda (arrendamento) ${m(r.valorRenda)}. Comente se o valor está coerente, o que mais pesa (aptidão/água/acesso), como o comparativo e a renda se relacionam, e 1 ressalva de documentação (matrícula/CAR/georreferenciamento/reserva legal). Não invente números.` },
+      ],
+      temperature: 0.5, max_tokens: 340,
+    });
+    return resp.choices[0].message.content.trim();
+  } catch (e) { console.warn('[Fazenda] parecer:', e.message); return null; }
 }
 
 function formatarFazenda(r) {
   if (!r || r.erro) return `⚠️ ${r?.erro || 'Não foi possível avaliar a propriedade.'}`;
-  const { resultado: R, dados, areaAlq, areaHa, subtipo, cidade, referencia } = r;
-  if (!R || R.erro) return `⚠️ ${R?.erro || 'Não consegui avaliar a propriedade rural.'}`;
   const m = (v) => `R$ ${Number(v || 0).toLocaleString('pt-BR')}`;
-  const total = R.precoRecomendado || 0;
-  const precoAlq = R.precoAlqImovel || (areaAlq > 0 ? Math.round(total / areaAlq) : 0);
-  const precoHa = Math.round(precoAlq / ALQ_HA);
-  const emoji = subtipo === 'fazenda' ? '🌾' : subtipo === 'sitio' ? '🌿' : '🏡';
-  const subLabel = subtipo.charAt(0).toUpperCase() + subtipo.slice(1);
-  const finLabel = dados.finalidade === 'aluguel' ? 'Aluguel' : 'Venda';
+  const n = (v) => Number(v || 0).toLocaleString('pt-BR');
+  const emoji = r.subtipo === 'fazenda' ? '🌾' : r.subtipo === 'sitio' ? '🌿' : '🏡';
+  const subLabel = r.subtipo.charAt(0).toUpperCase() + r.subtipo.slice(1);
 
-  let t = `${emoji} *LAUDO RURAL — ${subLabel}* • ${finLabel}\n`;
-  t += `📍 ${[referencia, cidade].filter(Boolean).join(', ')}-GO\n`;
-  t += `📐 ${areaAlq} alqueire(s) goiano(s) · ${areaHa} ha\n`;
-  const acesso = dados.margemAsfalto ? 'Beira de asfalto' : dados.acessoAsfalto ? 'Acesso pelo asfalto' : 'Acesso por chão';
-  t += `🛣️ ${acesso}\n`;
-  const infra = [dados.temAgua ? '💧 Água' : '', dados.temEnergia ? '⚡ Energia' : ''].filter(Boolean).join(' • ');
-  if (infra) t += `${infra}\n`;
-  if (dados.benfeitorias && dados.benfeitorias.length) t += `🏗️ ${dados.benfeitorias.join(', ')}\n`;
+  let t = `${emoji} *AVALIAÇÃO RURAL — ${subLabel}* (ref. NBR 14653-3)\n`;
+  t += `📍 ${[r.referencia, r.cidade].filter(Boolean).join(', ')}-GO · _${r.precos.regiao}_\n`;
+  t += `📐 ${n(r.areaAlq)} alqueire(s) · ${n(r.areaHa)} ha\n`;
+  t += `🌱 Aptidão: ${r.aptidao.lavoura}% lavoura · ${r.aptidao.pastagem}% pastagem · ${r.aptidao.reserva}% reserva${r.aptidao.informada ? '' : ' _(padrão — informe pra afinar)_'}\n`;
+  const acesso = r.acesso === 'beira' ? 'Beira de asfalto' : r.acesso === 'asfalto' ? 'Acesso pelo asfalto' : 'Estrada de chão';
+  const infra = [`🛣️ ${acesso}`, r.agua ? '💧 Água' : '', r.energia ? '⚡ Energia' : '', r.relevo ? `⛰️ ${r.relevo}` : ''].filter(Boolean).join(' · ');
+  t += `${infra}\n`;
+  if (r.benfeitorias && r.benfeitorias.length) t += `🏗️ ${r.benfeitorias.join(', ')}\n`;
 
-  t += `\n💰 *Faixa de valor:*\n• Mínimo: *${m(R.precoMinimo)}*\n• Recomendado: *${m(total)}*\n• Máximo: *${m(R.precoMaximo)}*\n`;
-  t += `\n📊 *Por alqueire: ${m(precoAlq)}/alq*  ·  *Por hectare: ${m(precoHa)}/ha*\n`;
-  if (R.precoAlqMercado) t += `• Referência de mercado: ${m(R.precoAlqMercado)}/alq\n`;
-  t += `\n⚡ *Liquidez:* ${R.indiceLiquidez || '—'}${R.tempoEstimadoDias ? ` · ~${R.tempoEstimadoDias} dias` : ''}\n`;
+  t += `\n💰 *VALOR DE MERCADO: ${m(r.total)}*\n`;
+  t += `_(faixa ${m(r.faixaMin)} – ${m(r.faixaMax)})_\n`;
+  t += `• *${m(r.rHaFinal)}/ha*  ·  *${m(r.rAlqFinal)}/alqueire*\n`;
 
-  if (Array.isArray(R.ajustesAplicados) && R.ajustesAplicados.length) {
-    t += `\n🔧 *Ajustes aplicados:*\n`;
-    R.ajustesAplicados.slice(0, 8).forEach(a => { t += `• ${a}\n`; });
+  t += `\n🧮 *Composição (método comparativo):*\n`;
+  t += `• Terra nua (aptidão × R$/ha): ${m(r.terraNua)}\n`;
+  t += `   – R$/ha ponderado: ${m(r.rHaMix)} (lavoura ${m(r.precos.lavoura)} · pastagem ${m(r.precos.pastagem)} · reserva ${m(r.precos.reserva)} /ha)\n`;
+  const ajz = [];
+  if (r.fatorAcesso !== 1) ajz.push(`acesso ${r.fatorAcesso > 1 ? '+' : ''}${Math.round((r.fatorAcesso - 1) * 100)}%`);
+  if (r.fatorRelevo !== 1) ajz.push(`relevo ${r.fatorRelevo > 1 ? '+' : ''}${Math.round((r.fatorRelevo - 1) * 100)}%`);
+  if (r.fatorAgua !== 1) ajz.push(`água ${r.fatorAgua > 1 ? '+' : ''}${Math.round((r.fatorAgua - 1) * 100)}%`);
+  if (ajz.length) t += `   – Ajustes: ${ajz.join(', ')} → terra nua ajustada ${m(r.terraNuaAj)}\n`;
+  t += `• Benfeitorias${r.benfDesc.length ? ` (${r.benfDesc.join(', ')})` : ''}: ${m(r.benfValor)}\n`;
+
+  t += `\n📈 *2ª opinião — método da renda (arrendamento):*\n`;
+  t += `• Renda estimada: ${m(r.rendaAnual)}/ano → valor por capitalização (5,5%): *${m(r.valorRenda)}*\n`;
+  if (r.vtn) t += `\n🏛️ *Piso VTN-INCRA:* ${m(r.vtn)}/ha (≈ ${m(Math.round(r.vtn * r.areaHa))} no total) — referência oficial (ITR)\n`;
+  if (r.valorPedido) {
+    const dif = Math.round((r.valorPedido / r.total - 1) * 100);
+    t += `\n🏷️ *Pedido do vendedor:* ${m(r.valorPedido)} (${dif >= 0 ? '+' : ''}${dif}% vs. avaliação)\n`;
   }
-  const comps = (R.analiseIA && R.analiseIA.comparativos) || [];
-  if (comps.length) {
-    t += `\n🔎 *Comparativos de mercado:*\n`;
-    comps.slice(0, 5).forEach(c => {
-      const desc = c.descricao || c.titulo || c.fonte || 'anúncio';
-      t += `• ${desc}${c.preco ? ` — ${m(c.preco)}` : ''}${c.url ? `\n  ${c.url}` : ''}\n`;
-    });
-  }
+
+  if (r.parecer) t += `\n💬 *Parecer técnico:*\n${r.parecer}\n`;
+
+  t += `\n📑 *Checklist de documentação (confirmar antes de fechar):*\n`;
+  t += `• Matrícula atualizada · Georreferenciamento (SIGEF) · CAR · Reserva Legal averbada · ITR/CCIR em dia · sem embargo ambiental/sobreposição\n`;
+
   try {
     const { textoFontes } = require('./fontes');
     t += textoFontes({
-      metodo: 'Avaliação rural por R$/alqueire (base regional) + ajustes de subtipo, acesso ao asfalto, água/energia e benfeitorias.',
+      metodo: 'Método comparativo por aptidão (terra nua × R$/ha por uso) + benfeitorias, com 2ª opinião pela renda (arrendamento). Referência ABNT NBR 14653-3.',
       data: new Date().toLocaleDateString('pt-BR'),
-      grau: R.confiancaFonte === 'alta' ? 'II (amostra robusta)' : 'I (referência)',
-      portais: R.fontesConsultadas,
-      bases: ['Base rural R$/alqueire (Goiás)', 'INCRA/VTN e mercado regional como referência'],
-      obs: 'Estimativa mercadológica de apoio. O valor de terra rural varia MUITO por aptidão (lavoura vs pastagem), água, topografia, documentação (CAR/georreferenciamento) e região — confirme com vistoria e a Planta de Valores / VTN-INCRA do município. 1 alqueire goiano = 4,84 ha.',
+      grau: r.precos.confianca === 'media' ? 'II' : 'I (indicativo)',
+      portais: [r.precos.fonteLabel],
+      bases: ['Scot Consultoria / CEPEA-ESALQ / AgriFatto (R$/ha por uso)', 'VTN-INCRA (piso oficial)', 'Base regional de Goiás por aptidão'],
+      links: r.precos.fontes || [],
+      obs: 'Estimativa mercadológica de apoio. Valor real depende de VISTORIA (aptidão/solo/relevo/água conferidos in loco), documentação (matrícula/CAR/georreferenciamento/reserva legal) e do momento do mercado de grãos/gado. 1 alqueire goiano = 4,84 ha. Base de R$/ha por região a calibrar com dados de fechamento.',
     });
   } catch {}
   return t;

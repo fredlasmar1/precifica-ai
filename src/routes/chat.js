@@ -323,8 +323,8 @@ router.post('/fazenda', async (req, res) => {
     try {
       require('../data/database').salvarLaudo({
         kind: 'fazenda', titulo: `${(r.subtipo || 'rural')} ${r.areaAlq} alq`, tipo: 'rural',
-        finalidade: r.dados.finalidade, cidade: r.cidade, bairro: r.referencia,
-        valor: r.resultado && r.resultado.precoRecomendado, dados: r.dados,
+        finalidade: (r.dados && r.dados.finalidade) || 'venda', cidade: r.cidade, bairro: r.referencia,
+        valor: r.total, dados: r.dados,
         resultado: { view: r, texto: resposta },
       });
     } catch (e) { console.warn('[Fazenda] salvar:', e.message); }

@@ -906,13 +906,31 @@
               </select>
             </div>
           </div>
-          <div class="field">
-            <label>Acesso</label>
-            <select id="fz-acesso">
-              <option value="beira">Beira de asfalto (frente p/ rodovia)</option>
-              <option value="asfalto" selected>Acesso pelo asfalto (perto)</option>
-              <option value="chao">Só estrada de chão</option>
-            </select>
+          <div class="field full">
+            <label>🌱 Aptidão da terra <span class="opt">(% de cada uso — o que MAIS pesa no valor)</span></label>
+            <div class="row" style="grid-template-columns:1fr 1fr 1fr">
+              <input id="fz-lavoura" type="number" min="0" max="100" placeholder="% lavoura" />
+              <input id="fz-pastagem" type="number" min="0" max="100" placeholder="% pastagem" />
+              <input id="fz-reserva" type="number" min="0" max="100" placeholder="% reserva/mata" />
+            </div>
+          </div>
+          <div class="row">
+            <div class="field">
+              <label>Acesso</label>
+              <select id="fz-acesso">
+                <option value="beira">Beira de asfalto (frente p/ rodovia)</option>
+                <option value="asfalto" selected>Acesso pelo asfalto (perto)</option>
+                <option value="chao">Só estrada de chão</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>Relevo / solo</label>
+              <select id="fz-relevo">
+                <option value="plano">Plano / mecanizável</option>
+                <option value="ondulado" selected>Ondulado / misto</option>
+                <option value="acidentado">Acidentado / pedregoso</option>
+              </select>
+            </div>
           </div>
           <div class="row">
             <div class="field">
@@ -924,15 +942,21 @@
               <select id="fz-energia"><option value="1" selected>Tem energia</option><option value="0">Não / não sei</option></select>
             </div>
           </div>
-          <div class="field full">
-            <label>Benfeitorias <span class="opt">(separe por vírgula)</span></label>
-            <input id="fz-benfeitorias" placeholder="Ex: sede, curral, barracão, cerca nova, 2 represas, pasto formado" />
+          <div class="row">
+            <div class="field">
+              <label>Benfeitorias <span class="opt">(vírgula)</span></label>
+              <input id="fz-benfeitorias" placeholder="sede, curral, barracão, pivô, 2 represas" />
+            </div>
+            <div class="field">
+              <label>Valor pedido (R$) <span class="opt">(opcional)</span></label>
+              <input id="fz-pedido" type="number" min="0" placeholder="compara com a avaliação" />
+            </div>
           </div>
           <button class="btn-primary" id="btn-fazenda" type="submit">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21v-8l4-3 4 3v8"/><path d="M17 10V5l3 2v4"/></svg>
             Avaliar propriedade rural
           </button>
-          <div class="hint">Avaliação por <b>R$/alqueire</b> (e por hectare), ajustada por subtipo, acesso ao asfalto, água/energia e benfeitorias. 1 alqueire goiano = 4,84 ha. O valor de terra varia muito por aptidão (lavoura × pastagem) e região — é uma estimativa de apoio.</div>
+          <div class="hint">Padrão <b>NBR 14653-3</b>: <b>terra nua</b> ponderada pela <b>aptidão</b> (lavoura × pastagem × reserva) com R$/ha de mercado por uso (Scot/CEPEA/AgriFatto + piso VTN-INCRA) <b>+ benfeitorias</b>, com 2ª opinião pela <b>renda</b> (arrendamento). 1 alqueire goiano = 4,84 ha.</div>
         </form>
       </div>
 
@@ -1480,10 +1504,15 @@
         referencia: document.getElementById('fz-referencia').value.trim(),
         area: document.getElementById('fz-area').value,
         unidade: document.getElementById('fz-unidade').value,
+        pctLavoura: document.getElementById('fz-lavoura').value,
+        pctPastagem: document.getElementById('fz-pastagem').value,
+        pctReserva: document.getElementById('fz-reserva').value,
         acesso: document.getElementById('fz-acesso').value,
+        relevo: document.getElementById('fz-relevo').value,
         agua: document.getElementById('fz-agua').value === '1',
         energia: document.getElementById('fz-energia').value === '1',
-        benfeitorias: document.getElementById('fz-benfeitorias').value.trim()
+        benfeitorias: document.getElementById('fz-benfeitorias').value.trim(),
+        valorPedido: document.getElementById('fz-pedido').value
       };
       if (!(Number(payload.area) > 0)) { showError('Informe a *área* da propriedade.'); return; }
       busy = true;
