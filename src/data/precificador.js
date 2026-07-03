@@ -208,7 +208,8 @@ async function calcularPreco(dadosImovel) {
   // Prioridade 5 (último recurso): Multiplicador de bairro sobre média da cidade
   // Só entra quando NENHUMA fonte de mercado retornou dados.
   // Usa a média conhecida da cidade × multiplicador do bairro como estimativa.
-  if (!precoM2Base && perfilBairro?.conhecido) {
+  // Rural entra SEMPRE (não depende de bairro conhecido — a "localização" é rodovia/região).
+  if (!precoM2Base && (perfilBairro?.conhecido || tipo === 'rural')) {
     // Médias separadas por TIPO de imóvel — terrenos têm preço/m² bem menor que casas/aptos
     // Valores baseados na realidade do mercado de Anápolis-GO (2024-2025)
     const mediasCidade = {
@@ -249,8 +250,9 @@ async function calcularPreco(dadosImovel) {
     const mediasCidadeData = mediasCidade[cidadeKey] || mediasCidade['default'];
     const mediasPorFinalidade = finalidade === 'aluguel' ? mediasCidadeData.aluguel : mediasCidadeData.venda;
     const mediaBase = mediasPorFinalidade[tipo] || mediasPorFinalidade.default;
-    precoM2Base = Math.round(mediaBase * perfilBairro.mult);
-    console.log(`[Precificador] Fallback: ${tipo}/${finalidade} base R$${mediaBase}/m² × ${perfilBairro.mult} = R$${precoM2Base}/m²`);
+    const multBairro = (perfilBairro && perfilBairro.mult) || 1.0; // rural sem bairro conhecido → 1.0
+    precoM2Base = Math.round(mediaBase * multBairro);
+    console.log(`[Precificador] Fallback: ${tipo}/${finalidade} base R$${mediaBase}/m² × ${multBairro} = R$${precoM2Base}/m²`);
     fontePrincipal = `Estimativa base (sem dados de mercado disponíveis para ${bairro})`;
     confiancaFonte = 'baixa';
     console.log(`[Precificador] Fallback base: R$ ${precoM2Base}/m² (mult ${perfilBairro.mult}x sobre média ${cidade})`);
