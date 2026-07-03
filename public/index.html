@@ -351,6 +351,7 @@
         <button class="tab" id="tab-predio" onclick="switchTab('predio')"><svg viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="1"/><path d="M9 7h2M13 7h2M9 11h2M13 11h2M9 15h2M13 15h2"/></svg>Prédios</button>
         <button class="tab" id="tab-terreno" onclick="switchTab('terreno')"><svg viewBox="0 0 24 24"><path d="M3 20h18"/><path d="M5 20V9l7-5 7 5v11"/><path d="M9 20v-5h6v5"/></svg>Terrenos</button>
         <button class="tab" id="tab-bts" onclick="switchTab('bts')"><svg viewBox="0 0 24 24"><rect x="3" y="8" width="8" height="12" rx="1"/><rect x="13" y="4" width="8" height="16" rx="1"/><path d="M6 12h2M6 16h2M16 8h2M16 12h2M16 16h2"/><path d="M2 20h20"/></svg>BTS</button>
+        <button class="tab" id="tab-fazenda" onclick="switchTab('fazenda')"><svg viewBox="0 0 24 24"><path d="M3 21h18"/><path d="M5 21v-8l4-3 4 3v8"/><path d="M13 21v-5h4v5"/><path d="M17 10V5l3 2v4"/></svg>Fazendas</button>
         <button class="tab" id="tab-fipe" onclick="switchTab('fipe')"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><rect x="7" y="11" width="3" height="7" rx="1"/><rect x="12" y="7" width="3" height="11" rx="1"/><rect x="17" y="4" width="3" height="14" rx="1"/></svg>FIPE</button>
         <button class="tab" id="tab-empresa" onclick="switchTab('empresa')"><svg viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M3 13h18"/></svg>Empresa</button>
         <button class="tab" id="tab-historico" onclick="switchTab('historico')"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Histórico</button>
@@ -862,6 +863,79 @@
         </div>
       </div>
 
+      <!-- Fazendas / Rural -->
+      <div class="pane" id="pane-fazenda">
+        <form onsubmit="avaliarFazenda(event)">
+          <div class="row">
+            <div class="field">
+              <label>Tipo</label>
+              <select id="fz-subtipo">
+                <option value="fazenda" selected>🌾 Fazenda (20+ alq)</option>
+                <option value="sitio">🌿 Sítio (5–20 alq)</option>
+                <option value="chacara">🏡 Chácara (até 5 alq)</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>Finalidade</label>
+              <select id="fz-finalidade">
+                <option value="venda">Venda</option>
+                <option value="aluguel">Arrendamento/Aluguel</option>
+              </select>
+            </div>
+          </div>
+          <div class="row">
+            <div class="field">
+              <label>Cidade / município</label>
+              <input id="fz-cidade" value="Anápolis" />
+            </div>
+            <div class="field">
+              <label>Rodovia / região de referência <span class="opt">(opcional)</span></label>
+              <input id="fz-referencia" placeholder="Ex: BR-153, saída p/ Goianésia" />
+            </div>
+          </div>
+          <div class="row">
+            <div class="field">
+              <label>Área</label>
+              <input id="fz-area" type="number" min="0" step="0.01" placeholder="Ex: 30" />
+            </div>
+            <div class="field">
+              <label>Unidade</label>
+              <select id="fz-unidade">
+                <option value="alqueire" selected>Alqueire goiano (4,84 ha)</option>
+                <option value="hectare">Hectare (ha)</option>
+              </select>
+            </div>
+          </div>
+          <div class="field">
+            <label>Acesso</label>
+            <select id="fz-acesso">
+              <option value="beira">Beira de asfalto (frente p/ rodovia)</option>
+              <option value="asfalto" selected>Acesso pelo asfalto (perto)</option>
+              <option value="chao">Só estrada de chão</option>
+            </select>
+          </div>
+          <div class="row">
+            <div class="field">
+              <label>Água</label>
+              <select id="fz-agua"><option value="1" selected>Tem (córrego/nascente/poço)</option><option value="0">Não / não sei</option></select>
+            </div>
+            <div class="field">
+              <label>Energia</label>
+              <select id="fz-energia"><option value="1" selected>Tem energia</option><option value="0">Não / não sei</option></select>
+            </div>
+          </div>
+          <div class="field full">
+            <label>Benfeitorias <span class="opt">(separe por vírgula)</span></label>
+            <input id="fz-benfeitorias" placeholder="Ex: sede, curral, barracão, cerca nova, 2 represas, pasto formado" />
+          </div>
+          <button class="btn-primary" id="btn-fazenda" type="submit">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21v-8l4-3 4 3v8"/><path d="M17 10V5l3 2v4"/></svg>
+            Avaliar propriedade rural
+          </button>
+          <div class="hint">Avaliação por <b>R$/alqueire</b> (e por hectare), ajustada por subtipo, acesso ao asfalto, água/energia e benfeitorias. 1 alqueire goiano = 4,84 ha. O valor de terra varia muito por aptidão (lavoura × pastagem) e região — é uma estimativa de apoio.</div>
+        </form>
+      </div>
+
       <!-- FIPE Anápolis -->
       <div class="pane" id="pane-fipe">
         <div class="row">
@@ -1019,7 +1093,7 @@
     toggleCamposTipo();
 
     function switchTab(which) {
-      for (const t of ['form', 'chat', 'comercial', 'predio', 'terreno', 'bts', 'fipe', 'empresa', 'historico']) {
+      for (const t of ['form', 'chat', 'comercial', 'predio', 'terreno', 'bts', 'fazenda', 'fipe', 'empresa', 'historico']) {
         document.getElementById('tab-' + t).classList.toggle('active', which === t);
         document.getElementById('pane-' + t).classList.toggle('active', which === t);
       }
@@ -1028,6 +1102,7 @@
         : which === 'predio' ? 'Ficha do Prédio'
         : which === 'terreno' ? 'Terreno — Viabilidade'
         : which === 'bts' ? 'BTS — Build to Suit'
+        : which === 'fazenda' ? 'Fazenda — Avaliação Rural'
         : which === 'fipe' ? 'FIPE Anápolis'
         : which === 'empresa' ? 'Avaliação de Empresa' : 'Laudo de Precificação';
       if (which === 'historico') carregarHistorico();
@@ -1293,10 +1368,11 @@
       { key: 'comercial', label: '🏪 Comercial' },
       { key: 'terreno', label: '🌳 Terrenos' },
       { key: 'bts', label: '🏗️ BTS' },
+      { key: 'fazenda', label: '🌾 Fazendas' },
       { key: 'empresa', label: '💼 Empresas' },
     ];
     let histLista = [], histFiltro = 'todos';
-    function histKind(l) { return ['imovel', 'predio', 'comercial', 'terreno', 'bts', 'empresa'].includes(l.kind) ? l.kind : 'imovel'; }
+    function histKind(l) { return ['imovel', 'predio', 'comercial', 'terreno', 'bts', 'fazenda', 'empresa'].includes(l.kind) ? l.kind : 'imovel'; }
     async function carregarHistorico() {
       const box = document.getElementById('lista-historico');
       box.innerHTML = '<div style="color:var(--muted2);font-size:13px;text-align:center;padding:20px;">Carregando…</div>';
@@ -1338,6 +1414,7 @@
         else if (l.kind === 'terreno') { main = `🌳 ${l.titulo || 'Terreno'}`; sub = `${l.bairro || ''} — ${l.cidade || 'Anápolis'} · ${data}`; }
         else if (l.kind === 'bts') { main = `🏗️ ${l.titulo || 'BTS'}`; sub = `${l.bairro || ''} — ${l.cidade || 'Anápolis'} · ${data}`; }
         else if (l.kind === 'predio') { main = `🏢 Prédio: ${l.titulo || ''}`; sub = `${l.bairro || ''} — ${l.cidade || 'Anápolis'} · ${data}`; }
+        else if (l.kind === 'fazenda') { main = `🌾 ${l.titulo || 'Rural'}`; sub = `${[l.bairro, l.cidade].filter(Boolean).join(' — ') || 'Anápolis'} · ${data}`; }
         else {
           const local = [l.endereco, l.bairro].filter(Boolean).join(', ') || l.bairro || '—';
           main = `🏠 ${TIPOS_LABEL[l.tipo] || l.tipo || ''} · ${l.finalidade === 'aluguel' ? 'Aluguel' : 'Venda'}`;
@@ -1389,6 +1466,42 @@
         }
       } catch (err) {
         showError('Erro ao abrir.');
+      }
+    }
+
+    // ── Fazendas / Rural ──
+    async function avaliarFazenda(e) {
+      e.preventDefault();
+      if (busy) return;
+      const payload = {
+        subtipo: document.getElementById('fz-subtipo').value,
+        finalidade: document.getElementById('fz-finalidade').value,
+        cidade: document.getElementById('fz-cidade').value.trim(),
+        referencia: document.getElementById('fz-referencia').value.trim(),
+        area: document.getElementById('fz-area').value,
+        unidade: document.getElementById('fz-unidade').value,
+        acesso: document.getElementById('fz-acesso').value,
+        agua: document.getElementById('fz-agua').value === '1',
+        energia: document.getElementById('fz-energia').value === '1',
+        benfeitorias: document.getElementById('fz-benfeitorias').value.trim()
+      };
+      if (!(Number(payload.area) > 0)) { showError('Informe a *área* da propriedade.'); return; }
+      busy = true;
+      document.getElementById('btn-fazenda').disabled = true;
+      showSpinner('Avaliando a propriedade rural (R$/alqueire + ajustes)…');
+      try {
+        const res = await fetch('/api/fazenda', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (data.error) showError(data.error);
+        else showLaudo(data.response);
+      } catch (err) {
+        showError('Erro de conexão. Tente novamente.');
+      } finally {
+        busy = false;
+        document.getElementById('btn-fazenda').disabled = false;
       }
     }
 
