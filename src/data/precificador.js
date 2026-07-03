@@ -315,7 +315,10 @@ async function calcularPreco(dadosImovel) {
   let notaCalibracao = null;
   let ancoraInfo = null;
   try {
-    const ancora = getAncora(tipo, finalidade, cidade, bairro);
+    // A âncora EBM/PGV é de imóvel URBANO (R$/m² construído/terreno). NÃO pode
+    // calibrar RURAL (R$/m² de terra, ~R$8-12) — senão o valor estoura (blend
+    // com base urbana de ~R$4.000/m²). Rural usa só mercado + base rural própria.
+    const ancora = tipo === 'rural' ? null : getAncora(tipo, finalidade, cidade, bairro);
     if (ancora && ancora.m2 > 0) {
       ancoraInfo = ancora;
       const amostras = analiseIA?.anunciosAnalisados || comparativos?.totalEncontrados || 0;
