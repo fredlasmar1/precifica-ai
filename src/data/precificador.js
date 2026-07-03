@@ -481,18 +481,18 @@ async function calcularPreco(dadosImovel) {
     // Aluguel em R$/m²/mês — valores completamente diferentes de venda
     const mediasFallback = {
       'anapolis': {
-        venda:    { terreno: 800, casa: 3500, apartamento: 5500, comercial: 4000, default: 3000 },
-        aluguel:  { terreno: 3,   casa: 18,   apartamento: 28,   comercial: 22,   default: 18 }
+        venda:    { terreno: 800, casa: 3500, apartamento: 5500, comercial: 4000, rural: 10,   default: 3000 },
+        aluguel:  { terreno: 3,   casa: 18,   apartamento: 28,   comercial: 22,   rural: 0.04, default: 18 }
       },
       'anápolis': null, // alias abaixo
       'goiania': {
-        venda:    { terreno: 1200, casa: 5000, apartamento: 7000, comercial: 5500, default: 4500 },
-        aluguel:  { terreno: 4,    casa: 25,   apartamento: 38,   comercial: 30,   default: 25 }
+        venda:    { terreno: 1200, casa: 5000, apartamento: 7000, comercial: 5500, rural: 12,   default: 4500 },
+        aluguel:  { terreno: 4,    casa: 25,   apartamento: 38,   comercial: 30,   rural: 0.05, default: 25 }
       },
       'goiânia': null, // alias abaixo
       'default': {
-        venda:    { terreno: 600, casa: 2500, apartamento: 4000, comercial: 3000, default: 2000 },
-        aluguel:  { terreno: 2,   casa: 14,   apartamento: 22,   comercial: 18,   default: 14 }
+        venda:    { terreno: 600, casa: 2500, apartamento: 4000, comercial: 3000, rural: 8,    default: 2000 },
+        aluguel:  { terreno: 2,   casa: 14,   apartamento: 22,   comercial: 18,   rural: 0.03, default: 14 }
       }
     };
     mediasFallback['anápolis'] = mediasFallback['anapolis'];
