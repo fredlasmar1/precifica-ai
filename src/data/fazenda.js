@@ -325,17 +325,29 @@ function formatarChacara(r) {
   t += `${infra}\n`;
   if (r.benfeitorias && r.benfeitorias.length) t += `🏗️ ${r.benfeitorias.join(', ')}\n`;
 
-  t += `\n💰 *VALOR DE MERCADO: ${m(r.total)}*\n_(faixa ${m(r.faixaMin)} – ${m(r.faixaMax)})_\n`;
-  t += `• *${m(r.precoM2Final)}/m²* do conjunto\n`;
-  t += `\n🧮 *Composição:*\n`;
-  t += `• Terreno: ${n(r.areaM2)} m² × ${m(r.precos.m2)}/m² = ${m(r.terraNua)}\n`;
+  const semBenf = r.terraNuaAj;
+  const comBenf = r.total;
+  const m2Sem = r.areaM2 > 0 ? Math.round(semBenf / r.areaM2) : 0;
+  t += `\n💰 *ESTIMATIVAS* _(imóvel de recreio com poucos dados — valores aproximados)_\n`;
+  t += `🟫 *Só o terreno* (terra nua): *${m(semBenf)}*  (${m(m2Sem)}/m²)\n`;
+  t += `🏠 *Com benfeitorias* (${r.benfValorInformado != null ? 'informado' : 'estimado'}): *${m(comBenf)}*  (${m(r.precoM2Final)}/m²)\n`;
+
+  if (r.benfValorInformado != null) {
+    t += `\n✅ *VEREDITO FINAL: ${m(comBenf)}*\n`;
+    t += `_terra nua ${m(semBenf)} + benfeitorias informadas ${m(r.benfValor)} · faixa ${m(r.faixaMin)}–${m(r.faixaMax)}_\n`;
+  } else {
+    t += `\n💡 _Pra fechar o *veredito final*: informe o *"Valor das benfeitorias (R$)"* (custo da casa/estrutura). Sem isso, o "com benfeitorias" é só um aproximado por percentual._\n`;
+  }
+
+  t += `\n🧮 *Como cheguei no terreno:*\n`;
+  t += `• ${n(r.areaM2)} m² × ${m(r.precos.m2)}/m² = ${m(r.terraNua)}\n`;
   const ajz = [];
   if (r.fatorAcesso !== 1) ajz.push(`acesso ${r.fatorAcesso > 1 ? '+' : ''}${Math.round((r.fatorAcesso - 1) * 100)}%`);
   if (r.fatorDist !== 1) ajz.push(`distância ${r.fatorDist > 1 ? '+' : ''}${Math.round((r.fatorDist - 1) * 100)}%`);
   if (r.fatorAgua !== 1) ajz.push(`água ${r.fatorAgua > 1 ? '+' : ''}${Math.round((r.fatorAgua - 1) * 100)}%`);
   if (r.fatorCond !== 1) ajz.push(`condomínio +${Math.round((r.fatorCond - 1) * 100)}%`);
-  if (ajz.length) t += `   – Ajustes: ${ajz.join(', ')} → terreno ajustado ${m(r.terraNuaAj)}\n`;
-  t += `• Benfeitorias${r.benfDesc.length ? ` (${r.benfDesc.join(', ')})` : ''}: ${m(r.benfValor)}${r.benfValorInformado != null ? ' _(valor informado)_' : ''}\n`;
+  if (ajz.length) t += `• Ajustes: ${ajz.join(', ')} → *${m(semBenf)}*\n`;
+  if (r.benfValorInformado == null && r.benfDesc.length) t += `• Benfeitorias estimadas (${r.benfDesc.join(', ')}): +${m(r.benfValor)}\n`;
   if (r.valorPedido) {
     const dif = Math.round((r.valorPedido / r.total - 1) * 100);
     t += `\n🏷️ *Pedido do vendedor:* ${m(r.valorPedido)} (${dif >= 0 ? '+' : ''}${dif}% vs. avaliação)\n`;
