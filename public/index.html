@@ -1568,6 +1568,35 @@
     }
 
     // ── Fazendas / Rural ──
+    let fazendaAtual = null;
+    function mostrarAcoesPdfFazenda() {
+      if (!fazendaAtual) return;
+      const laudo = document.querySelector('#result-body .laudo');
+      if (!laudo) return;
+      const bar = document.createElement('div');
+      bar.className = 'pdf-bar';
+      bar.innerHTML = '<button class="btn-pdf" onclick="baixarFazendaPdf(this)">📄 Baixar laudo (PDF)</button>';
+      laudo.prepend(bar);
+    }
+    async function baixarFazendaPdf(btn) {
+      if (!fazendaAtual) return;
+      const solicitante = prompt('Nome do cliente/solicitante (opcional — aparece no PDF):', '') || '';
+      btn.disabled = true;
+      try {
+        const res = await fetch('/api/relatorio-fazenda', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ resultado: fazendaAtual, solicitante })
+        });
+        if (!res.ok) { alert('Não foi possível gerar o PDF. Tente de novo.'); return; }
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = (fazendaAtual.modo === 'recreio' ? 'laudo-chacara.pdf' : 'laudo-fazenda.pdf');
+        document.body.appendChild(a); a.click(); a.remove();
+        URL.revokeObjectURL(url);
+      } catch (err) { alert('Erro de conexão ao gerar o PDF.'); }
+      finally { btn.disabled = false; }
+    }
     function fzModo(which) {
       document.getElementById('fz-modo-prod').classList.toggle('active', which === 'prod');
       document.getElementById('fz-modo-recreio').classList.toggle('active', which === 'recreio');
@@ -1601,8 +1630,8 @@
           body: JSON.stringify(payload)
         });
         const data = await res.json();
-        if (data.error) showError(data.error);
-        else showLaudo(data.response);
+        if (data.error) { showError(data.error); fazendaAtual = null; }
+        else { showLaudo(data.response); fazendaAtual = data.resultado; mostrarAcoesPdfFazenda(); }
       } catch (err) {
         showError('Erro de conexão. Tente novamente.');
       } finally {
@@ -1640,8 +1669,8 @@
           body: JSON.stringify(payload)
         });
         const data = await res.json();
-        if (data.error) showError(data.error);
-        else showLaudo(data.response);
+        if (data.error) { showError(data.error); fazendaAtual = null; }
+        else { showLaudo(data.response); fazendaAtual = data.resultado; mostrarAcoesPdfFazenda(); }
       } catch (err) {
         showError('Erro de conexão. Tente novamente.');
       } finally {

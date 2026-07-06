@@ -539,6 +539,23 @@ router.post('/captacao', async (req, res) => {
   }
 });
 
+/** POST /api/relatorio-fazenda — PDF do laudo rural (fazenda produtiva ou chácara). */
+router.post('/relatorio-fazenda', async (req, res) => {
+  const { resultado, solicitante } = req.body || {};
+  if (!resultado || !(resultado.total > 0)) return res.status(400).json({ error: 'Faça uma avaliação rural primeiro.' });
+  try {
+    const { gerarFazendaPdf } = require('../data/relatorioPdf');
+    const pdf = await gerarFazendaPdf(resultado, { solicitante });
+    res.setHeader('Content-Type', 'application/pdf');
+    const nome = (resultado.modo === 'recreio' ? 'chacara' : 'fazenda') + '-' + (resultado.cidade || 'go').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-');
+    res.setHeader('Content-Disposition', `attachment; filename="laudo-${nome}.pdf"`);
+    res.send(pdf);
+  } catch (err) {
+    console.error('[RelatFazenda API] Erro:', err);
+    res.status(500).json({ error: '⚠️ Erro ao gerar o PDF. Tente novamente.' });
+  }
+});
+
 /** POST /api/relatorio-radar — PDF da lista de alvos do Radar de Expansão. */
 router.post('/relatorio-radar', async (req, res) => {
   const { resultado } = req.body || {};

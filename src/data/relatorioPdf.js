@@ -946,4 +946,125 @@ function gerarRadarPdf(r) {
   });
 }
 
-module.exports = { gerarRelatorioPdf, gerarDossiePdf, gerarEmpresaPdf, gerarRepassePdf, gerarTerrenoPdf, gerarBtsPdf, gerarRadarPdf };
+function gerarFazendaPdf(r, opts = {}) {
+  const solicitante = opts.solicitante || '';
+  const dataEmissao = new Date().toLocaleDateString('pt-BR');
+  const num = (v) => Number(v || 0).toLocaleString('pt-BR');
+  const recreio = r.modo === 'recreio';
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ size: 'A4', bufferPages: true, margins: { top: TOP, bottom: BOTTOM, left: LX, right: 44 } });
+    const chunks = [];
+    doc.on('data', (d) => chunks.push(d));
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
+    doc.on('error', reject);
+    let y = TOP;
+    const ensure = (need) => { if (y + need > PAGE_H - BOTTOM) { doc.addPage(); y = TOP; } };
+    const chrome = () => {
+      doc.rect(0, 0, PAGE_W, 64).fill(BLUE);
+      try { doc.image(LOGO, LX, 22, { height: 20 }); } catch {}
+      doc.font('Helvetica-Bold').fontSize(13).fillColor(WHITE).text(recreio ? 'Avaliação — Chácara de Recreio' : 'Avaliação de Imóvel Rural', LX, 21, { width: W, align: 'right' });
+      doc.font('Helvetica').fontSize(7.5).fillColor('#cfe0ff').text(recreio ? 'Bens Imóveis Corporativos · Chácara de lazer' : 'Bens Imóveis Corporativos · Terra nua + benfeitorias (ref. NBR 14653-3)', LX, 38, { width: W, align: 'right' });
+      const fy = PAGE_H - 46; doc.page.margins.bottom = 0;
+      doc.moveTo(LX, fy).lineTo(RX, fy).lineWidth(0.5).strokeColor(LINE).stroke();
+      doc.font('Helvetica').fontSize(6.8).fillColor(MUTED).text(`${RAZAO} · ${CRECI_J} · ${ENDERECO}`, LX, fy + 5, { width: W, lineBreak: false });
+      doc.font('Helvetica').fontSize(6.8).fillColor(MUTED).text(`${CONTATO}  ·  documento gerado por Precifica Aí`, LX, fy + 15, { width: W * 0.8, lineBreak: false });
+      doc.font('Helvetica').fontSize(6.8).fillColor(MUTED).text(`Emitido em ${dataEmissao}`, RX - 120, fy + 15, { width: 120, align: 'right' });
+    };
+    const band = (title) => { ensure(22); doc.rect(LX, y, W, 15).fill(BLUE); doc.font('Helvetica-Bold').fontSize(8).fillColor(WHITE).text(title, LX + 8, y + 4, { lineBreak: false }); y += 20; };
+    const paragraph = (t, size = 8.5) => { ensure(28); doc.font('Helvetica').fontSize(size).fillColor(INK).text(clean(t), LX, y, { width: W, align: 'justify', lineGap: 1.5 }); y = doc.y + 8; };
+    const kv = (k, v) => { ensure(13); doc.font('Helvetica-Bold').fontSize(8).fillColor(INK).text(`${k}: `, LX + 4, y, { continued: true, width: W - 8 }); doc.font('Helvetica').fontSize(8).fillColor(INK).text(clean(String(v))); y = doc.y + 3; };
+
+    doc.font('Helvetica-Bold').fontSize(16).fillColor(NAVY).text(recreio ? 'AVALIAÇÃO — CHÁCARA DE RECREIO' : 'AVALIAÇÃO DE IMÓVEL RURAL', LX, y, { width: W, align: 'center' });
+    doc.font('Helvetica').fontSize(8).fillColor(BLUE).text(recreio ? 'Valor por m² de mercado + benfeitorias' : 'Terra nua por aptidão + benfeitorias · 2ª opinião pela renda (ref. NBR 14653-2/3)', LX, y + 20, { width: W, align: 'center' });
+    y += 38;
+
+    const cell = (x, w, label, value) => {
+      doc.rect(x, y, w, 24).lineWidth(0.5).strokeColor(LINE).stroke();
+      doc.font('Helvetica').fontSize(5.5).fillColor(LABEL).text(String(label).toUpperCase(), x + 5, y + 4, { width: w - 10, lineBreak: false });
+      doc.font('Helvetica-Bold').fontSize(8.5).fillColor(INK).text(value || '—', x + 5, y + 12, { width: w - 10, height: 10, ellipsis: true, lineBreak: false });
+    };
+    const areaTxt = recreio ? `${num(r.areaM2)} m² (${(r.areaM2 / 10000).toLocaleString('pt-BR')} ha)` : `${num(r.areaAlq)} alq · ${num(r.areaHa)} ha`;
+    cell(LX, W * 0.55, 'Local', `${txt(r.referencia || '')} ${txt(r.cidade || 'Anápolis')}/GO`.trim());
+    cell(LX + W * 0.55, W * 0.45, 'Solicitante', txt(solicitante)); y += 24;
+    cell(LX, W * 0.55, recreio ? 'Chácara de recreio' : 'Imóvel rural', areaTxt);
+    cell(LX + W * 0.55, W * 0.45, 'Responsável', `${CORRETOR} · ${CRECI_F}`); y += 24;
+    y += 10;
+
+    // Destaque de valor
+    if (recreio) {
+      const veredito = r.benfValorInformado != null;
+      ensure(66);
+      doc.roundedRect(LX, y, W, 58, 8).fill(BLUE);
+      doc.font('Helvetica').fontSize(7.5).fillColor('#cfe0ff').text('SÓ O TERRENO (terra nua)', LX + 16, y + 9);
+      doc.font('Helvetica-Bold').fontSize(14).fillColor(WHITE).text(brl(r.terraNuaAj), LX + 16, y + 19);
+      doc.font('Helvetica').fontSize(7.5).fillColor('#cfe0ff').text(veredito ? 'VEREDITO FINAL (com benfeitorias)' : 'COM BENFEITORIAS (estimado)', RX - 230, y + 9, { width: 220, align: 'right' });
+      doc.font('Helvetica-Bold').fontSize(veredito ? 17 : 14).fillColor(WHITE).text(brl(r.total), RX - 230, y + 18, { width: 220, align: 'right' });
+      doc.font('Helvetica').fontSize(7).fillColor('#cfe0ff').text(`${brl(r.precoM2Final)}/m²${veredito ? '  ✓ dados completos' : ''}`, RX - 230, y + 40, { width: 220, align: 'right' });
+      y += 68;
+    } else {
+      ensure(58);
+      doc.roundedRect(LX, y, W, 50, 8).fill(BLUE);
+      doc.font('Helvetica').fontSize(8).fillColor('#cfe0ff').text('VALOR DE MERCADO', LX + 16, y + 9);
+      doc.font('Helvetica-Bold').fontSize(20).fillColor(WHITE).text(brl(r.total), LX + 16, y + 20);
+      doc.font('Helvetica').fontSize(7.5).fillColor('#cfe0ff').text('POR HECTARE / ALQUEIRE', RX - 210, y + 9, { width: 200, align: 'right' });
+      doc.font('Helvetica-Bold').fontSize(13).fillColor(WHITE).text(`${brl(r.rHaFinal)}/ha · ${brl(r.rAlqFinal)}/alq`, RX - 210, y + 22, { width: 200, align: 'right' });
+      y += 60;
+    }
+
+    if (recreio) {
+      band('CARACTERÍSTICAS');
+      kv('Distância da cidade', r.distanciaKm ? `${r.distanciaKm} km` : '—');
+      kv('Acesso', r.acesso === 'beira' ? 'Beira de asfalto' : r.acesso === 'asfalto' ? 'Asfalto perto' : 'Estrada de chão');
+      kv('Infraestrutura', [r.agua ? 'água' : null, r.energia ? 'energia' : null, r.condominio ? 'condomínio fechado' : null].filter(Boolean).join(', ') || '—');
+      if (r.benfeitorias && r.benfeitorias.length) kv('Benfeitorias', r.benfeitorias.join(', '));
+
+      band('COMPOSIÇÃO DO VALOR');
+      kv('Terreno', `${num(r.areaM2)} m² × ${brl(r.precos.m2)}/m² = ${brl(r.terraNua)}`);
+      kv('Terreno ajustado (acesso/distância/água)', brl(r.terraNuaAj));
+      kv('Benfeitorias', `${brl(r.benfValor)}${r.benfValorInformado != null ? ' (valor informado)' : ' (estimado por percentual)'}`);
+      kv('= Com benfeitorias', brl(r.total));
+      if (r.benfValorInformado == null) paragraph('Observação: o valor das benfeitorias foi estimado por percentual (dados incompletos). Para o veredito final preciso, informe o custo de construção da casa/estrutura — a casa costuma ser a maior parte do valor de uma chácara de recreio.', 8);
+    } else {
+      band('APTIDÃO E TERRA NUA');
+      kv('Aptidão', `${r.aptidao.lavoura}% lavoura · ${r.aptidao.pastagem}% pastagem · ${r.aptidao.reserva}% reserva`);
+      kv('R$/ha por uso', `lavoura ${brl(r.precos.lavoura)} · pastagem ${brl(r.precos.pastagem)} · reserva ${brl(r.precos.reserva)}`);
+      kv('R$/ha ponderado', `${brl(r.rHaMix)} (${r.precos.regiao})`);
+      kv('Acesso / relevo / água', `${r.acesso || '—'} · ${r.relevo || '—'} · ${r.agua ? 'com água' : 'sem água'}`);
+      kv('Terra nua', `${brl(r.terraNua)} → ajustada ${brl(r.terraNuaAj)}`);
+      kv('Benfeitorias', brl(r.benfValor));
+
+      band('2ª OPINIÃO — MÉTODO DA RENDA');
+      kv('Renda estimada (arrendamento)', `${brl(r.rendaAnual)}/ano`);
+      kv('Valor por capitalização (5,5%)', brl(r.valorRenda));
+      if (r.vtn) kv('Piso VTN-INCRA', `${brl(r.vtn)}/ha (≈ ${brl(Math.round(r.vtn * r.areaHa))})`);
+    }
+
+    if (r.valorPedido) { band('COMPARAÇÃO'); kv('Valor pedido pelo vendedor', `${brl(r.valorPedido)} (${Math.round((r.valorPedido / r.total - 1) * 100)}% vs. avaliação)`); }
+
+    if (r.parecer) { band('PARECER TÉCNICO'); paragraph(r.parecer); }
+
+    band('DOCUMENTAÇÃO A CONFERIR');
+    paragraph('Matrícula atualizada · Georreferenciamento (SIGEF) · CAR (Cadastro Ambiental Rural) · Reserva Legal averbada · ITR/CCIR em dia · ausência de embargo ambiental, sobreposição ou litígio possessório.', 8);
+
+    band('FONTES E RESSALVAS');
+    kv('Método', recreio ? 'Comparativo por R$/m² de chácaras de recreio + benfeitorias.' : 'Comparativo por aptidão (terra nua × R$/ha por uso) + benfeitorias, com 2ª opinião pela renda. Ref. ABNT NBR 14653-3.');
+    kv('Fontes', recreio ? 'Anúncios de mercado (VivaReal/ZAP/Chaves na Mão/OLX).' : 'Scot/CEPEA/AgriFatto (R$/ha por uso), VTN-INCRA, base regional de Goiás.');
+    kv('Consulta em', dataEmissao);
+    paragraph('Estimativa mercadológica de apoio à decisão. O valor definitivo depende de vistoria in loco (aptidão/solo/relevo/água), documentação regular e do momento de mercado. Não substitui laudo NBR completo com vistoria. 1 alqueire goiano = 4,84 ha.', 8);
+
+    ensure(56);
+    y += 14;
+    const half = W / 2;
+    doc.lineWidth(0.7).strokeColor(NAVY).moveTo(LX + half / 2 - 80, y).lineTo(LX + half / 2 + 80, y).stroke();
+    doc.font('Helvetica').fontSize(8).fillColor(LABEL).text('CORRETOR RESPONSÁVEL', LX + half / 2 - 80, y + 5, { width: 160, align: 'center' });
+    doc.font('Helvetica-Bold').fontSize(9).fillColor(INK).text(CORRETOR, LX + half / 2 - 90, y + 16, { width: 180, align: 'center' });
+    doc.font('Helvetica').fontSize(8).fillColor(MUTED).text(`${CRECI_F} · ${RAZAO} (${CRECI_J})`, LX + half / 2 - 90, y + 28, { width: 180, align: 'center' });
+
+    const range = doc.bufferedPageRange();
+    for (let i = 0; i < range.count; i++) { doc.switchToPage(range.start + i); chrome(); }
+    doc.flushPages();
+    doc.end();
+  });
+}
+
+module.exports = { gerarRelatorioPdf, gerarDossiePdf, gerarEmpresaPdf, gerarRepassePdf, gerarTerrenoPdf, gerarBtsPdf, gerarRadarPdf, gerarFazendaPdf };
