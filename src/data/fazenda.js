@@ -215,4 +215,145 @@ function formatarFazenda(r) {
   return t;
 }
 
-module.exports = { avaliarFazenda, formatarFazenda };
+// ── CHÁCARA DE RECREIO (pequena, de lazer) — modelo por R$/m², NÃO por aptidão ──
+// Chácara de recreio (500 m² a poucos ha) é mercado de LAZER/proximidade, não de
+// produção. Vale por R$/m² de chácara na região + benfeitorias (casa é o que mais
+// pesa). Distância à cidade, água, energia, condomínio fechado ajustam.
+async function precoM2Chacara(cidade) {
+  const base = { m2: 40, fonteLabel: 'Base de chácara de recreio (interior GO — referência)', fontes: [], confianca: 'baixa' };
+  const apiKey = process.env.PERPLEXITY_API_KEY;
+  if (!apiKey) return base;
+  try {
+    const prompt = `Qual o preço de mercado de CHÁCARAS DE RECREIO / LAZER à venda em ${cidade}, Goiás, em 2025, em R$ por METRO QUADRADO do terreno (só a terra, sem contar a casa)? Considere chácaras pequenas (de 1.000 a 20.000 m²). Responda SOMENTE JSON: {"precoM2": R$/m² típico do terreno de chácara de recreio, "obs": "faixa/observação curta"}. Baseie em anúncios reais (VivaReal, ZAP, Chaves na Mão, OLX, imobiliárias locais). Só número real; se não achar, use null.`;
+    const { data } = await axios.post('https://api.perplexity.ai/chat/completions', {
+      model: 'sonar-pro',
+      messages: [
+        { role: 'system', content: 'Pesquisador do mercado de chácaras de recreio no interior de Goiás. Responda SOMENTE JSON com número real de anúncios. Nunca invente.' },
+        { role: 'user', content: prompt },
+      ],
+      temperature: 0.1, max_tokens: 350,
+    }, { timeout: 60000, headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' } });
+    let s = String(data.choices[0].message.content || '').replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
+    const i = s.indexOf('{'), j = s.lastIndexOf('}'); if (i >= 0 && j > i) s = s.slice(i, j + 1);
+    const d = JSON.parse(s);
+    const p = Number(d.precoM2) || 0;
+    if (p >= 3 && p <= 2000) {
+      return { m2: Math.round(p), fonteLabel: `Anúncios de chácaras em ${cidade}`, fontes: (data.citations || []).slice(0, 5), confianca: 'media', obs: d.obs || null };
+    }
+  } catch (e) { console.warn('[Chacara] precoM2:', e.message); }
+  return base;
+}
+
+async function avaliarChacara(input = {}) {
+  const cidade = String(input.cidade || 'Anápolis').trim() || 'Anápolis';
+  const referencia = String(input.referencia || '').trim() || null;
+  const finalidade = input.finalidade === 'aluguel' ? 'aluguel' : 'venda';
+  const areaM2 = Number(input.areaM2 || input.area) || 0;
+  if (areaM2 <= 0) return { erro: 'Informe a área da chácara em m².' };
+  const distanciaKm = Number(input.distanciaKm) || null;
+
+  const precos = await precoM2Chacara(cidade);
+
+  const acesso = input.acesso;
+  const fatorAcesso = acesso === 'beira' ? 1.15 : acesso === 'asfalto' ? 1.08 : 0.90;
+  const fatorAgua = input.agua ? 1.08 : 0.94;
+  const fatorEnergia = input.energia ? 1.05 : 0.95;
+  const condominio = !!input.condominio;
+  const fatorCond = condominio ? 1.10 : 1.0;
+  let fatorDist = 1.0;
+  if (distanciaKm != null) fatorDist = distanciaKm <= 10 ? 1.10 : distanciaKm <= 25 ? 1.03 : distanciaKm <= 50 ? 1.0 : 0.90;
+
+  const terraNua = Math.round(areaM2 * precos.m2);
+  const terraNuaAj = Math.round(terraNua * fatorAcesso * fatorAgua * fatorEnergia * fatorCond * fatorDist);
+
+  // Benfeitorias: casa é o que MAIS pesa numa chácara de recreio.
+  const benfeitorias = Array.isArray(input.benfeitorias) ? input.benfeitorias.filter(Boolean)
+    : String(input.benfeitorias || '').split(',').map(s => s.trim()).filter(Boolean);
+  const bn = benfeitorias.map(norm);
+  let fBenf = 1.0; const bDesc = [];
+  if (bn.some(b => b.includes('casa') || b.includes('sede') || b.includes('sobrado'))) { fBenf *= 1.35; bDesc.push('casa/sede'); }
+  if (bn.some(b => b.includes('piscina'))) { fBenf *= 1.08; bDesc.push('piscina'); }
+  if (bn.some(b => b.includes('poco') || b.includes('poço') || b.includes('nascente') || b.includes('represa') || b.includes('lago'))) { fBenf *= 1.05; bDesc.push('água estruturada'); }
+  if (bn.some(b => b.includes('quiosque') || b.includes('churrasqueira') || b.includes('gourmet') || b.includes('area de lazer') || b.includes('área de lazer'))) { fBenf *= 1.05; bDesc.push('área de lazer'); }
+  if (bn.some(b => b.includes('pomar') || b.includes('fruti'))) { fBenf *= 1.03; bDesc.push('pomar'); }
+  if (bn.some(b => b.includes('solar') || b.includes('fotovolt'))) { fBenf *= 1.03; bDesc.push('energia solar'); }
+  // Valor de benfeitoria informado direto (opcional) tem prioridade sobre o uplift.
+  const benfValorInformado = Number(input.benfValor) > 0 ? Number(input.benfValor) : null;
+  const benfValor = benfValorInformado != null ? benfValorInformado : Math.round(terraNuaAj * (fBenf - 1));
+  const total = terraNuaAj + benfValor;
+  const precoM2Final = areaM2 > 0 ? Math.round(total / areaM2) : 0;
+
+  const r = {
+    modo: 'recreio', cidade, referencia, finalidade, areaM2, distanciaKm,
+    precos, acesso, agua: !!input.agua, energia: !!input.energia, condominio,
+    fatorAcesso, fatorAgua, fatorEnergia, fatorCond, fatorDist,
+    terraNua, terraNuaAj, benfeitorias, benfDesc: bDesc, benfValor, benfValorInformado,
+    total, precoM2Final, faixaMin: Math.round(total * 0.9), faixaMax: Math.round(total * 1.1),
+    valorPedido: Number(input.valorPedido) > 0 ? Number(input.valorPedido) : null,
+    dados: { finalidade, subtipo: 'chacara', cidade, bairro: referencia },
+  };
+  r.parecer = await gerarParecerChacara(r).catch(() => null);
+  return r;
+}
+
+async function gerarParecerChacara(r) {
+  const client = getOpenAI();
+  if (!client) return null;
+  try {
+    const m = (v) => `R$ ${Number(v).toLocaleString('pt-BR')}`;
+    const resp = await client.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: [
+        { role: 'system', content: 'Você é avaliador imobiliário. Escreve parecer curto e claro sobre chácara de recreio. Português do Brasil.' },
+        { role: 'user', content: `Parecer de 3-4 frases sobre uma chácara de recreio de ${r.areaM2.toLocaleString('pt-BR')} m² em ${r.cidade}-GO. Terra ${m(r.terraNuaAj)} (${m(r.precos.m2)}/m²) + benfeitorias ${m(r.benfValor)} = ${m(r.total)}. Benfeitorias: ${r.benfeitorias.join(', ') || 'terreno'}. Comente se está coerente, que a CASA/benfeitorias e a proximidade da cidade pesam muito no valor de recreio, e 1 dica (conferir documentação/registro e o que valoriza revenda). Não invente números.` },
+      ],
+      temperature: 0.5, max_tokens: 280,
+    });
+    return resp.choices[0].message.content.trim();
+  } catch (e) { console.warn('[Chacara] parecer:', e.message); return null; }
+}
+
+function formatarChacara(r) {
+  if (!r || r.erro) return `⚠️ ${r?.erro || 'Não foi possível avaliar a chácara.'}`;
+  const m = (v) => `R$ ${Number(v || 0).toLocaleString('pt-BR')}`;
+  const n = (v) => Number(v || 0).toLocaleString('pt-BR');
+  let t = `🏡 *AVALIAÇÃO — Chácara de Recreio*\n`;
+  t += `📍 ${[r.referencia, r.cidade].filter(Boolean).join(', ')}-GO\n`;
+  t += `📐 ${n(r.areaM2)} m² (${(r.areaM2 / 10000).toLocaleString('pt-BR')} ha)${r.distanciaKm ? ` · ~${r.distanciaKm} km da cidade` : ''}\n`;
+  const acesso = r.acesso === 'beira' ? 'Beira de asfalto' : r.acesso === 'asfalto' ? 'Acesso pelo asfalto' : 'Estrada de chão';
+  const infra = [`🛣️ ${acesso}`, r.agua ? '💧 Água' : '', r.energia ? '⚡ Energia' : '', r.condominio ? '🚪 Condomínio fechado' : ''].filter(Boolean).join(' · ');
+  t += `${infra}\n`;
+  if (r.benfeitorias && r.benfeitorias.length) t += `🏗️ ${r.benfeitorias.join(', ')}\n`;
+
+  t += `\n💰 *VALOR DE MERCADO: ${m(r.total)}*\n_(faixa ${m(r.faixaMin)} – ${m(r.faixaMax)})_\n`;
+  t += `• *${m(r.precoM2Final)}/m²* do conjunto\n`;
+  t += `\n🧮 *Composição:*\n`;
+  t += `• Terreno: ${n(r.areaM2)} m² × ${m(r.precos.m2)}/m² = ${m(r.terraNua)}\n`;
+  const ajz = [];
+  if (r.fatorAcesso !== 1) ajz.push(`acesso ${r.fatorAcesso > 1 ? '+' : ''}${Math.round((r.fatorAcesso - 1) * 100)}%`);
+  if (r.fatorDist !== 1) ajz.push(`distância ${r.fatorDist > 1 ? '+' : ''}${Math.round((r.fatorDist - 1) * 100)}%`);
+  if (r.fatorAgua !== 1) ajz.push(`água ${r.fatorAgua > 1 ? '+' : ''}${Math.round((r.fatorAgua - 1) * 100)}%`);
+  if (r.fatorCond !== 1) ajz.push(`condomínio +${Math.round((r.fatorCond - 1) * 100)}%`);
+  if (ajz.length) t += `   – Ajustes: ${ajz.join(', ')} → terreno ajustado ${m(r.terraNuaAj)}\n`;
+  t += `• Benfeitorias${r.benfDesc.length ? ` (${r.benfDesc.join(', ')})` : ''}: ${m(r.benfValor)}${r.benfValorInformado != null ? ' _(valor informado)_' : ''}\n`;
+  if (r.valorPedido) {
+    const dif = Math.round((r.valorPedido / r.total - 1) * 100);
+    t += `\n🏷️ *Pedido do vendedor:* ${m(r.valorPedido)} (${dif >= 0 ? '+' : ''}${dif}% vs. avaliação)\n`;
+  }
+  if (r.parecer) t += `\n💬 *Parecer:*\n${r.parecer}\n`;
+
+  try {
+    const { textoFontes } = require('./fontes');
+    t += textoFontes({
+      metodo: 'Chácara de recreio: R$/m² do terreno (anúncios de mercado) + benfeitorias, ajustado por acesso, distância da cidade, água, energia e condomínio.',
+      data: new Date().toLocaleDateString('pt-BR'),
+      grau: r.precos.confianca === 'media' ? 'II' : 'I (indicativo)',
+      portais: [r.precos.fonteLabel],
+      links: r.precos.fontes || [],
+      obs: 'Estimativa de apoio. Numa chácara de recreio a CASA/benfeitorias e a proximidade da cidade pesam MUITO — se souber o valor de construção, informe. Confirme documentação (matrícula, registro, IPTU/ITR, condomínio). Diferente de fazenda produtiva (essa é por m² de lazer, não por aptidão agrícola).',
+    });
+  } catch {}
+  return t;
+}
+
+module.exports = { avaliarFazenda, formatarFazenda, avaliarChacara, formatarChacara };

@@ -314,18 +314,21 @@ router.post('/predio', async (req, res) => {
  */
 router.post('/fazenda', async (req, res) => {
   const b = req.body || {};
-  if (!(Number(b.area) > 0)) return res.status(400).json({ error: 'Informe a área da propriedade (alqueires ou hectares).' });
+  const recreio = b.modo === 'recreio';
+  const area = recreio ? Number(b.areaM2 || b.area) : Number(b.area);
+  if (!(area > 0)) return res.status(400).json({ error: recreio ? 'Informe a área da chácara em m².' : 'Informe a área da propriedade (alqueires ou hectares).' });
   try {
-    const { avaliarFazenda, formatarFazenda } = require('../data/fazenda');
-    const r = await avaliarFazenda(b);
+    const fz = require('../data/fazenda');
+    const r = recreio ? await fz.avaliarChacara(b) : await fz.avaliarFazenda(b);
     if (r.erro) return res.status(422).json({ error: r.erro });
-    const resposta = formatarFazenda(r);
+    const resposta = recreio ? fz.formatarChacara(r) : fz.formatarFazenda(r);
     try {
+      const titulo = recreio ? `Chácara ${Number(r.areaM2).toLocaleString('pt-BR')} m²` : `${(r.subtipo || 'rural')} ${r.areaAlq} alq`;
       require('../data/database').salvarLaudo({
-        kind: 'fazenda', titulo: `${(r.subtipo || 'rural')} ${r.areaAlq} alq`, tipo: 'rural',
+        kind: 'fazenda', titulo, tipo: 'rural',
         finalidade: (r.dados && r.dados.finalidade) || 'venda', cidade: r.cidade, bairro: r.referencia,
         valor: r.total, dados: r.dados,
-        resultado: { view: r, texto: resposta },
+        resultado: { view: r, texto: resposta, modo: recreio ? 'recreio' : 'produtiva' },
       });
     } catch (e) { console.warn('[Fazenda] salvar:', e.message); }
     return res.json({ type: 'fazenda', response: resposta, resultado: r });
@@ -739,7 +742,11 @@ router.get('/laudos/:id', async (req, res) => {
     else if (l.kind === 'terreno') response = require('../data/terreno').formatarTerreno(l.resultado);
     else if (l.kind === 'bts') response = require('../data/bts').formatarBTS(l.resultado);
     else if (l.kind === 'predio') response = require('../data/fichaPredio').formatarBuscaPredio((l.resultado || {}).ficha, { comparativos: (l.resultado || {}).unidades || [] });
-    else if (l.kind === 'fazenda') response = (l.resultado && l.resultado.view) ? require('../data/fazenda').formatarFazenda(l.resultado.view) : ((l.resultado || {}).texto || 'Laudo indisponível.');
+    else if (l.kind === 'fazenda') {
+      const view = l.resultado && l.resultado.view;
+      const fz = require('../data/fazenda');
+      response = view ? (view.modo === 'recreio' ? fz.formatarChacara(view) : fz.formatarFazenda(view)) : ((l.resultado || {}).texto || 'Laudo indisponível.');
+    }
     else response = gerarLaudo(l.dados, l.resultado);
     res.json({ id: l.id, criado_em: l.criado_em, kind: l.kind, dados: l.dados, resultado: l.resultado, response });
   } catch (err) { res.status(500).json({ error: err.message }); }

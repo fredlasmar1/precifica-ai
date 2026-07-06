@@ -865,6 +865,11 @@
 
       <!-- Fazendas / Rural -->
       <div class="pane" id="pane-fazenda">
+        <div class="bts-sub">
+          <button type="button" id="fz-modo-prod" class="bts-sub-btn active" onclick="fzModo('prod')">🌾 Produtiva (fazenda/sítio)</button>
+          <button type="button" id="fz-modo-recreio" class="bts-sub-btn" onclick="fzModo('recreio')">🏡 Chácara de recreio</button>
+        </div>
+        <div id="fz-form-produtiva">
         <form onsubmit="avaliarFazenda(event)">
           <div class="row">
             <div class="field">
@@ -958,6 +963,75 @@
           </button>
           <div class="hint">Padrão <b>NBR 14653-3</b>: <b>terra nua</b> ponderada pela <b>aptidão</b> (lavoura × pastagem × reserva) com R$/ha de mercado por uso (Scot/CEPEA/AgriFatto + piso VTN-INCRA) <b>+ benfeitorias</b>, com 2ª opinião pela <b>renda</b> (arrendamento). 1 alqueire goiano = 4,84 ha.</div>
         </form>
+        </div><!-- /fz-form-produtiva -->
+
+        <div id="fz-form-recreio" style="display:none">
+          <form onsubmit="avaliarChacara(event)">
+            <div class="row">
+              <div class="field">
+                <label>Cidade / município</label>
+                <input id="rc-cidade" value="Anápolis" />
+              </div>
+              <div class="field">
+                <label>Bairro / região <span class="opt">(opcional)</span></label>
+                <input id="rc-referencia" placeholder="Ex: cond. Recanto, rod. p/ Abadiânia" />
+              </div>
+            </div>
+            <div class="row">
+              <div class="field">
+                <label>Área do terreno (m²)</label>
+                <input id="rc-area" type="number" min="0" placeholder="10000" />
+              </div>
+              <div class="field">
+                <label>Distância da cidade (km) <span class="opt">(opcional)</span></label>
+                <input id="rc-distancia" type="number" min="0" placeholder="Ex: 8" />
+              </div>
+            </div>
+            <div class="row">
+              <div class="field">
+                <label>Acesso</label>
+                <select id="rc-acesso">
+                  <option value="beira">Beira de asfalto</option>
+                  <option value="asfalto" selected>Asfalto perto</option>
+                  <option value="chao">Estrada de chão</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>Condomínio fechado?</label>
+                <select id="rc-condominio"><option value="0" selected>Não (avulsa)</option><option value="1">Sim (condomínio)</option></select>
+              </div>
+            </div>
+            <div class="row">
+              <div class="field">
+                <label>Água</label>
+                <select id="rc-agua"><option value="1" selected>Tem (poço/nascente/rede)</option><option value="0">Não</option></select>
+              </div>
+              <div class="field">
+                <label>Energia</label>
+                <select id="rc-energia"><option value="1" selected>Tem energia</option><option value="0">Não</option></select>
+              </div>
+            </div>
+            <div class="field full">
+              <label>Benfeitorias <span class="opt">(vírgula — a casa pesa muito)</span></label>
+              <input id="rc-benfeitorias" placeholder="Ex: casa 3 quartos, piscina, quiosque, poço, pomar" />
+            </div>
+            <div class="row">
+              <div class="field">
+                <label>Valor das benfeitorias (R$) <span class="opt">(opcional, mais preciso)</span></label>
+                <input id="rc-benfvalor" type="number" min="0" placeholder="Custo da casa/estrutura, se souber" />
+              </div>
+              <div class="field">
+                <label>Valor pedido (R$) <span class="opt">(opcional)</span></label>
+                <input id="rc-pedido" type="number" min="0" placeholder="compara com a avaliação" />
+              </div>
+            </div>
+            <button class="btn-primary" id="btn-chacara" type="submit">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12l9-8 9 8"/><path d="M5 10v10h14V10"/><path d="M9 20v-6h6v6"/></svg>
+              Avaliar chácara
+            </button>
+            <div class="hint">Modelo de <b>chácara de recreio/lazer</b>: <b>R$/m² do terreno</b> (anúncios reais da região) + <b>benfeitorias</b> (a casa é o que mais pesa), ajustado por acesso, distância da cidade, água, energia e condomínio. É outro mercado — não é por aptidão agrícola como a fazenda produtiva.</div>
+          </form>
+        </div>
       </div>
 
       <!-- FIPE Anápolis -->
@@ -1494,6 +1568,48 @@
     }
 
     // ── Fazendas / Rural ──
+    function fzModo(which) {
+      document.getElementById('fz-modo-prod').classList.toggle('active', which === 'prod');
+      document.getElementById('fz-modo-recreio').classList.toggle('active', which === 'recreio');
+      document.getElementById('fz-form-produtiva').style.display = which === 'prod' ? '' : 'none';
+      document.getElementById('fz-form-recreio').style.display = which === 'recreio' ? '' : 'none';
+    }
+    async function avaliarChacara(e) {
+      e.preventDefault();
+      if (busy) return;
+      const payload = {
+        modo: 'recreio',
+        cidade: document.getElementById('rc-cidade').value.trim(),
+        referencia: document.getElementById('rc-referencia').value.trim(),
+        areaM2: document.getElementById('rc-area').value,
+        distanciaKm: document.getElementById('rc-distancia').value,
+        acesso: document.getElementById('rc-acesso').value,
+        condominio: document.getElementById('rc-condominio').value === '1',
+        agua: document.getElementById('rc-agua').value === '1',
+        energia: document.getElementById('rc-energia').value === '1',
+        benfeitorias: document.getElementById('rc-benfeitorias').value.trim(),
+        benfValor: document.getElementById('rc-benfvalor').value,
+        valorPedido: document.getElementById('rc-pedido').value
+      };
+      if (!(Number(payload.areaM2) > 0)) { showError('Informe a *área* da chácara em m².'); return; }
+      busy = true;
+      document.getElementById('btn-chacara').disabled = true;
+      showSpinner('Avaliando a chácara de recreio (R$/m² de mercado + benfeitorias)…');
+      try {
+        const res = await fetch('/api/fazenda', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (data.error) showError(data.error);
+        else showLaudo(data.response);
+      } catch (err) {
+        showError('Erro de conexão. Tente novamente.');
+      } finally {
+        busy = false;
+        document.getElementById('btn-chacara').disabled = false;
+      }
+    }
     async function avaliarFazenda(e) {
       e.preventDefault();
       if (busy) return;
