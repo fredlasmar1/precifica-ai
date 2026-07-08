@@ -111,9 +111,9 @@ function filtrarRelevanciaApartamento(resultado, metragemRef, quartosRef, tipo =
           }
         }
       } else {
-        // Apartamento: ±50% simétrico
+        // Apartamento: ±65% simétrico (mais tolerante — amostra melhor)
         const desvioArea = Math.abs(area - metragemRef) / metragemRef;
-        if (desvioArea > 0.50) {
+        if (desvioArea > 0.65) {
           descartados.push(`${area}m² descartado (desvia ${Math.round(desvioArea*100)}% da metragem de referência ${metragemRef}m²)`);
           return false;
         }
@@ -137,14 +137,14 @@ function filtrarRelevanciaApartamento(resultado, metragemRef, quartosRef, tipo =
     descartados.forEach(d => console.log(`  ↳ ${d}`));
   }
 
-  if (filtrados.length === 0) {
-    // Todos descartados por relevância — relaxa o filtro de metragem para ±80%
-    // para não ficar sem nenhum comparativo
-    console.log('[Relevância] Todos descartados — relaxando filtro para ±80%');
+  if (filtrados.length < 3) {
+    // Poucos sobraram (<3) — relaxa o filtro de metragem para ±90% para não
+    // esvaziar a amostra e aproveitar mais anúncios reais.
+    console.log(`[Relevância] Só ${filtrados.length} sobrou(aram) — relaxando filtro para ±90%`);
     const filtradosRelaxados = resultado.comparativos.filter(c => {
       const area = c.area || 0;
       if (area > 0 && metragemRef > 0) {
-        return Math.abs(area - metragemRef) / metragemRef <= 0.80;
+        return Math.abs(area - metragemRef) / metragemRef <= 0.90;
       }
       return true;
     });
