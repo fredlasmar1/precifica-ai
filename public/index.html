@@ -354,6 +354,7 @@
         <button class="tab" id="tab-fazenda" onclick="switchTab('fazenda')"><svg viewBox="0 0 24 24"><path d="M3 21h18"/><path d="M5 21v-8l4-3 4 3v8"/><path d="M13 21v-5h4v5"/><path d="M17 10V5l3 2v4"/></svg>Fazendas</button>
         <button class="tab" id="tab-fipe" onclick="switchTab('fipe')"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><rect x="7" y="11" width="3" height="7" rx="1"/><rect x="12" y="7" width="3" height="11" rx="1"/><rect x="17" y="4" width="3" height="14" rx="1"/></svg>FIPE</button>
         <button class="tab" id="tab-empresa" onclick="switchTab('empresa')"><svg viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M3 13h18"/></svg>Empresa</button>
+        <button class="tab" id="tab-decisao" onclick="switchTab('decisao')"><svg viewBox="0 0 24 24"><path d="M12 3v18"/><path d="M5 7h14"/><path d="M5 7l-2.5 6a3.5 3.5 0 0 0 5 0z"/><path d="M19 7l-2.5 6a3.5 3.5 0 0 0 5 0z"/><path d="M8 21h8"/></svg>Alugar/Vender</button>
         <button class="tab" id="tab-historico" onclick="switchTab('historico')"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Histórico</button>
         <button class="tab" id="tab-chat" onclick="switchTab('chat')"><svg viewBox="0 0 24 24"><path d="M21 11.5a8.38 8.38 0 0 1-8.5 8.5 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 17 0z"/></svg>Conversar</button>
       </div>
@@ -1131,6 +1132,77 @@
           <div class="hint">Faixa de valor por 3 métodos + parecer. Apoio à negociação (não é laudo contábil).</div>
         </form>
       </div>
+
+      <!-- Alugar × Vender e Investir -->
+      <div class="pane" id="pane-decisao">
+        <form onsubmit="avaliarDecisao(event)">
+          <div class="row">
+            <div class="field">
+              <label>Valor de mercado do imóvel (R$)</label>
+              <input id="d-valor" type="number" min="0" placeholder="500000" />
+            </div>
+            <div class="field">
+              <label>Aluguel mensal (R$) <span class="opt">(vazio = estimo)</span></label>
+              <input id="d-aluguel" type="number" min="0" placeholder="Ex: 2500" />
+            </div>
+          </div>
+          <div class="row">
+            <div class="field">
+              <label>Horizonte (anos)</label>
+              <input id="d-anos" type="number" min="1" placeholder="10" />
+            </div>
+            <div class="field">
+              <label>Valorização do imóvel (%/ano) <span class="opt">(padrão IPCA)</span></label>
+              <input id="d-valorizacao" type="number" min="0" step="0.1" placeholder="ex: 4.7" />
+            </div>
+          </div>
+          <div class="row">
+            <div class="field">
+              <label>Taxa dos títulos (% a.a.) <span class="opt">(padrão CDI)</span></label>
+              <input id="d-titulos" type="number" min="0" step="0.1" placeholder="ex: 14.15" />
+            </div>
+            <div class="field">
+              <label>IR dos títulos (%) <span class="opt">(longo prazo 15%)</span></label>
+              <input id="d-irtitulos" type="number" min="0" step="0.5" placeholder="15" />
+            </div>
+          </div>
+          <div class="row">
+            <div class="field">
+              <label>Vacância (%/ano) <span class="opt"></span></label>
+              <input id="d-vacancia" type="number" min="0" placeholder="8" />
+            </div>
+            <div class="field">
+              <label>Administração (% do aluguel) <span class="opt"></span></label>
+              <input id="d-admin" type="number" min="0" placeholder="8 (0 se você mesmo)" />
+            </div>
+          </div>
+          <div class="row">
+            <div class="field">
+              <label>IPTU (R$/ano) <span class="opt">(padrão 0,7%)</span></label>
+              <input id="d-iptu" type="number" min="0" placeholder="estimo se vazio" />
+            </div>
+            <div class="field">
+              <label>IR sobre o aluguel (%) <span class="opt"></span></label>
+              <input id="d-iraluguel" type="number" min="0" placeholder="15" />
+            </div>
+          </div>
+          <div class="row">
+            <div class="field">
+              <label>Custos da venda (%) <span class="opt">(corretagem)</span></label>
+              <input id="d-custovenda" type="number" min="0" placeholder="6" />
+            </div>
+            <div class="field">
+              <label>IR ganho de capital (R$) <span class="opt">(opcional)</span></label>
+              <input id="d-irganho" type="number" min="0" placeholder="0 (isento?)" />
+            </div>
+          </div>
+          <button class="btn-primary" id="btn-decisao" type="submit">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18"/><path d="M5 7h14"/><path d="M8 21h8"/></svg>
+            Comparar cenários
+          </button>
+          <div class="hint">Compara <b>manter alugado</b> (renda líquida + valorização) × <b>vender e investir em títulos</b> (renda fixa líquida), com <b>taxas reais de hoje</b> (Selic/CDI/IPCA) e <b>patrimônio projetado</b>. Gera PDF pro cliente. Estudo de apoio — não é recomendação de investimento.</div>
+        </form>
+      </div>
     </div>
 
     <!-- DIREITA: resultado -->
@@ -1191,7 +1263,7 @@
     toggleCamposTipo();
 
     function switchTab(which) {
-      for (const t of ['form', 'chat', 'comercial', 'predio', 'terreno', 'bts', 'fazenda', 'fipe', 'empresa', 'historico']) {
+      for (const t of ['form', 'chat', 'comercial', 'predio', 'terreno', 'bts', 'fazenda', 'fipe', 'empresa', 'decisao', 'historico']) {
         document.getElementById('tab-' + t).classList.toggle('active', which === t);
         document.getElementById('pane-' + t).classList.toggle('active', which === t);
       }
@@ -1202,7 +1274,8 @@
         : which === 'bts' ? 'BTS — Build to Suit'
         : which === 'fazenda' ? 'Fazenda — Avaliação Rural'
         : which === 'fipe' ? 'FIPE Anápolis'
-        : which === 'empresa' ? 'Avaliação de Empresa' : 'Laudo de Precificação';
+        : which === 'empresa' ? 'Avaliação de Empresa'
+        : which === 'decisao' ? 'Alugar × Vender e Investir' : 'Laudo de Precificação';
       if (which === 'historico') carregarHistorico();
       if (which === 'chat') usarResultado();
       if (which === 'chat' && !document.getElementById('thread').dataset.init) {
@@ -1565,6 +1638,74 @@
       } catch (err) {
         showError('Erro ao abrir.');
       }
+    }
+
+    // ── Alugar × Vender e Investir ──
+    let decisaoAtual = null;
+    async function avaliarDecisao(e) {
+      e.preventDefault();
+      if (busy) return;
+      const val = (id) => { const v = document.getElementById(id).value; return v === '' ? undefined : v; };
+      const payload = {
+        valorImovel: document.getElementById('d-valor').value,
+        aluguelMensal: val('d-aluguel'),
+        horizonteAnos: val('d-anos'),
+        valorizacaoAnual: val('d-valorizacao'),
+        taxaTitulos: val('d-titulos'),
+        irTitulos: val('d-irtitulos'),
+        vacancia: val('d-vacancia'),
+        taxaAdmin: val('d-admin'),
+        iptuAnual: val('d-iptu'),
+        irAluguel: val('d-iraluguel'),
+        custoVenda: val('d-custovenda'),
+        impostoGanho: val('d-irganho')
+      };
+      if (!(Number(payload.valorImovel) > 0)) { showError('Informe o *valor de mercado do imóvel*.'); return; }
+      busy = true;
+      document.getElementById('btn-decisao').disabled = true;
+      showSpinner('Puxando as taxas de hoje e comparando os cenários…');
+      try {
+        const res = await fetch('/api/decisao', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (data.error) { showError(data.error); decisaoAtual = null; }
+        else { showLaudo(data.response); decisaoAtual = data.resultado; mostrarAcoesPdfDecisao(); }
+      } catch (err) {
+        showError('Erro de conexão. Tente novamente.');
+      } finally {
+        busy = false;
+        document.getElementById('btn-decisao').disabled = false;
+      }
+    }
+    function mostrarAcoesPdfDecisao() {
+      if (!decisaoAtual) return;
+      const laudo = document.querySelector('#result-body .laudo');
+      if (!laudo) return;
+      const bar = document.createElement('div');
+      bar.className = 'pdf-bar';
+      bar.innerHTML = '<button class="btn-pdf" onclick="baixarDecisaoPdf(this)">📄 Baixar PDF pro cliente</button>';
+      laudo.prepend(bar);
+    }
+    async function baixarDecisaoPdf(btn) {
+      if (!decisaoAtual) return;
+      const solicitante = prompt('Nome do cliente (aparece no PDF):', '') || '';
+      btn.disabled = true;
+      try {
+        const res = await fetch('/api/relatorio-decisao', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ resultado: decisaoAtual, solicitante })
+        });
+        if (!res.ok) { alert('Não foi possível gerar o PDF.'); return; }
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = 'alugar-ou-vender.pdf';
+        document.body.appendChild(a); a.click(); a.remove();
+        URL.revokeObjectURL(url);
+      } catch (err) { alert('Erro de conexão ao gerar o PDF.'); }
+      finally { btn.disabled = false; }
     }
 
     // ── Fazendas / Rural ──

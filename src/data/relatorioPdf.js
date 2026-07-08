@@ -1067,4 +1067,104 @@ function gerarFazendaPdf(r, opts = {}) {
   });
 }
 
-module.exports = { gerarRelatorioPdf, gerarDossiePdf, gerarEmpresaPdf, gerarRepassePdf, gerarTerrenoPdf, gerarBtsPdf, gerarRadarPdf, gerarFazendaPdf };
+function gerarDecisaoPdf(r, opts = {}) {
+  const solicitante = opts.solicitante || '';
+  const dataEmissao = new Date().toLocaleDateString('pt-BR');
+  const A = r.cenarioA, B = r.cenarioB;
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ size: 'A4', bufferPages: true, margins: { top: TOP, bottom: BOTTOM, left: LX, right: 44 } });
+    const chunks = [];
+    doc.on('data', (d) => chunks.push(d));
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
+    doc.on('error', reject);
+    let y = TOP;
+    const ensure = (need) => { if (y + need > PAGE_H - BOTTOM) { doc.addPage(); y = TOP; } };
+    const chrome = () => {
+      doc.rect(0, 0, PAGE_W, 64).fill(BLUE);
+      try { doc.image(LOGO, LX, 22, { height: 20 }); } catch {}
+      doc.font('Helvetica-Bold').fontSize(13).fillColor(WHITE).text('Alugar × Vender e Investir', LX, 21, { width: W, align: 'right' });
+      doc.font('Helvetica').fontSize(7.5).fillColor('#cfe0ff').text('Bens Imóveis Corporativos · Estudo de decisão patrimonial', LX, 38, { width: W, align: 'right' });
+      const fy = PAGE_H - 46; doc.page.margins.bottom = 0;
+      doc.moveTo(LX, fy).lineTo(RX, fy).lineWidth(0.5).strokeColor(LINE).stroke();
+      doc.font('Helvetica').fontSize(6.8).fillColor(MUTED).text(`${RAZAO} · ${CRECI_J} · ${ENDERECO}`, LX, fy + 5, { width: W, lineBreak: false });
+      doc.font('Helvetica').fontSize(6.8).fillColor(MUTED).text(`${CONTATO}  ·  documento gerado por Precifica Aí`, LX, fy + 15, { width: W * 0.8, lineBreak: false });
+      doc.font('Helvetica').fontSize(6.8).fillColor(MUTED).text(`Emitido em ${dataEmissao}`, RX - 120, fy + 15, { width: 120, align: 'right' });
+    };
+    const band = (title) => { ensure(22); doc.rect(LX, y, W, 15).fill(BLUE); doc.font('Helvetica-Bold').fontSize(8).fillColor(WHITE).text(title, LX + 8, y + 4, { lineBreak: false }); y += 20; };
+    const paragraph = (t, size = 8.5) => { ensure(28); doc.font('Helvetica').fontSize(size).fillColor(INK).text(clean(t), LX, y, { width: W, align: 'justify', lineGap: 1.5 }); y = doc.y + 8; };
+    const kv = (k, v) => { ensure(13); doc.font('Helvetica-Bold').fontSize(8).fillColor(INK).text(`${k}: `, LX + 4, y, { continued: true, width: W - 8 }); doc.font('Helvetica').fontSize(8).fillColor(INK).text(clean(String(v))); y = doc.y + 3; };
+
+    doc.font('Helvetica-Bold').fontSize(16).fillColor(NAVY).text('ALUGAR × VENDER E INVESTIR', LX, y, { width: W, align: 'center' });
+    doc.font('Helvetica').fontSize(8).fillColor(BLUE).text('Estudo comparativo de decisão patrimonial', LX, y + 20, { width: W, align: 'center' });
+    y += 38;
+
+    const cell = (x, w, label, value) => {
+      doc.rect(x, y, w, 24).lineWidth(0.5).strokeColor(LINE).stroke();
+      doc.font('Helvetica').fontSize(5.5).fillColor(LABEL).text(String(label).toUpperCase(), x + 5, y + 4, { width: w - 10, lineBreak: false });
+      doc.font('Helvetica-Bold').fontSize(8.5).fillColor(INK).text(value || '—', x + 5, y + 12, { width: w - 10, height: 10, ellipsis: true, lineBreak: false });
+    };
+    cell(LX, W * 0.34, 'Imóvel', brl(r.valorImovel));
+    cell(LX + W * 0.34, W * 0.33, 'Aluguel/mês', brl(r.aluguelMensal));
+    cell(LX + W * 0.67, W * 0.33, 'Solicitante', txt(solicitante)); y += 24;
+    cell(LX, W * 0.5, 'Taxas hoje', `Selic ${r.taxas.selic}% · CDI ${r.taxas.cdi}% · IPCA ${r.taxas.ipca}%`);
+    cell(LX + W * 0.5, W * 0.5, 'Horizonte', `${r.anos} anos`); y += 24;
+    y += 10;
+
+    // Dois cartões lado a lado
+    const cardH = 96, gap = 10, cw = (W - gap) / 2;
+    ensure(cardH + 6);
+    const winA = r.vencedor === 'manter';
+    // Cartão A
+    doc.roundedRect(LX, y, cw, cardH, 8).fillAndStroke(winA ? BLUE : '#eef3fb', winA ? BLUE : LINE);
+    let cy = y + 10;
+    doc.font('Helvetica-Bold').fontSize(9.5).fillColor(winA ? WHITE : NAVY).text('A · MANTER ALUGADO', LX + 12, cy); cy += 16;
+    const lineA = (k, v, strong) => { doc.font(strong ? 'Helvetica-Bold' : 'Helvetica').fontSize(strong ? 9 : 8).fillColor(winA ? WHITE : INK).text(`${k}: ${v}`, LX + 12, cy, { width: cw - 24 }); cy += strong ? 14 : 12; };
+    lineA('Renda líquida', `${brl(A.rendaMensal)}/mês`, true);
+    lineA('Yield líquido', `${A.yieldLiquido}% a.a.`);
+    lineA('+ Valorização', `${r.premissas.valorizacao}% a.a. → ${A.retornoTotal}%`);
+    lineA(`Patrimônio ${r.anos} anos`, brl(A.patrimonio), true);
+    // Cartão B
+    const bx = LX + cw + gap;
+    const winB = r.vencedor === 'vender';
+    doc.roundedRect(bx, y, cw, cardH, 8).fillAndStroke(winB ? BLUE : '#eef3fb', winB ? BLUE : LINE);
+    cy = y + 10;
+    doc.font('Helvetica-Bold').fontSize(9.5).fillColor(winB ? WHITE : NAVY).text('B · VENDER E INVESTIR', bx + 12, cy); cy += 16;
+    const lineB = (k, v, strong) => { doc.font(strong ? 'Helvetica-Bold' : 'Helvetica').fontSize(strong ? 9 : 8).fillColor(winB ? WHITE : INK).text(`${k}: ${v}`, bx + 12, cy, { width: cw - 24 }); cy += strong ? 14 : 12; };
+    lineB('Líquido da venda', brl(B.liquidoVenda), true);
+    lineB('Renda títulos', `${brl(B.rendaMensal)}/mês`);
+    lineB('Taxa líquida', `${B.taxaLiquida}% a.a.`);
+    lineB(`Patrimônio ${r.anos} anos`, brl(B.patrimonio), true);
+    y += cardH + 12;
+
+    band('VEREDITO');
+    if (r.vencedor === 'manter') kv('Maior patrimônio', `Manter alugado: +${brl(r.difPatr)} em ${r.anos} anos (${r.difPatrPct >= 0 ? '+' : ''}${r.difPatrPct}%)`);
+    else kv('Maior patrimônio', `Vender e investir: +${brl(r.difPatr)} em ${r.anos} anos`);
+    kv('Renda mensal', r.difRendaMensal >= 0 ? `Alugar entrega +${brl(r.difRendaMensal)}/mês` : `Títulos entregam +${brl(-r.difRendaMensal)}/mês`);
+
+    if (r.parecer) { band('PARECER'); paragraph(r.parecer); }
+
+    band('PREMISSAS (editáveis)');
+    kv('Aluguel', `vacância ${r.premissas.vacancia}% · administração ${r.premissas.taxaAdmin}% · IPTU ${brl(r.premissas.iptuAnual)}/ano · IR ${r.premissas.irAluguel}%`);
+    kv('Valorização do imóvel', `${r.premissas.valorizacao}% a.a.`);
+    kv('Venda', `custos ${r.premissas.custoVenda}%${r.premissas.impostoGanho ? ` · IR ganho ${brl(r.premissas.impostoGanho)}` : ''}`);
+    kv('Títulos', `${r.premissas.taxaTitulos}% a.a. bruto · IR ${r.premissas.irTitulos}%`);
+
+    band('RESSALVAS');
+    paragraph('Estudo comparativo de apoio à decisão — NÃO é recomendação de compra de valor mobiliário nem consultoria de investimentos. As premissas (vacância, valorização, IR, taxa dos títulos) afetam diretamente o resultado; valide com contador e assessor de investimentos. O IR sobre ganho de capital na venda pode ter isenções (ex.: uso do valor na compra de outro imóvel residencial em 180 dias). Taxas Selic/CDI/IPCA: Banco Central via BrasilAPI, em ' + r.taxas.data + '.', 8);
+
+    ensure(56);
+    y += 14;
+    const half = W / 2;
+    doc.lineWidth(0.7).strokeColor(NAVY).moveTo(LX + half / 2 - 80, y).lineTo(LX + half / 2 + 80, y).stroke();
+    doc.font('Helvetica').fontSize(8).fillColor(LABEL).text('CORRETOR RESPONSÁVEL', LX + half / 2 - 80, y + 5, { width: 160, align: 'center' });
+    doc.font('Helvetica-Bold').fontSize(9).fillColor(INK).text(CORRETOR, LX + half / 2 - 90, y + 16, { width: 180, align: 'center' });
+    doc.font('Helvetica').fontSize(8).fillColor(MUTED).text(`${CRECI_F} · ${RAZAO} (${CRECI_J})`, LX + half / 2 - 90, y + 28, { width: 180, align: 'center' });
+
+    const range = doc.bufferedPageRange();
+    for (let i = 0; i < range.count; i++) { doc.switchToPage(range.start + i); chrome(); }
+    doc.flushPages();
+    doc.end();
+  });
+}
+
+module.exports = { gerarRelatorioPdf, gerarDossiePdf, gerarEmpresaPdf, gerarRepassePdf, gerarTerrenoPdf, gerarBtsPdf, gerarRadarPdf, gerarFazendaPdf, gerarDecisaoPdf };

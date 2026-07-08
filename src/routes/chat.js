@@ -339,6 +339,39 @@ router.post('/fazenda', async (req, res) => {
 });
 
 /**
+ * POST /api/decisao — Comparador: manter alugado × vender e investir em títulos.
+ */
+router.post('/decisao', async (req, res) => {
+  const b = req.body || {};
+  if (!(Number(b.valorImovel) > 0)) return res.status(400).json({ error: 'Informe o valor de mercado do imóvel.' });
+  try {
+    const { analisarDecisao, formatarDecisao } = require('../data/decisao');
+    const r = await analisarDecisao(b);
+    if (r.erro) return res.status(422).json({ error: r.erro });
+    return res.json({ type: 'decisao', response: formatarDecisao(r), resultado: r });
+  } catch (err) {
+    console.error('[Decisao API] Erro:', err);
+    return res.status(500).json({ error: '⚠️ Erro ao montar a comparação. Tente novamente.', debug: err.message });
+  }
+});
+
+/** POST /api/relatorio-decisao — PDF do comparador alugar × vender. */
+router.post('/relatorio-decisao', async (req, res) => {
+  const { resultado, solicitante } = req.body || {};
+  if (!resultado || !resultado.cenarioA) return res.status(400).json({ error: 'Faça a comparação primeiro.' });
+  try {
+    const { gerarDecisaoPdf } = require('../data/relatorioPdf');
+    const pdf = await gerarDecisaoPdf(resultado, { solicitante });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', 'attachment; filename="alugar-ou-vender.pdf"');
+    res.send(pdf);
+  } catch (err) {
+    console.error('[RelatDecisao API] Erro:', err);
+    res.status(500).json({ error: '⚠️ Erro ao gerar o PDF. Tente novamente.' });
+  }
+});
+
+/**
  * POST /api/avaliar-empresa — Calculadora de avaliação de empresa / passagem de ponto.
  */
 router.post('/avaliar-empresa', async (req, res) => {
