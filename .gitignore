@@ -4,3 +4,4 @@ node_modules/
 .DS_Store
 .perplexity-cache.json
 .inteligencia-local.json
+public/assinatura.png
