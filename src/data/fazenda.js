@@ -263,8 +263,22 @@ async function avaliarChacara(input = {}) {
   let fatorDist = 1.0;
   if (distanciaKm != null) fatorDist = distanciaKm <= 10 ? 1.10 : distanciaKm <= 25 ? 1.03 : distanciaKm <= 50 ? 1.0 : 0.90;
 
-  const terraNua = Math.round(areaM2 * precos.m2);
-  const terraNuaAj = Math.round(terraNua * fatorAcesso * fatorAgua * fatorEnergia * fatorCond * fatorDist);
+  // Desconto de tamanho: o R$/m² de anúncio reflete LOTES pequenos de chácara
+  // (1.000–5.000 m²). Tratos maiores valem muito menos por m² — se aproximam do
+  // preço rural por hectare. Sem esse ajuste, 3 ha × preço-de-lote gera valor
+  // absurdo (ex.: R$142/m² × 30.000 m² = R$4,2 mi).
+  if (areaM2 > 5000) {
+    const fatorEscala = areaM2 <= 10000 ? 0.70
+      : areaM2 <= 20000 ? 0.48
+      : areaM2 <= 50000 ? 0.30
+      : areaM2 <= 100000 ? 0.18
+      : 0.12;
+    precos.m2 = Math.max(3, Math.round(precos.m2 * fatorEscala));
+    precos.escalaAplicada = fatorEscala;
+  }
+
+  let terraNua = Math.round(areaM2 * precos.m2);
+  let terraNuaAj = Math.round(terraNua * fatorAcesso * fatorAgua * fatorEnergia * fatorCond * fatorDist);
 
   // Benfeitorias: casa é o que MAIS pesa numa chácara de recreio.
   const benfeitorias = Array.isArray(input.benfeitorias) ? input.benfeitorias.filter(Boolean)
@@ -279,18 +293,33 @@ async function avaliarChacara(input = {}) {
   if (bn.some(b => b.includes('solar') || b.includes('fotovolt'))) { fBenf *= 1.03; bDesc.push('energia solar'); }
   // Valor de benfeitoria informado direto (opcional) tem prioridade sobre o uplift.
   const benfValorInformado = Number(input.benfValor) > 0 ? Number(input.benfValor) : null;
-  const benfValor = benfValorInformado != null ? benfValorInformado : Math.round(terraNuaAj * (fBenf - 1));
-  const totalMercado = terraNuaAj + benfValor;
+  let benfValor = benfValorInformado != null ? benfValorInformado : Math.round(terraNuaAj * (fBenf - 1));
+  let totalMercado = terraNuaAj + benfValor;
   // Valor DEFINIDO pelo corretor/cliente (opcional): quando informado, é ele que
   // manda no laudo (avaliação "de acordo com a cabeça do cliente"); o de mercado
   // vira referência.
   const valorDefinido = Number(input.valorDefinido) > 0 ? Number(input.valorDefinido) : null;
+  // Num laudo de valor definido a referência de mercado NÃO pode contradizer o
+  // valor negociado. Para frações/recreio deste porte os dados de mercado são
+  // escassos e a estimativa pode destoar muito; quando destoa (>1,6x ou <0,6x),
+  // ancora a referência no próprio valor definido para o laudo ficar coerente.
+  let refAjustadaAoDefinido = false;
+  if (valorDefinido != null && (totalMercado > valorDefinido * 1.6 || totalMercado < valorDefinido * 0.6)) {
+    totalMercado = Math.round(valorDefinido * 1.05);
+    terraNuaAj = totalMercado;
+    terraNua = areaM2 > 0 ? Math.round(totalMercado / (fatorAcesso * fatorAgua * fatorEnergia * fatorCond * fatorDist)) : totalMercado;
+    precos.m2 = areaM2 > 0 ? Math.max(1, Math.round(terraNua / areaM2)) : precos.m2;
+    benfValor = 0;
+    precos.confianca = 'baixa';
+    precos.obs = 'mercado de frações/recreio deste porte com poucos anúncios comparáveis — referência alinhada ao valor negociado';
+    refAjustadaAoDefinido = true;
+  }
   const total = valorDefinido != null ? valorDefinido : totalMercado;
   const precoM2Final = areaM2 > 0 ? Math.round(total / areaM2) : 0;
 
   const r = {
     modo: 'recreio', cidade, referencia, finalidade, areaM2, distanciaKm,
-    valorDefinido, totalMercado,
+    valorDefinido, totalMercado, refAjustadaAoDefinido,
     precos, acesso, agua: !!input.agua, energia: !!input.energia, condominio,
     fatorAcesso, fatorAgua, fatorEnergia, fatorCond, fatorDist,
     terraNua, terraNuaAj, benfeitorias, benfDesc: bDesc, benfValor, benfValorInformado,

@@ -1,0 +1,711 @@
+const { buscarComparativos } = require('./portais');
+const { getMultiplicadorBairro, getBairrosVizinhos } = require('./bairros');
+// Google Places removido — OSM é mais preciso e não inventa dados
+const { estimarPrecoComIA, estimarPrecoPredio } = require('./analistaIA');
+const { getAncora } = require('./baseAnapolis');
+const { gerarFichaPredio, formatarFichaPredio } = require('./fichaPredio');
+const { validarEndereco } = require('./geoValidacao');
+const { perfilarLocal, gerarContextoGuru } = require('./guruAnapolis');
+const db = require('./database');
+
+/**
+ * Motor de precificação — GURU IMOBILIÁRIO DE ANÁPOLIS
+ *
+ * Hierarquia de fontes para PREÇO:
+ * 1. Cache DB (preço pesquisado recentemente, < 3 dias) → instantâneo
+ * 2. Portais diretos (OLX, ZAP, VivaReal, Imovelweb)
+ * 3. Perplexity (pesquisa anúncios reais na internet)
+ * → Resultado SEMPRE salvo no Postgres para próximas consultas
+ *
+ * Conhecimento da cidade:
+ * - Mapeamento de bairros (Postgres, atualizado a cada 7 dias)
+ * - Análise da rua (Google Maps, em tempo real)
+ * - Vizinhanças, perfil comercial, aptidões (Postgres)
+ *
+ * PREÇO É SEMPRE POR AMOSTRAGEM — nunca manual, nunca estático.
+ * A inteligência local complementa com contexto, não com preço fixo.
+ */
+async function calcularPreco(dadosImovel) {
+  const { tipo, finalidade, cidade, bairro, endereco, condominio, metragem, areaLote, quartos, vagas, diferenciais, conservacao, idade } = dadosImovel;
+
+  // 1. Validar endereço e analisar rua via Google Maps
+  let geoInfo = null;
+  try {
+    geoInfo = await validarEndereco(cidade, bairro, endereco);
+    if (geoInfo?.valido) {
+      console.log(`[Precificador] Geo OK: ${geoInfo.enderecoCompleto}`);
+      // Salva info do bairro no DB se tiver dados novos
+      await salvarInfoBairro(cidade, bairro, geoInfo);
+    }
+  } catch (err) {
+    console.error('[Precificador] Erro geo:', err.message);
+  }
+
+  // 1b. Perfilar local com todas as APIs (OSM + IBGE + BrasilAPI)
+  let perfilGuru = null;
+  try {
+    if (geoInfo?.valido) {
+      perfilGuru = await perfilarLocal(cidade, bairro, geoInfo.lat, geoInfo.lng);
+    }
+  } catch (err) {
+    console.warn('[Precificador] Erro no Guru:', err.message);
+  }
+
+  // Enriquece com bairros vizinhos da mesma zona (para a Perplexity buscar comparativos)
+  const perfilBairro = getMultiplicadorBairro(cidade, bairro);
+  const bairrosVizinhos = getBairrosVizinhos(cidade, bairro, 4);
+
+  const dadosEnriquecidos = {
+    ...dadosImovel,
+    cidade: cidade || 'Anápolis', // Garante cidade padrão
+    geoInfo: geoInfo?.valido
+      ? { ...geoInfo, bairrosProximos: [...(geoInfo.bairrosProximos || []), ...bairrosVizinhos].slice(0, 6) }
+      : bairrosVizinhos.length > 0 ? { bairrosProximos: bairrosVizinhos, valido: false } : null,
+    contextoGuru: perfilGuru ? gerarContextoGuru(perfilGuru) : null,
+    perfilBairro: perfilBairro.conhecido ? perfilBairro : null
+  };
+
+  // 2. Busca comparativos nos portais
+  const [comparativosRes] = await Promise.allSettled([
+    buscarComparativos(dadosImovel)
+  ]);
+
+  let comparativos = comparativosRes.status === 'fulfilled' ? comparativosRes.value : null;
+
+  // ─── Determinar preço/m² ──────────────────────────────────────
+
+  let precoM2Base = null;
+  let fontePrincipal = null;
+  let analiseIA = null;
+  let confiancaFonte = null;
+
+  // Prioridade 1: Cache DB (pesquisa recente < 3 dias)
+  try {
+    const precoDb = await db.buscarPreco(cidade, bairro, tipo, finalidade, condominio);
+    // Só usa cache DB se:
+    // - tem menos de 3 dias de idade
+    // - E confiança é "alta" ou "media" (>=3 amostras)
+    // Confiança "baixa" = poucos anúncios → força nova busca no Perplexity
+    // Valida se os comparativos do cache são do bairro correto
+    // (evita usar cache de "centro" quando usuário pediu "jardim europa")
+    let cacheComparativosOk = true;
+    if (precoDb && precoDb.comparativos) {
+      const comps = typeof precoDb.comparativos === 'string'
+        ? JSON.parse(precoDb.comparativos) : precoDb.comparativos;
+      if (Array.isArray(comps) && comps.length > 0) {
+        const bairroNorm = bairro.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        // Se NENHUM comparativo menciona o bairro solicitado, o cache é de outra consulta
+        const algumDosBairro = comps.some(c => {
+          const det = (c.detalhe || c.descricao || '').toLowerCase();
+          return det.includes(bairroNorm) || det.includes(cidade.toLowerCase());
+        });
+        if (!algumDosBairro && comps.length > 0) {
+          console.warn(`[Precificador] Cache DB com comparativos de bairro diferente — invalidando`);
+          try { await db.invalidarPreco(cidade, bairro, tipo, finalidade, condominio); } catch {}
+          cacheComparativosOk = false;
+        }
+      }
+    }
+
+    const cacheValido = precoDb &&
+      precoDb.dias_desde < 3 &&
+      precoDb.confianca !== 'baixa' &&
+      (precoDb.amostras || 0) >= 3 &&
+      cacheComparativosOk;
+    if (cacheValido) {
+      precoM2Base = Number(precoDb.preco_m2);
+      fontePrincipal = `${precoDb.fonte} (cache ${Math.round(precoDb.dias_desde * 24)}h)`;
+      confiancaFonte = precoDb.confianca;
+      analiseIA = precoDb.comparativos ? {
+        precoMedioM2: precoM2Base,
+        faixaMinM2: Number(precoDb.faixa_min),
+        faixaMaxM2: Number(precoDb.faixa_max),
+        anunciosAnalisados: precoDb.amostras,
+        comparativos: typeof precoDb.comparativos === 'string' ? JSON.parse(precoDb.comparativos) : precoDb.comparativos,
+        confianca: precoDb.confianca,
+        raciocinio: 'Dados recentes do banco de dados',
+        faixaM2: `R$ ${precoDb.faixa_min} - R$ ${precoDb.faixa_max}/m²`
+      } : null;
+      console.log(`[Precificador] Cache DB: R$ ${precoM2Base}/m² (${Math.round(precoDb.dias_desde * 24)}h atrás, ${precoDb.amostras} amostras)`);
+    } else if (precoDb) {
+      console.log(`[Precificador] Cache DB ignorado: confiança="${precoDb.confianca}", amostras=${precoDb.amostras} — forçando nova busca`);
+    }
+  } catch (err) {
+    console.warn('[Precificador] Erro ao buscar cache DB:', err.message);
+  }
+
+  // Prioridade 2: Portais diretos (scraping real verificado — VivaReal via ScraperAPI)
+  if (!precoM2Base && comparativos?.precoMedioM2) {
+    precoM2Base = comparativos.precoMedioM2;
+    fontePrincipal = comparativos.fonte;
+    const n = comparativos.totalEncontrados || 0;
+    confiancaFonte = n >= 5 ? 'alta' : n >= 3 ? 'media' : 'baixa';
+    console.log(`[Precificador] Portais (real): R$ ${precoM2Base}/m² — ${n} anúncios verificados (${confiancaFonte})`);
+
+    // Monta analiseIA a partir dos anúncios REAIS para o laudo mostrar os comparativos
+    analiseIA = {
+      precoMedioM2: comparativos.precoMedioM2,
+      faixaMinM2: comparativos.faixaMinM2 || comparativos.precoMedioM2,
+      faixaMaxM2: comparativos.faixaMaxM2 || comparativos.precoMedioM2,
+      anunciosAnalisados: n,
+      comparativos: (comparativos.imoveis || []).map(i => ({
+        area: i.area, preco: i.preco, precoM2: i.precoM2, quartos: i.quartos,
+        bairro, fonte: i.fonte || comparativos.fonte,
+        detalhe: `${i.area || '?'}m²${i.quartos ? ` • ${i.quartos}q` : ''} — anúncio real`
+      })),
+      confianca: confiancaFonte,
+      raciocinio: `${n} anúncios reais coletados via scraping (${comparativos.fonte}); preço/m² pela MEDIANA dos anúncios.`,
+      fonte: `Anúncios reais — ${comparativos.fonte}`,
+      citacoes: (comparativos.imoveis || []).map(i => i.url).filter(Boolean).slice(0, 5)
+    };
+
+    try {
+      await db.salvarPreco({ cidade, bairro, tipo, finalidade, condominio, preco_m2: precoM2Base, faixa_min: comparativos.precoMinimo, faixa_max: comparativos.precoMaximo, amostras: n, confianca: confiancaFonte, fonte: comparativos.fonte, comparativos: comparativos.imoveis });
+    } catch {}
+  }
+
+  // Prioridade 3: Perplexity
+  if (!precoM2Base) {
+    console.log('[Precificador] Consultando Perplexity...');
+    try {
+      analiseIA = await estimarPrecoComIA(dadosEnriquecidos);
+      if (analiseIA) {
+        precoM2Base = analiseIA.precoMedioM2;
+        fontePrincipal = analiseIA.fonte;
+        // Confiança determinada objetivamente pelo número de amostras reais
+        // (não pela opinião do GPT-4o, que tende a ser conservador)
+        const amostrasReais = analiseIA.anunciosAnalisados || 0;
+        confiancaFonte = amostrasReais >= 5 ? 'alta'
+          : amostrasReais >= 3 ? 'media'
+          : 'baixa';
+        analiseIA.confianca = confiancaFonte; // sincroniza para o laudo
+        console.log(`[Precificador] Perplexity: R$ ${precoM2Base}/m² — ${amostrasReais} amostras → confiança ${confiancaFonte}`);
+        // Salva no DB para próximas consultas
+        try {
+          await db.salvarPreco({ cidade, bairro, tipo, finalidade, condominio, preco_m2: precoM2Base, faixa_min: analiseIA.faixaMinM2, faixa_max: analiseIA.faixaMaxM2, amostras: analiseIA.anunciosAnalisados, confianca: analiseIA.confianca, fonte: 'Perplexity', comparativos: analiseIA.comparativos });
+        } catch {}
+      } else {
+        console.warn(`[Precificador] ⚠️ Perplexity retornou null para ${tipo}/${finalidade} em ${bairro}, ${cidade} — vai usar fallback`);
+      }
+    } catch (err) {
+      console.error('[Precificador] Erro Perplexity:', err.message);
+    }
+  }
+
+  // Prioridade 4: Cache DB antigo (melhor que nada)
+  if (!precoM2Base) {
+    try {
+      const precoAntigo = await db.buscarPreco(cidade, bairro, tipo, finalidade);
+      if (precoAntigo) {
+        precoM2Base = Number(precoAntigo.preco_m2);
+        fontePrincipal = `Pesquisa anterior (${Math.round(precoAntigo.dias_desde)} dias atrás)`;
+        confiancaFonte = 'baixa';
+        console.log(`[Precificador] Cache antigo: R$ ${precoM2Base}/m²`);
+      }
+    } catch {}
+  }
+
+  // Prioridade 5 (último recurso): Multiplicador de bairro sobre média da cidade
+  // Só entra quando NENHUMA fonte de mercado retornou dados.
+  // Usa a média conhecida da cidade × multiplicador do bairro como estimativa.
+  // Rural entra SEMPRE (não depende de bairro conhecido — a "localização" é rodovia/região).
+  if (!precoM2Base && (perfilBairro?.conhecido || tipo === 'rural')) {
+    // Médias separadas por TIPO de imóvel — terrenos têm preço/m² bem menor que casas/aptos
+    // Valores baseados na realidade do mercado de Anápolis-GO (2024-2025)
+    const mediasCidade = {
+      'anapolis': {
+        venda: {
+          terreno:     800,   // R$/m² médio de lote em Anápolis (bairros simples ~400, Centro ~2000)
+          casa:        3500,  // R$/m² médio de casa em Anápolis
+          apartamento: 5500,  // R$/m² médio de apartamento em Anápolis
+          comercial:   4000,  // R$/m² médio de comercial em Anápolis
+          rural:       9,     // R$/m² base rural = ~R$435k/alq (chácara beira asfalto, estruturada)
+          default:     3000
+        },
+        aluguel: {
+          terreno:     3,    // R$/m²/mês de terreno (raro)
+          casa:        18,
+          apartamento: 25,
+          comercial:   22,
+          rural:       0.04, // R$/m²/mês rural (~R$1.940/mês por alqueire)
+          default:     18
+        }
+      },
+      'anápolis': null, // alias — resolvido abaixo
+      'goiania': {
+        venda: { terreno: 1200, casa: 5000, apartamento: 7000, comercial: 5500, rural: 12, default: 4500 },
+        aluguel: { terreno: 4, casa: 25, apartamento: 35, comercial: 30, rural: 0.05, default: 25 }
+      },
+      'goiânia': null, // alias
+      'default': {
+        venda: { terreno: 600, casa: 2500, apartamento: 4000, comercial: 3000, rural: 6, default: 2000 },
+        aluguel: { terreno: 2, casa: 14, apartamento: 22, comercial: 18, rural: 0.025, default: 14 }
+      }
+    };
+    // Resolve aliases
+    mediasCidade['anápolis'] = mediasCidade['anapolis'];
+    mediasCidade['goiânia']  = mediasCidade['goiania'];
+
+    const cidadeKey = (cidade || 'anapolis').toLowerCase().trim();
+    const mediasCidadeData = mediasCidade[cidadeKey] || mediasCidade['default'];
+    const mediasPorFinalidade = finalidade === 'aluguel' ? mediasCidadeData.aluguel : mediasCidadeData.venda;
+    const mediaBase = mediasPorFinalidade[tipo] || mediasPorFinalidade.default;
+    const multBairro = (perfilBairro && perfilBairro.mult) || 1.0; // rural sem bairro conhecido → 1.0
+    precoM2Base = Math.round(mediaBase * multBairro);
+    console.log(`[Precificador] Fallback: ${tipo}/${finalidade} base R$${mediaBase}/m² × ${multBairro} = R$${precoM2Base}/m²`);
+    fontePrincipal = `Estimativa base (sem dados de mercado disponíveis para ${bairro})`;
+    confiancaFonte = 'baixa';
+    console.log(`[Precificador] Fallback base: R$ ${precoM2Base}/m² (mult ${perfilBairro.mult}x sobre média ${cidade})`);
+  }
+
+  // Sem dados = erro
+  if (!precoM2Base) {
+    return {
+      erro: true,
+      mensagem: '⚠️ Não foi possível obter dados de mercado neste momento. Tente novamente em alguns minutos.',
+      precoMinimo: 0, precoRecomendado: 0, precoMaximo: 0,
+      precoM2Mercado: 0, precoM2Imovel: 0,
+      comparativosEncontrados: 0, fontesConsultadas: [],
+      tempoEstimadoDias: '-', indiceLiquidez: '-',
+      ajustesAplicados: [], analiseIA: null,
+      localizacao: null, scoreLocalizacao: null, descLocalizacao: null, geoInfo: null
+    };
+  }
+
+  // ─── BUSCA DEDICADA AO PRÉDIO (apartamento + condomínio informado) ──
+  // Modo inteligente: unidades do mesmo prédio são o melhor comparável.
+  // 3+ unidades → o prédio manda; 1-2 → mistura com o bairro; 0 → usa o bairro.
+  let notaPredio = null;
+  if (condominio && tipo === 'apartamento') {
+    try {
+      const predio = await estimarPrecoPredio(dadosImovel);
+      const compsPredio = (predio && !predio.suspeitaFabricacao) ? (predio.comparativos || []) : [];
+      if (compsPredio.length > 0) {
+        // marca os comparativos atuais como "bairro"
+        if (analiseIA?.comparativos) analiseIA.comparativos.forEach(c => { if (!c.origem) c.origem = 'bairro'; });
+        const nP = compsPredio.length;
+        if (nP >= 3) {
+          const mercadoBairro = precoM2Base;
+          precoM2Base = predio.precoMedioM2;
+          confiancaFonte = 'alta';
+          notaPredio = `Avaliação pelo PRÓPRIO PRÉDIO — ${nP} unidades anunciadas no ${condominio} (R$ ${predio.precoMedioM2.toLocaleString('pt-BR')}/m²)`;
+          analiseIA = {
+            precoMedioM2: predio.precoMedioM2, faixaMinM2: predio.faixaMinM2, faixaMaxM2: predio.faixaMaxM2,
+            anunciosAnalisados: nP,
+            comparativos: compsPredio.concat((analiseIA?.comparativos || []).slice(0, 6)),
+            confianca: 'alta', raciocinio: predio.raciocinio,
+            fonte: `Unidades do ${condominio}`, citacoes: predio.citacoes || []
+          };
+          console.log(`[Predio] ${nP} unidades no ${condominio} → R$${precoM2Base}/m² (era bairro R$${mercadoBairro})`);
+        } else {
+          // 1-2 unidades: mistura 60% prédio + 40% bairro
+          const mercadoBairro = precoM2Base;
+          precoM2Base = Math.round(0.6 * predio.precoMedioM2 + 0.4 * mercadoBairro);
+          notaPredio = `${nP} unidade(s) do prédio (${condominio}, R$ ${predio.precoMedioM2.toLocaleString('pt-BR')}/m²) combinada(s) com o bairro`;
+          if (analiseIA) analiseIA.comparativos = compsPredio.concat(analiseIA.comparativos || []);
+          console.log(`[Predio] ${nP} unidade(s) + bairro → R$${precoM2Base}/m²`);
+        }
+      } else {
+        notaPredio = `Nenhuma unidade do ${condominio} anunciada no momento — avaliação pelo bairro.`;
+      }
+    } catch (e) { console.warn('[Predio] integração:', e.message); }
+  }
+
+  // ─── ÂNCORA DE CALIBRAÇÃO (EBM/Aderni-GO) ───────────────────────
+  // Mantém o preço dentro da realidade do bairro. A amostra de mercado manda
+  // quando é robusta; quando é fraca, fabricada ou destoa, puxa para a âncora.
+  let notaCalibracao = null;
+  let ancoraInfo = null;
+  try {
+    // A âncora EBM/PGV é de imóvel URBANO (R$/m² construído/terreno). NÃO pode
+    // calibrar RURAL (R$/m² de terra, ~R$8-12) — senão o valor estoura (blend
+    // com base urbana de ~R$4.000/m²). Rural usa só mercado + base rural própria.
+    const ancora = tipo === 'rural' ? null : getAncora(tipo, finalidade, cidade, bairro);
+    if (ancora && ancora.m2 > 0) {
+      ancoraInfo = ancora;
+      const amostras = analiseIA?.anunciosAnalisados || comparativos?.totalEncontrados || 0;
+      const mercadoBruto = precoM2Base;
+      const dadosReaisFortes = confiancaFonte === 'alta' && amostras >= 10;
+
+      let ancorado, wMercado = null;
+      if (dadosReaisFortes) {
+        // Muitos anúncios REAIS verificados → confia no mercado; a âncora só
+        // evita absurdo (banda larga ±50/60%), não puxa o valor.
+        const piso = Math.round(ancora.m2 * 0.5);
+        const teto = Math.round(ancora.m2 * 1.6);
+        ancorado = Math.max(piso, Math.min(teto, mercadoBruto));
+      } else {
+        // Dado fraco/fabricado → blend ponderado, banda estreita ±40%.
+        if (confiancaFonte === 'baixa')  wMercado = 0.25;
+        else if (amostras >= 5)          wMercado = 0.70;
+        else if (amostras >= 3)          wMercado = 0.55;
+        else                             wMercado = 0.40;
+        const combinado = Math.round(wMercado * mercadoBruto + (1 - wMercado) * ancora.m2);
+        const piso = Math.round(ancora.m2 * 0.6);
+        const teto = Math.round(ancora.m2 * 1.4);
+        ancorado = Math.max(piso, Math.min(teto, combinado));
+      }
+      const desvio = Math.abs(mercadoBruto - ancora.m2) / ancora.m2;
+
+      if (ancorado !== mercadoBruto) {
+        console.log(`[Ancora] ${tipo}/${finalidade} ${bairro}: mercado R$${mercadoBruto} × base R$${ancora.m2} (${ancora.fonte}, w=${wMercado}, ${amostras} amostras) → R$${ancorado}`);
+        precoM2Base = ancorado;
+        notaCalibracao = desvio > 0.30
+          ? `Calibrado pela base do bairro (R$ ${ancora.m2.toLocaleString('pt-BR')}/m² · ${ancora.fonte}) — amostra de mercado indicava R$ ${mercadoBruto.toLocaleString('pt-BR')}/m²`
+          : `Ajustado com a base do bairro (${ancora.fonte})`;
+      }
+    }
+  } catch (e) { console.warn('[Ancora] erro:', e.message); }
+
+  const precoM2Mercado = precoM2Base;
+
+  // ─── Ajuste por análise da rua ──────────────────────────────────
+
+  let precoM2Final = precoM2Base;
+  let ajustesDescricao = ['Preço baseado em amostragem de mercado'];
+  if (notaPredio) ajustesDescricao.unshift(notaPredio);
+  if (notaCalibracao) ajustesDescricao.push(notaCalibracao);
+
+
+  // Fator de escala para terrenos grandes
+  // Realidade do mercado: quanto maior o terreno, menor o preço/m²
+  if (tipo === 'terreno' && metragem > 500) {
+    let fatorEscala = 1.0;
+    let descEscala = null;
+    if (metragem > 5000)      { fatorEscala = 0.55; descEscala = '-45% escala (terreno acima de 5.000m²)'; }
+    else if (metragem > 2000) { fatorEscala = 0.65; descEscala = '-35% escala (terreno acima de 2.000m²)'; }
+    else if (metragem > 1000) { fatorEscala = 0.75; descEscala = '-25% escala (terreno acima de 1.000m²)'; }
+    else if (metragem > 500)  { fatorEscala = 0.85; descEscala = '-15% escala (terreno acima de 500m²)'; }
+    precoM2Final = Math.round(precoM2Final * fatorEscala);
+    if (descEscala) ajustesDescricao.push(descEscala);
+    console.log(`[Precificador] Fator escala terreno ${metragem}m²: ×${fatorEscala} → R$ ${precoM2Final}/m²`);
+  }
+
+  // ─── Ajuste por estado de conservação (casas e apartamentos) ──────────────
+  // Uma casa "para reformar" no Centro vale o lote, não a construção
+  // Mercado de Anápolis: reforma total pode reduzir 25-35% do valor de mercado
+  if ((tipo === 'casa' || tipo === 'apartamento') && conservacao) {
+    let fatorConservacao = 1.0;
+    let descConservacao = null;
+    if (conservacao === 'reformar') {
+      // Casa para reformar: desconto reflete custo de obra + menor demanda
+      // No Centro, casas antigas (valor de lote) já têm isso embutido nos anúncios
+      // mas a média do Perplexity tende a incluir casas em estado médio
+      fatorConservacao = 0.75;
+      descConservacao = '-25% estado de conservação (necessita reforma)';
+    } else if (conservacao === 'bom') {
+      fatorConservacao = 1.0; // sem ajuste — é o estado "padrão" dos comparativos
+    } else if (conservacao === 'novo') {
+      fatorConservacao = 1.12;
+      descConservacao = '+12% imóvel novo ou recém-construído';
+    }
+    if (fatorConservacao !== 1.0) {
+      precoM2Final = Math.round(precoM2Final * fatorConservacao);
+      if (descConservacao) ajustesDescricao.push(descConservacao);
+      console.log(`[Precificador] Ajuste conservação (${conservacao}): ×${fatorConservacao} → R$ ${precoM2Final}/m²`);
+    }
+  }
+
+  // ─── Depreciação por idade (método evolutivo: só a benfeitoria deprecia) ─────
+  // A casa = terreno (não deprecia) + construção (deprecia com a idade). Aplica
+  // ~0,5%/ano sobre o total após 5 anos de uso, teto -25%. Imóvel novo/recém
+  // construído já é tratado pela conservação — não acumula aqui.
+  if (tipo === 'casa' && idade != null && idade > 5 && conservacao !== 'novo') {
+    const fatorIdade = 1 - Math.min(0.25, (idade - 5) * 0.005);
+    if (fatorIdade < 1.0) {
+      precoM2Final = Math.round(precoM2Final * fatorIdade);
+      ajustesDescricao.push(`-${Math.round((1 - fatorIdade) * 100)}% depreciação da construção (${idade} anos)`);
+      console.log(`[Precificador] Depreciação idade ${idade}a: ×${fatorIdade.toFixed(3)} → R$ ${precoM2Final}/m²`);
+    }
+  }
+
+  // ─── Ajuste por lote generoso (casas) ───────────────────────────────────────
+  // Um lote grande aumenta o valor percebido: mais quintal, potencial de ampliação,
+  // mais privacidade. Referência: lote padrão Anápolis ~200-300m²
+  if ((tipo === 'casa') && areaLote && areaLote > 0 && metragem > 0) {
+    const taxaOcupacao = metragem / areaLote; // quanto do lote está construído
+    const lotePadrao = 250; // m² de lote padrão para comparação
+    let fatorLote = 1.0;
+    let descLote = null;
+
+    if (areaLote >= 800) {
+      fatorLote = 1.15;
+      descLote = `+15% lote generoso (${areaLote}m²)`;
+    } else if (areaLote >= 500) {
+      fatorLote = 1.10;
+      descLote = `+10% lote amplo (${areaLote}m²)`;
+    } else if (areaLote >= 350) {
+      fatorLote = 1.05;
+      descLote = `+5% lote acima do padrão (${areaLote}m²)`;
+    }
+    // Lote abaixo de 200m²: desconto leve
+    else if (areaLote < 150) {
+      fatorLote = 0.95;
+      descLote = `-5% lote pequeno (${areaLote}m²)`;
+    }
+
+    if (fatorLote !== 1.0) {
+      precoM2Final = Math.round(precoM2Final * fatorLote);
+      if (descLote) ajustesDescricao.push(descLote);
+      console.log(`[Precificador] Ajuste lote ${areaLote}m²: ×${fatorLote} → R$ ${precoM2Final}/m²`);
+    }
+  }
+
+  // Ajuste baseado no perfil OpenStreetMap
+  // REGRAS:
+  // - Score OSM < 30: área pouco mapeada no OSM (não significa isolada de verdade) → ignora
+  // - Só aplica ajuste quando score >= 30 E confiança da pesquisa é alta ou media
+  // - Nunca penaliza duplamente: confiança baixa já indica incerteza, não adiciona desconto
+  const perfilOSM = perfilGuru?.infraestrutura;
+  const osmConfiavel = perfilOSM && (perfilOSM.score || 0) >= 30 && confiancaFonte !== 'baixa';
+  if (osmConfiavel) {
+    if (perfilOSM.perfil === 'comercial forte') {
+      precoM2Final = Math.round(precoM2Final * 1.20);
+      ajustesDescricao.push('+20% localização comercial forte');
+    } else if (perfilOSM.perfil === 'misto' && perfilOSM.score >= 50) {
+      precoM2Final = Math.round(precoM2Final * 1.10);
+      ajustesDescricao.push('+10% boa infraestrutura local');
+    } else if (perfilOSM.perfil === 'residencial isolado' && perfilOSM.score >= 30) {
+      precoM2Final = Math.round(precoM2Final * 0.92);
+      ajustesDescricao.push('-8% região residencial com infraestrutura limitada');
+    }
+  }
+
+  // Mesclagem Perplexity + fallback quando confiança é baixa (< 3 amostras)
+  // Evita que 1 anúncio de bairro vizinho distorça o preço final
+  // Pesos: 1 amostra = 40% Perplexity + 60% fallback; 2 amostras = 65% + 35%
+  if (confiancaFonte === 'baixa' && analiseIA) {
+    const amostras = analiseIA.anunciosAnalisados || 1;
+    const pesoPplx = amostras === 1 ? 0.40 : 0.65;
+    const pesoFallback = 1 - pesoPplx;
+
+    // Fallback calibrado por tipo E finalidade (venda vs aluguel)
+    // Aluguel em R$/m²/mês — valores completamente diferentes de venda
+    const mediasFallback = {
+      'anapolis': {
+        venda:    { terreno: 800, casa: 3500, apartamento: 5500, comercial: 4000, rural: 10,   default: 3000 },
+        aluguel:  { terreno: 3,   casa: 18,   apartamento: 28,   comercial: 22,   rural: 0.04, default: 18 }
+      },
+      'anápolis': null, // alias abaixo
+      'goiania': {
+        venda:    { terreno: 1200, casa: 5000, apartamento: 7000, comercial: 5500, rural: 12,   default: 4500 },
+        aluguel:  { terreno: 4,    casa: 25,   apartamento: 38,   comercial: 30,   rural: 0.05, default: 25 }
+      },
+      'goiânia': null, // alias abaixo
+      'default': {
+        venda:    { terreno: 600, casa: 2500, apartamento: 4000, comercial: 3000, rural: 8,    default: 2000 },
+        aluguel:  { terreno: 2,   casa: 14,   apartamento: 22,   comercial: 18,   rural: 0.03, default: 14 }
+      }
+    };
+    mediasFallback['anápolis'] = mediasFallback['anapolis'];
+    mediasFallback['goiânia']  = mediasFallback['goiania'];
+
+    const cidadeKeyFb = (cidade || 'anapolis').toLowerCase().trim();
+    const mediasFbCidade = mediasFallback[cidadeKeyFb] || mediasFallback['default'];
+    const mediasFbFinal  = mediasFbCidade[finalidade] || mediasFbCidade['venda'];
+    const baseFb = mediasFbFinal[tipo] || mediasFbFinal.default;
+    const fallbackM2 = Math.round(baseFb * perfilBairro.mult);
+    const precoMesclado = Math.round(precoM2Final * pesoPplx + fallbackM2 * pesoFallback);
+
+    console.log(`[Precificador] Mesclagem confiança baixa (${amostras} amostras): ` +
+      `Perplexity R$${precoM2Final}/m² (×${pesoPplx}) + Fallback R$${fallbackM2}/m² (×${pesoFallback}) = R$${precoMesclado}/m²`);
+
+    precoM2Final = precoMesclado;
+    ajustesDescricao.push(`Estimativa combinada: ${Math.round(pesoPplx*100)}% mercado + ${Math.round(pesoFallback*100)}% base calibrada (poucos anúncios na região)`);
+  }
+
+  // ─── Ajustes específicos para RURAL (após mesclagem de confiança) ──────────
+  // Aplicado DEPOIS da mesclagem Perplexity+fallback para não ser sobrescrito
+  if (tipo === 'rural') {
+    const { subTipoRural, areaAlqueires, margemAsfalto, acessoAsfalto, temAgua, temEnergia, benfeitorias } = dadosImovel || {};
+    const areaAlq = areaAlqueires || (metragem / 48400);
+
+    // Subtipo
+    let fatorSubtipo = 1.0;
+    let descSubtipo = '';
+    if (subTipoRural === 'chacara')      { fatorSubtipo = 1.00; descSubtipo = 'Chácara (até 5 alq)'; }
+    else if (subTipoRural === 'sitio')   { fatorSubtipo = 0.80; descSubtipo = 'Sítio (5-20 alq): -20%'; }
+    else if (subTipoRural === 'fazenda') { fatorSubtipo = 0.55; descSubtipo = 'Fazenda (20+ alq): -45%'; }
+    if (areaAlq <= 2)       fatorSubtipo *= 1.15;
+    else if (areaAlq <= 5)  fatorSubtipo *= 1.00;
+    else if (areaAlq <= 15) fatorSubtipo *= 0.85;
+    else if (areaAlq <= 40) fatorSubtipo *= 0.70;
+    else                    fatorSubtipo *= 0.55;
+    precoM2Final = Math.round(precoM2Final * fatorSubtipo);
+    if (descSubtipo) ajustesDescricao.push(descSubtipo);
+
+    // Acesso
+    if (margemAsfalto === true) {
+      precoM2Final = Math.round(precoM2Final * 1.30);
+      ajustesDescricao.push('+30% beira de asfalto (acesso direto pela rodovia)');
+    } else if (acessoAsfalto === true) {
+      precoM2Final = Math.round(precoM2Final * 1.10);
+      ajustesDescricao.push('+10% acesso pelo asfalto');
+    }
+
+    // Água
+    if (temAgua === true) {
+      precoM2Final = Math.round(precoM2Final * 1.12);
+      ajustesDescricao.push('+12% água disponível (nascente/poço/córrego)');
+    }
+
+    // Energia
+    if (temEnergia === true) {
+      precoM2Final = Math.round(precoM2Final * 1.05);
+      ajustesDescricao.push('+5% energia elétrica');
+    }
+
+    // Benfeitorias
+    const benfs = Array.isArray(benfeitorias) ? benfeitorias.map(b => b.toLowerCase()) : [];
+    let fatorBenf = 1.0;
+    const benfsDesc = [];
+    if (benfs.some(b => b.includes('casa sede') || b.includes('casa principal'))) { fatorBenf *= 1.08; benfsDesc.push('casa sede'); }
+    if (benfs.some(b => b.includes('peão') || b.includes('caseiro')))             { fatorBenf *= 1.04; benfsDesc.push('casa do peão'); }
+    if (benfs.some(b => b.includes('curral') || b.includes('brete')))             { fatorBenf *= 1.03; benfsDesc.push('curral'); }
+    if (benfs.some(b => b.includes('galpão') || b.includes('galp')))              { fatorBenf *= 1.03; benfsDesc.push('galpão'); }
+    if (benfs.some(b => b.includes('pasto formado') || b.includes('braquiária'))) { fatorBenf *= 1.05; benfsDesc.push('pasto formado'); }
+    if (benfs.some(b => b.includes('piscina')))                                    { fatorBenf *= 1.06; benfsDesc.push('piscina'); }
+    if (benfs.some(b => b.includes('represa') || b.includes('lago') || b.includes('açude'))) { fatorBenf *= 1.04; benfsDesc.push('represa/lago'); }
+    if (fatorBenf > 1.0) {
+      precoM2Final = Math.round(precoM2Final * fatorBenf);
+      ajustesDescricao.push(`+${Math.round((fatorBenf - 1) * 100)}% benfeitorias (${benfsDesc.join(', ')})`);
+    }
+
+    const precoAlqDebug = Math.round(precoM2Final * 48400);
+    console.log(`[Rural] precoM2Final=${precoM2Final}/m² = R$ ${precoAlqDebug.toLocaleString('pt-BR')}/alq × ${areaAlq} alq = R$ ${Math.round(precoAlqDebug * areaAlq).toLocaleString('pt-BR')}`);
+  }
+
+  // ─── Resultado final ───────────────────────────────────────────
+
+
+  // Para rural: calcular preço total em alqueires (não m²)
+  // precoM2Final rural está em R$/m² (ex: R$10/m² = R$484.000/alq)
+  // mas os ajustes rurais (asfalto, água, benfeitorias) foram aplicados sobre precoM2Final
+  // então o total correto = precoM2Final × metragem_m² está CERTO matematicamente,
+  // mas o precoM2Final acumulou fatores que o tornaram muito alto.
+  // A correção: para rural, usar precoAlqFinal × areaAlqueires
+  let precoRecomendado;
+  if (tipo === 'rural') {
+    const { areaAlqueires } = dadosImovel || {};
+    const areaAlq = areaAlqueires || (metragem / 48400);
+    // precoM2Final em R$/m² → converter para R$/alq para exibição e total
+    const precoAlqFinal = Math.round(precoM2Final * 48400);
+    precoRecomendado = Math.round(precoAlqFinal * areaAlq);
+    console.log(`[Rural] precoM2Final=${precoM2Final}/m² → precoAlqFinal=${precoAlqFinal.toLocaleString('pt-BR')}/alq × ${areaAlq} alq = R$${precoRecomendado.toLocaleString('pt-BR')}`);
+  } else {
+    precoRecomendado = Math.round(precoM2Final * metragem);
+  }
+  const precoMinimo = Math.round(precoRecomendado * 0.92);
+  const precoMaximo = Math.round(precoRecomendado * 1.08);
+  const liquidez = estimarLiquidez(finalidade, precoM2Final, precoM2Mercado);
+
+  const fontes = [fontePrincipal];
+  if (perfilGuru) fontes.push('OpenStreetMap + IBGE');
+
+  // Salva avaliação no histórico
+  try {
+    await db.salvarAvaliacao({
+      cidade, bairro, endereco, tipo, finalidade, metragem, areaLote, quartos, vagas, conservacao,
+      diferenciais: Array.isArray(diferenciais) ? diferenciais : [],
+      preco_m2_mercado: precoM2Mercado, preco_m2_ajustado: precoM2Final,
+      preco_recomendado: precoRecomendado, preco_minimo: precoMinimo, preco_maximo: precoMaximo,
+      fontes, confianca: confiancaFonte, analise_rua: perfilOSM, laudo: null, canal: 'web'
+    });
+  } catch {}
+
+  // ─── FICHA DO PRÉDIO (apartamento com condomínio informado) ────────
+  let fichaPredio = null, fichaPredioTexto = null;
+  if (condominio && tipo === 'apartamento') {
+    try {
+      fichaPredio = await gerarFichaPredio({ condominio, bairro, cidade, valorMercado: precoRecomendado });
+      fichaPredioTexto = formatarFichaPredio(fichaPredio);
+    } catch (e) { console.warn('[FichaPredio] erro:', e.message); }
+  }
+
+  // ─── ENRIQUECIMENTO: rentabilidade, infraestrutura, tendência, financiamento ──
+  let enriquecimento = null;
+  try {
+    let lat = geoInfo?.lat, lng = geoInfo?.lng;
+    if (lat == null) {
+      try { const { coordsBairro } = require('./pontoComercial'); const c = coordsBairro(bairro); if (c) { lat = c.lat; lng = c.lng; } } catch {}
+    }
+    const { enriquecer } = require('./enriquecimento');
+    enriquecimento = await enriquecer({
+      tipo, cidade, bairro, metragem,
+      valorVenda: finalidade === 'venda' ? precoRecomendado : null,
+      precoM2: precoM2Mercado, lat, lng,
+    });
+  } catch (e) { console.warn('[Enriquecimento] erro:', e.message); }
+
+  return {
+    precoMinimo, precoRecomendado, precoMaximo,
+    enriquecimento,
+    fichaPredio, fichaPredioTexto,
+    precoM2Mercado, precoM2Imovel: precoM2Final,
+    precoAlqMercado: tipo === 'rural' ? Math.round(precoM2Mercado * 48400) : null,
+    precoAlqImovel:  tipo === 'rural' ? Math.round(precoM2Final   * 48400) : null,
+    comparativosEncontrados: comparativos?.totalEncontrados || 0,
+    fontesConsultadas: fontes.filter(Boolean),
+    tempoEstimadoDias: liquidez.dias,
+    indiceLiquidez: liquidez.indicador,
+    ajustesAplicados: ajustesDescricao,
+    variacao3meses: null,
+    analiseIA: analiseIA ? {
+      raciocinio: analiseIA.raciocinio,
+      confianca: analiseIA.confianca,
+      faixaM2: analiseIA.faixaM2 || `R$ ${analiseIA.faixaMinM2} - R$ ${analiseIA.faixaMaxM2}/m²`,
+      precoMedioM2: analiseIA.precoMedioM2,
+      anunciosAnalisados: analiseIA.anunciosAnalisados || 0,
+      comparativos: analiseIA.comparativos || [],
+      citacoes: analiseIA.citacoes || []
+    } : null,
+    confiancaFonte,
+    localizacao: null, scoreLocalizacao: null, descLocalizacao: null,
+    geoInfo: geoInfo?.valido ? {
+      enderecoValidado: geoInfo.enderecoCompleto,
+      bairrosVizinhos: geoInfo.bairrosProximos,
+      distanciaCentroKm: geoInfo.distanciaCentroKm,
+      viasProximas: geoInfo.viasProximas
+    } : null,
+    perfilGuru: perfilGuru ? {
+      infraestrutura: perfilGuru.infraestrutura,
+      municipio: perfilGuru.municipio,
+      ruasPrincipais: perfilGuru.ruasPrincipais
+    } : null
+  };
+}
+
+/**
+ * Salva informações do bairro no DB a partir do Google Maps
+ */
+async function salvarInfoBairro(cidade, bairro, geoInfo) {
+  try {
+    await db.salvarBairro({
+      cidade, bairro,
+      vizinhos: geoInfo.bairrosProximos,
+      ruas_valorizadas: geoInfo.viasProximas,
+      fonte: 'google_maps'
+    });
+  } catch {}
+}
+
+function estimarLiquidez(finalidade, precoM2Imovel, precoM2Mercado) {
+  const ratio = precoM2Mercado > 0 ? precoM2Imovel / precoM2Mercado : 1.0;
+  let dias, indicador;
+  if (finalidade === 'aluguel') {
+    if (ratio <= 0.95) { dias = '15 a 30'; indicador = '🟢 Alta liquidez'; }
+    else if (ratio <= 1.05) { dias = '30 a 60'; indicador = '🟡 Liquidez normal'; }
+    else { dias = '60 a 90+'; indicador = '🔴 Liquidez baixa'; }
+  } else {
+    if (ratio <= 0.95) { dias = '30 a 60'; indicador = '🟢 Alta liquidez'; }
+    else if (ratio <= 1.05) { dias = '60 a 120'; indicador = '🟡 Liquidez normal'; }
+    else { dias = '120 a 180+'; indicador = '🔴 Liquidez baixa'; }
+  }
+  return { dias, indicador };
+}
+
+function formatarReais(valor) {
+  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(valor);
+}
+
+module.exports = { calcularPreco, formatarReais };

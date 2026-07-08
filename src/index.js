@@ -1,0 +1,86 @@
+require('dotenv').config();
+const express = require('express');
+const path = require('path');
+const { handleWebhook } = require('./whatsapp/webhook');
+const { handleTelegram } = require('./telegram/bot');
+const chatRoutes = require('./routes/chat');
+const estimateRoutes = require('./routes/estimate');
+
+const app = express();
+app.use(express.json({ limit: '8mb' })); // 8mb: o dossiê comercial envia o mapa em base64
+
+// Interface web (pasta public)
+app.use(express.static(path.join(__dirname, '../public')));
+
+// Rotas da API de chat (interface web)
+app.use('/api', chatRoutes);
+
+// API REST autenticada para consumidores externos (ex: Bens Gestão)
+app.use('/api', estimateRoutes);
+
+// Webhook do WhatsApp (Evolution API)
+app.post('/webhook', handleWebhook);
+
+// Webhook do Telegram
+app.post('/telegram', handleTelegram);
+
+// Health check para Railway
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', service: 'Precifica AI', timestamp: new Date().toISOString() });
+});
+
+// ─── API do Guru Imobiliário ─────────────────────────────────────
+const db = require('./data/database');
+
+// Estatísticas da base de conhecimento
+app.get('/api/guru/stats', async (req, res) => {
+  try { res.json(await db.stats()); }
+  catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Listar bairros mapeados de uma cidade
+app.get('/api/guru/bairros/:cidade', async (req, res) => {
+  try { res.json(await db.listarBairros(req.params.cidade)); }
+  catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Ver dados de um bairro específico
+app.get('/api/guru/bairro/:cidade/:bairro', async (req, res) => {
+  try { res.json(await db.buscarBairro(req.params.cidade, req.params.bairro)); }
+  catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Corretor adiciona/atualiza info de um bairro
+app.post('/api/guru/bairro', async (req, res) => {
+  try { res.json(await db.salvarBairro(req.body)); }
+  catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Corretor envia feedback sobre uma avaliação
+app.post('/api/guru/feedback', async (req, res) => {
+  try { res.json(await db.salvarFeedback(req.body)); }
+  catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Alertas de uso (Telegram) — envia teste só p/ o ALERT_CHAT_ID
+const { iniciarAlertas, checkUsoEAlertar, enviarTelegram } = require('./data/alertas');
+app.post('/api/alerta-teste', async (req, res) => {
+  const chatId = process.env.ALERT_CHAT_ID;
+  if (!chatId) return res.status(400).json({ error: 'ALERT_CHAT_ID não configurado.' });
+  const ok = await enviarTelegram(chatId, '✅ *Precifica Aí* — alertas de uso ativados! Você receberá aqui um aviso quando o consumo de scraping estiver acabando. (mensagem de teste)');
+  res.json({ ok, chatId });
+});
+app.get('/api/alerta-check', async (req, res) => { await checkUsoEAlertar(); res.json({ ok: true }); });
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, async () => {
+  console.log(`✅ Precifica AI rodando na porta ${PORT}`);
+  console.log(`🌐 Interface web: http://localhost:${PORT}`);
+  // Inicializa tabelas do Postgres
+  try {
+    await db.inicializar();
+  } catch (err) {
+    console.error('[DB] Falha ao inicializar:', err.message);
+  }
+  iniciarAlertas();
+});

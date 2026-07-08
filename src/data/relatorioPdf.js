@@ -1026,7 +1026,7 @@ function gerarFazendaPdf(r, opts = {}) {
       kv('Terreno', `${num(r.areaM2)} m² × ${brl(r.precos.m2)}/m² = ${brl(r.terraNua)}`);
       kv('Terreno ajustado (acesso/distância/água)', brl(r.terraNuaAj));
       kv('Benfeitorias', `${brl(r.benfValor)}${r.benfValorInformado != null ? ' (valor informado)' : ' (estimado por percentual)'}`);
-      kv('= Com benfeitorias', brl(r.total));
+      kv('= Com benfeitorias', brl(r.totalMercado != null ? r.totalMercado : r.total));
       if (r.benfValorInformado == null) paragraph('Observação: o valor das benfeitorias foi estimado por percentual (dados incompletos). Para o veredito final preciso, informe o custo de construção da casa/estrutura — a casa costuma ser a maior parte do valor de uma chácara de recreio.', 8);
     } else {
       band('APTIDÃO E TERRA NUA');
