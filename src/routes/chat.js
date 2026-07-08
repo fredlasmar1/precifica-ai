@@ -140,11 +140,29 @@ router.post('/avaliar', async (req, res) => {
   };
 
   try {
-    const resultado = await calcularPreco(dadosImovel);
+    // Quadro completo: avalia a finalidade pedida E a outra (venda↔aluguel) em
+    // PARALELO — mesmo tempo de espera, dobro da informação (preço + yield).
+    const outraFinal = dadosImovel.finalidade === 'venda' ? 'aluguel' : 'venda';
+    const [resultado, rOutra] = await Promise.all([
+      calcularPreco(dadosImovel),
+      calcularPreco({ ...dadosImovel, finalidade: outraFinal }).catch(() => null),
+    ]);
     if (resultado.erro) {
       return res.status(422).json({ error: resultado.mensagem });
     }
-    const laudo = gerarLaudo(dadosImovel, resultado);
+    let laudo = gerarLaudo(dadosImovel, resultado);
+    if (rOutra && !rOutra.erro && rOutra.precoRecomendado > 0) {
+      const fmt = (v) => 'R$ ' + Number(v).toLocaleString('pt-BR');
+      const venda = dadosImovel.finalidade === 'venda' ? resultado.precoRecomendado : rOutra.precoRecomendado;
+      const aluguel = dadosImovel.finalidade === 'aluguel' ? resultado.precoRecomendado : rOutra.precoRecomendado;
+      const yieldMes = venda > 0 ? (aluguel / venda * 100) : 0;
+      const paybackAnos = (venda > 0 && aluguel > 0) ? (venda / (aluguel * 12)).toFixed(1) : '—';
+      laudo += `\n━━━━━━━━━━━━━━━━━━\n📈 *VENDA × ALUGUEL — quadro completo:*\n`;
+      laudo += `• Preço de venda: *${fmt(venda)}*\n`;
+      laudo += `• Aluguel de mercado: *${fmt(aluguel)}/mês*\n`;
+      laudo += `• Rentabilidade (yield): *${yieldMes.toFixed(2)}%/mês* (${(yieldMes * 12).toFixed(1)}%/ano) · payback ~${paybackAnos} anos\n`;
+      resultado.precoVenda = venda; resultado.precoAluguel = aluguel; resultado.yieldMes = +yieldMes.toFixed(2);
+    }
     salvarLaudoImovel(dadosImovel, resultado);
     return res.json({ type: 'laudo', response: laudo, dados: dadosImovel, resultado });
   } catch (err) {
@@ -846,10 +864,13 @@ function gerarLaudo(dados, resultado) {
   if (analiseIA) {
     laudo += `🔎 *Comparativos de mercado:*\n`;
     if (analiseIA.comparativos && analiseIA.comparativos.length > 0) {
-      analiseIA.comparativos.slice(0, 7).forEach((c, i) => {
-        laudo += `  ${i + 1}. ${c.area}m² • ${formatarReais(c.preco)} (${formatarReais(c.precoM2)}/m²)\n`;
+      analiseIA.comparativos.slice(0, 12).forEach((c, i) => {
+        const extra = [c.quartos ? `${c.quartos}q` : '', c.vagas ? `${c.vagas} vaga(s)` : '', c.bairro && c.bairro !== bairro ? c.bairro : ''].filter(Boolean).join(' · ');
+        laudo += `  ${i + 1}. ${c.area}m² • ${formatarReais(c.preco)} (${formatarReais(c.precoM2)}/m²)${extra ? ` • ${extra}` : ''}\n`;
         if (c.detalhe) laudo += `     ${c.detalhe}\n`;
-        if (c.fonte) laudo += `     _Fonte: ${c.fonte}_\n`;
+        const rodape = [c.fonte ? `Fonte: ${c.fonte}` : ''].filter(Boolean).join(' · ');
+        if (rodape) laudo += `     _${rodape}_\n`;
+        if (c.url) laudo += `     🔗 ${c.url}\n`;
       });
       laudo += `\n📊 *Resultado da pesquisa:*\n`;
       laudo += `• Média: *${formatarReais(analiseIA.precoMedioM2)}/m²*\n`;

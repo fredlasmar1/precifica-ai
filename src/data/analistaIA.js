@@ -490,7 +490,7 @@ Mas registre TODOS os anúncios encontrados para calcular a média geral do bair
 - NUNCA invente preços — apenas anúncios reais encontrados
 - **PRIORIZE apartamentos de tamanho similar**: entre ${Math.round(metragem*0.5)}m² e ${Math.round(metragem*1.5)}m² e com ${quartos > 1 ? quartos - 1 + ' a ' + (quartos + 1) : quartos} quartos
 - Se não achar suficientes desse porte, amplie para qualquer tamanho no bairro
-- Busque no mínimo 3 e no máximo 15 anúncios
+- Busque o MÁXIMO de anúncios reais possível: de 8 a 25 (quanto mais, melhor a amostra). Não pare no primeiro que achar.
 - **RETORNE TODOS OS COMPARATIVOS ENCONTRADOS — não filtre nem descarte nenhum**
 - O sistema fará a filtragem estatística depois — sua tarefa é coletar dados brutos
 - Calcule: Média = soma(preço/m² de cada anúncio) ÷ N`;
@@ -748,7 +748,7 @@ IMPORTANTE: o campo "bairro" em cada comparativo deve conter o nome exato do bai
         { role: 'user', content: prompt }
       ],
       temperature: 0.1,
-      max_tokens: 2000
+      max_tokens: 3200
     }, {
       timeout: 60000,
       headers: {

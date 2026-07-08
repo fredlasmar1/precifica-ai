@@ -33,11 +33,13 @@ async function buscarComparativos(dados) {
   const cached = cache.get(cacheKey);
   if (cached) return cached;
 
-  // Busca real via ScraperAPI nos dois maiores portais (JSON-LD, ~30 anúncios
-  // cada). OLX/Imovelweb seguem disponíveis mas desativados (parsers antigos).
+  // Busca real via ScraperAPI. VivaReal/ZAP (JSON-LD, ~30 anúncios cada) +
+  // OLX/Imovelweb (best-effort — se o parser falhar, allSettled ignora).
   const resultados = await Promise.allSettled([
     buscarVivaReal(dados),
-    buscarZAP(dados)
+    buscarZAP(dados),
+    buscarOLX(dados),
+    buscarImovelweb(dados)
   ]);
 
   // Combina imóveis de todos que retornaram
