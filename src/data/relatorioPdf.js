@@ -309,7 +309,8 @@ function gerarRelatorioPdf(dados, resultado, opts = {}) {
     ensure(64);
     y += 16;
     const half = W / 2;
-    y += 34;
+    ensure(150);
+    y += 90;
     desenharAssinatura(doc, LX + half / 2, y);
     doc.lineWidth(0.7).strokeColor(NAVY).moveTo(LX + half / 2 - 80, y).lineTo(LX + half / 2 + 80, y).stroke();
     doc.font('Helvetica').fontSize(8).fillColor(LABEL).text('CORRETOR RESPONSÁVEL', LX + half / 2 - 80, y + 5, { width: 160, align: 'center' });
@@ -700,7 +701,8 @@ function gerarRepassePdf(dados, resultado, opts = {}) {
     ensure(56);
     y += 14;
     const half = W / 2;
-    y += 34;
+    ensure(150);
+    y += 90;
     desenharAssinatura(doc, LX + half / 2, y);
     doc.lineWidth(0.7).strokeColor(NAVY).moveTo(LX + half / 2 - 80, y).lineTo(LX + half / 2 + 80, y).stroke();
     doc.font('Helvetica').fontSize(8).fillColor(LABEL).text('CORRETOR RESPONSÁVEL', LX + half / 2 - 80, y + 5, { width: 160, align: 'center' });
@@ -805,7 +807,8 @@ function gerarTerrenoPdf(r, opts = {}) {
     ensure(56);
     y += 14;
     const half = W / 2;
-    y += 34;
+    ensure(150);
+    y += 90;
     desenharAssinatura(doc, LX + half / 2, y);
     doc.lineWidth(0.7).strokeColor(NAVY).moveTo(LX + half / 2 - 80, y).lineTo(LX + half / 2 + 80, y).stroke();
     doc.font('Helvetica').fontSize(8).fillColor(LABEL).text('CORRETOR RESPONSÁVEL', LX + half / 2 - 80, y + 5, { width: 160, align: 'center' });
@@ -910,7 +913,8 @@ function gerarBtsPdf(r, opts = {}) {
     ensure(56);
     y += 14;
     const half = W / 2;
-    y += 34;
+    ensure(150);
+    y += 90;
     desenharAssinatura(doc, LX + half / 2, y);
     doc.lineWidth(0.7).strokeColor(NAVY).moveTo(LX + half / 2 - 80, y).lineTo(LX + half / 2 + 80, y).stroke();
     doc.font('Helvetica').fontSize(8).fillColor(LABEL).text('CORRETOR RESPONSÁVEL', LX + half / 2 - 80, y + 5, { width: 160, align: 'center' });
@@ -1096,7 +1100,8 @@ function gerarFazendaPdf(r, opts = {}) {
     ensure(56);
     y += 14;
     const half = W / 2;
-    y += 34;
+    ensure(150);
+    y += 90;
     desenharAssinatura(doc, LX + half / 2, y);
     doc.lineWidth(0.7).strokeColor(NAVY).moveTo(LX + half / 2 - 80, y).lineTo(LX + half / 2 + 80, y).stroke();
     doc.font('Helvetica').fontSize(8).fillColor(LABEL).text('CORRETOR RESPONSÁVEL', LX + half / 2 - 80, y + 5, { width: 160, align: 'center' });
@@ -1198,7 +1203,8 @@ function gerarDecisaoPdf(r, opts = {}) {
     ensure(56);
     y += 14;
     const half = W / 2;
-    y += 34;
+    ensure(150);
+    y += 90;
     desenharAssinatura(doc, LX + half / 2, y);
     doc.lineWidth(0.7).strokeColor(NAVY).moveTo(LX + half / 2 - 80, y).lineTo(LX + half / 2 + 80, y).stroke();
     doc.font('Helvetica').fontSize(8).fillColor(LABEL).text('CORRETOR RESPONSÁVEL', LX + half / 2 - 80, y + 5, { width: 160, align: 'center' });
