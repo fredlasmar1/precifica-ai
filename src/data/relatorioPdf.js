@@ -1032,19 +1032,27 @@ function gerarFazendaPdf(r, opts = {}) {
     y += 10;
 
     // Destaque de valor
-    if (recreio) {
-      const definido = r.valorDefinido != null;
+    if (recreio && r.soValorDefinido) {
+      // Laudo de valor definido: UM único valor, sem referência de mercado.
+      ensure(58);
+      doc.roundedRect(LX, y, W, 50, 8).fill(BLUE);
+      doc.font('Helvetica').fontSize(8).fillColor('#cfe0ff').text('VALOR DE AVALIAÇÃO', LX + 16, y + 9);
+      doc.font('Helvetica-Bold').fontSize(20).fillColor(WHITE).text(brl(r.total), LX + 16, y + 20);
+      doc.font('Helvetica').fontSize(7.5).fillColor('#cfe0ff').text('POR METRO QUADRADO', RX - 210, y + 9, { width: 200, align: 'right' });
+      doc.font('Helvetica-Bold').fontSize(13).fillColor(WHITE).text(`${brl(r.precoM2Final)}/m²`, RX - 210, y + 22, { width: 200, align: 'right' });
+      y += 60;
+    } else if (recreio) {
       const veredito = r.benfValorInformado != null;
-      const refEsq = definido ? 'AVALIAÇÃO DE MERCADO (ref.)' : 'SÓ O TERRENO (terra nua)';
-      const valEsq = definido ? (r.totalMercado || 0) : r.terraNuaAj;
-      const refDir = definido ? 'VALOR DEFINIDO (cliente)' : (veredito ? 'VEREDITO FINAL (com benfeitorias)' : 'COM BENFEITORIAS (estimado)');
+      const refEsq = 'SÓ O TERRENO (terra nua)';
+      const valEsq = r.terraNuaAj;
+      const refDir = veredito ? 'VEREDITO FINAL (com benfeitorias)' : 'COM BENFEITORIAS (estimado)';
       ensure(66);
       doc.roundedRect(LX, y, W, 58, 8).fill(BLUE);
       doc.font('Helvetica').fontSize(7.5).fillColor('#cfe0ff').text(refEsq, LX + 16, y + 9);
       doc.font('Helvetica-Bold').fontSize(14).fillColor(WHITE).text(brl(valEsq), LX + 16, y + 19);
       doc.font('Helvetica').fontSize(7.5).fillColor('#cfe0ff').text(refDir, RX - 230, y + 9, { width: 220, align: 'right' });
-      doc.font('Helvetica-Bold').fontSize(definido || veredito ? 17 : 14).fillColor(WHITE).text(brl(r.total), RX - 230, y + 18, { width: 220, align: 'right' });
-      doc.font('Helvetica').fontSize(7).fillColor('#cfe0ff').text(`${brl(r.precoM2Final)}/m²${definido ? '  • valor negociado' : veredito ? '  ✓ dados completos' : ''}`, RX - 230, y + 40, { width: 220, align: 'right' });
+      doc.font('Helvetica-Bold').fontSize(veredito ? 17 : 14).fillColor(WHITE).text(brl(r.total), RX - 230, y + 18, { width: 220, align: 'right' });
+      doc.font('Helvetica').fontSize(7).fillColor('#cfe0ff').text(`${brl(r.precoM2Final)}/m²${veredito ? '  ✓ dados completos' : ''}`, RX - 230, y + 40, { width: 220, align: 'right' });
       y += 68;
     } else {
       ensure(58);
@@ -1063,12 +1071,19 @@ function gerarFazendaPdf(r, opts = {}) {
       kv('Infraestrutura', [r.agua ? 'água' : null, r.energia ? 'energia' : null, r.condominio ? 'condomínio fechado' : null].filter(Boolean).join(', ') || '—');
       if (r.benfeitorias && r.benfeitorias.length) kv('Benfeitorias', r.benfeitorias.join(', '));
 
-      band('COMPOSIÇÃO DO VALOR');
-      kv('Terreno', `${num(r.areaM2)} m² × ${brl(r.precos.m2)}/m² = ${brl(r.terraNua)}`);
-      kv('Terreno ajustado (acesso/distância/água)', brl(r.terraNuaAj));
-      kv('Benfeitorias', `${brl(r.benfValor)}${r.benfValorInformado != null ? ' (valor informado)' : ' (estimado por percentual)'}`);
-      kv('= Com benfeitorias', brl(r.totalMercado != null ? r.totalMercado : r.total));
-      if (r.benfValorInformado == null) paragraph('Observação: o valor das benfeitorias foi estimado por percentual (dados incompletos). Para o veredito final preciso, informe o custo de construção da casa/estrutura — a casa costuma ser a maior parte do valor de uma chácara de recreio.', 8);
+      if (r.soValorDefinido) {
+        band('RESUMO DA AVALIAÇÃO');
+        kv('Área total', `${num(r.areaM2)} m² (${(r.areaM2 / 10000).toLocaleString('pt-BR')} ha)`);
+        kv('Valor por m²', `${brl(r.precoM2Final)}/m²`);
+        kv('Valor de avaliação', brl(r.total));
+      } else {
+        band('COMPOSIÇÃO DO VALOR');
+        kv('Terreno', `${num(r.areaM2)} m² × ${brl(r.precos.m2)}/m² = ${brl(r.terraNua)}`);
+        kv('Terreno ajustado (acesso/distância/água)', brl(r.terraNuaAj));
+        kv('Benfeitorias', `${brl(r.benfValor)}${r.benfValorInformado != null ? ' (valor informado)' : ' (estimado por percentual)'}`);
+        kv('= Com benfeitorias', brl(r.totalMercado != null ? r.totalMercado : r.total));
+        if (r.benfValorInformado == null) paragraph('Observação: o valor das benfeitorias foi estimado por percentual (dados incompletos). Para o veredito final preciso, informe o custo de construção da casa/estrutura — a casa costuma ser a maior parte do valor de uma chácara de recreio.', 8);
+      }
     } else {
       band('APTIDÃO E TERRA NUA');
       kv('Aptidão', `${r.aptidao.lavoura}% lavoura · ${r.aptidao.pastagem}% pastagem · ${r.aptidao.reserva}% reserva`);

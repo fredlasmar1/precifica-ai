@@ -299,27 +299,25 @@ async function avaliarChacara(input = {}) {
   // manda no laudo (avaliação "de acordo com a cabeça do cliente"); o de mercado
   // vira referência.
   const valorDefinido = Number(input.valorDefinido) > 0 ? Number(input.valorDefinido) : null;
-  // Num laudo de valor definido a referência de mercado NÃO pode contradizer o
-  // valor negociado. Para frações/recreio deste porte os dados de mercado são
-  // escassos e a estimativa pode destoar muito; quando destoa (>1,6x ou <0,6x),
-  // ancora a referência no próprio valor definido para o laudo ficar coerente.
-  let refAjustadaAoDefinido = false;
-  if (valorDefinido != null && (totalMercado > valorDefinido * 1.6 || totalMercado < valorDefinido * 0.6)) {
-    totalMercado = Math.round(valorDefinido * 1.05);
-    terraNuaAj = totalMercado;
-    terraNua = areaM2 > 0 ? Math.round(totalMercado / (fatorAcesso * fatorAgua * fatorEnergia * fatorCond * fatorDist)) : totalMercado;
-    precos.m2 = areaM2 > 0 ? Math.max(1, Math.round(terraNua / areaM2)) : precos.m2;
+  // LAUDO DE VALOR DEFINIDO: é um documento de avaliação pra entregar ao cliente
+  // por UM único valor (o negociado). Nenhuma cifra de mercado pode aparecer —
+  // então recolhemos TODOS os números (composição, terra, benfeitorias) para o
+  // valor definido. Assim o cabeçalho, a composição e o parecer mostram só ele.
+  let soValorDefinido = false;
+  if (valorDefinido != null) {
+    totalMercado = valorDefinido;
+    terraNua = valorDefinido;
+    terraNuaAj = valorDefinido;
     benfValor = 0;
-    precos.confianca = 'baixa';
-    precos.obs = 'mercado de frações/recreio deste porte com poucos anúncios comparáveis — referência alinhada ao valor negociado';
-    refAjustadaAoDefinido = true;
+    precos.m2 = areaM2 > 0 ? Math.max(1, Math.round(valorDefinido / areaM2)) : precos.m2;
+    soValorDefinido = true;
   }
   const total = valorDefinido != null ? valorDefinido : totalMercado;
   const precoM2Final = areaM2 > 0 ? Math.round(total / areaM2) : 0;
 
   const r = {
     modo: 'recreio', cidade, referencia, finalidade, areaM2, distanciaKm,
-    valorDefinido, totalMercado, refAjustadaAoDefinido,
+    valorDefinido, totalMercado, soValorDefinido,
     precos, acesso, agua: !!input.agua, energia: !!input.energia, condominio,
     fatorAcesso, fatorAgua, fatorEnergia, fatorCond, fatorDist,
     terraNua, terraNuaAj, benfeitorias, benfDesc: bDesc, benfValor, benfValorInformado,
@@ -336,11 +334,16 @@ async function gerarParecerChacara(r) {
   if (!client) return null;
   try {
     const m = (v) => `R$ ${Number(v).toLocaleString('pt-BR')}`;
+    // Laudo de valor definido: parecer fala SÓ do valor da avaliação (o único
+    // número do documento). Nada de "mercado" nem segunda cifra.
+    const userPrompt = r.soValorDefinido
+      ? `Parecer de 3-4 frases sobre a avaliação de um imóvel de recreio (chácara/fração) de ${r.areaM2.toLocaleString('pt-BR')} m² em ${r.cidade}-GO, avaliado em ${m(r.total)} (${m(r.precos.m2)}/m²). Benfeitorias: ${r.benfeitorias.join(', ') || 'sem benfeitorias relevantes'}. Escreva de forma profissional, adequado para entregar ao cliente, tratando ${m(r.total)} como O VALOR DE AVALIAÇÃO do imóvel. Comente características que sustentam o valor (área, localização, proximidade da cidade, benfeitorias se houver) e dê 1 recomendação (conferir documentação/registro; o que valoriza a revenda). Cite APENAS o valor ${m(r.total)} — NÃO invente nem cite nenhum outro número/valor de mercado.`
+      : `Parecer de 3-4 frases sobre uma chácara de recreio de ${r.areaM2.toLocaleString('pt-BR')} m² em ${r.cidade}-GO. Terra ${m(r.terraNuaAj)} (${m(r.precos.m2)}/m²) + benfeitorias ${m(r.benfValor)} = ${m(r.total)}. Benfeitorias: ${r.benfeitorias.join(', ') || 'terreno'}. Comente se está coerente, que a CASA/benfeitorias e a proximidade da cidade pesam muito no valor de recreio, e 1 dica (conferir documentação/registro e o que valoriza revenda). Não invente números.`;
     const resp = await client.chat.completions.create({
       model: 'gpt-4o-mini',
       messages: [
-        { role: 'system', content: 'Você é avaliador imobiliário. Escreve parecer curto e claro sobre chácara de recreio. Português do Brasil.' },
-        { role: 'user', content: `Parecer de 3-4 frases sobre uma chácara de recreio de ${r.areaM2.toLocaleString('pt-BR')} m² em ${r.cidade}-GO. Terra ${m(r.terraNuaAj)} (${m(r.precos.m2)}/m²) + benfeitorias ${m(r.benfValor)} = ${m(r.total)}. Benfeitorias: ${r.benfeitorias.join(', ') || 'terreno'}. Comente se está coerente, que a CASA/benfeitorias e a proximidade da cidade pesam muito no valor de recreio, e 1 dica (conferir documentação/registro e o que valoriza revenda). Não invente números.` },
+        { role: 'system', content: 'Você é avaliador imobiliário. Escreve parecer curto e claro sobre imóvel de recreio. Português do Brasil.' },
+        { role: 'user', content: userPrompt },
       ],
       temperature: 0.5, max_tokens: 280,
     });
@@ -366,13 +369,9 @@ function formatarChacara(r) {
   const m2Mercado = r.areaM2 > 0 ? Math.round(mercadoComBenf / r.areaM2) : 0;
 
   if (r.valorDefinido != null) {
-    // Valor definido pelo corretor/cliente manda; o de mercado é referência.
-    const dif = mercadoComBenf > 0 ? Math.round((r.valorDefinido / mercadoComBenf - 1) * 100) : 0;
-    t += `\n✅ *VALOR DEFINIDO: ${m(r.valorDefinido)}*  (${m(r.precoM2Final)}/m²)\n`;
-    t += `_valor de referência do proprietário/cliente para negociação_\n`;
-    t += `\n📊 *Avaliação de mercado (referência):* ${m(mercadoComBenf)} (${m(m2Mercado)}/m²)\n`;
-    t += `   • Só o terreno: ${m(semBenf)}  ·  Benfeitorias: ${m(r.benfValor)}\n`;
-    t += `   • O valor definido está *${dif >= 0 ? '+' : ''}${dif}%* ${dif >= 0 ? 'acima' : 'abaixo'} da avaliação de mercado\n`;
+    // Laudo de valor definido: mostra SÓ o valor da avaliação (documento p/ cliente).
+    t += `\n✅ *VALOR DE AVALIAÇÃO: ${m(r.total)}*  (${m(r.precoM2Final)}/m²)\n`;
+    t += `📐 Área: ${n(r.areaM2)} m² (${(r.areaM2 / 10000).toLocaleString('pt-BR')} ha)\n`;
   } else {
     t += `\n💰 *ESTIMATIVAS* _(imóvel de recreio com poucos dados — valores aproximados)_\n`;
     t += `🟫 *Só o terreno* (terra nua): *${m(semBenf)}*  (${m(m2Sem)}/m²)\n`;
