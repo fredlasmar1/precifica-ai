@@ -24,8 +24,9 @@ function desenharAssinatura(doc, cx, lineY) {
   if (!buf) return;
   try {
     // Largura ~= à linha de assinatura (160pt); altura segue a proporção da imagem.
-    const bw = 152, bh = 82;
-    doc.image(buf, cx - bw / 2, lineY - bh + 2, { fit: [bw, bh], align: 'center', valign: 'bottom' });
+    // Centralizada em cima da linha, sentando 2pt acima dela.
+    const bw = 150, bh = 80;
+    doc.image(buf, cx - bw / 2, lineY - bh - 2, { fit: [bw, bh], align: 'center', valign: 'bottom' });
   } catch (e) { /* imagem inválida: ignora silenciosamente */ }
 }
 
@@ -313,7 +314,7 @@ function gerarRelatorioPdf(dados, resultado, opts = {}) {
     doc.lineWidth(0.7).strokeColor(NAVY).moveTo(LX + half / 2 - 80, y).lineTo(LX + half / 2 + 80, y).stroke();
     doc.font('Helvetica').fontSize(8).fillColor(LABEL).text('CORRETOR RESPONSÁVEL', LX + half / 2 - 80, y + 5, { width: 160, align: 'center' });
     doc.font('Helvetica-Bold').fontSize(9).fillColor(INK).text(`${CORRETOR}`, LX + half / 2 - 90, y + 16, { width: 180, align: 'center' });
-    doc.font('Helvetica').fontSize(8).fillColor(MUTED).text(`${CRECI_F} · ${RAZAO} (${CRECI_J})`, LX + half / 2 - 90, y + 28, { width: 180, align: 'center' });
+    doc.font('Helvetica-Bold').fontSize(8).fillColor(INK).text(`${CRECI_F} · ${RAZAO} (${CRECI_J})`, LX + half / 2 - 90, y + 28, { width: 180, align: 'center' });
     // selo lateral
     doc.roundedRect(LX + half + 30, y - 4, half - 50, 46, 8).lineWidth(1).strokeColor(BLUE).stroke();
     doc.font('Helvetica-Bold').fontSize(9).fillColor(BLUE).text('Avaliação por amostragem', LX + half + 40, y + 6, { width: half - 70, align: 'center' });
@@ -511,7 +512,7 @@ function gerarDossiePdf(analise, opts = {}) {
     doc.lineWidth(0.7).strokeColor(NAVY).moveTo(LX + half / 2 - 80, y).lineTo(LX + half / 2 + 80, y).stroke();
     doc.font('Helvetica').fontSize(8).fillColor(LABEL).text('CONSULTOR RESPONSÁVEL', LX + half / 2 - 80, y + 5, { width: 160, align: 'center' });
     doc.font('Helvetica-Bold').fontSize(9).fillColor(INK).text(CORRETOR, LX + half / 2 - 90, y + 16, { width: 180, align: 'center' });
-    doc.font('Helvetica').fontSize(8).fillColor(MUTED).text(`${CRECI_F} · ${RAZAO} (${CRECI_J})`, LX + half / 2 - 90, y + 28, { width: 180, align: 'center' });
+    doc.font('Helvetica-Bold').fontSize(8).fillColor(INK).text(`${CRECI_F} · ${RAZAO} (${CRECI_J})`, LX + half / 2 - 90, y + 28, { width: 180, align: 'center' });
 
     const range = doc.bufferedPageRange();
     for (let i = 0; i < range.count; i++) { doc.switchToPage(range.start + i); chrome(); }
@@ -608,7 +609,7 @@ function gerarEmpresaPdf(r, opts = {}) {
     doc.lineWidth(0.7).strokeColor(NAVY).moveTo(LX + half / 2 - 80, y).lineTo(LX + half / 2 + 80, y).stroke();
     doc.font('Helvetica').fontSize(8).fillColor(LABEL).text('CONSULTOR RESPONSÁVEL', LX + half / 2 - 80, y + 5, { width: 160, align: 'center' });
     doc.font('Helvetica-Bold').fontSize(9).fillColor(INK).text(CORRETOR, LX + half / 2 - 90, y + 16, { width: 180, align: 'center' });
-    doc.font('Helvetica').fontSize(8).fillColor(MUTED).text(`${CRECI_F} · ${RAZAO} (${CRECI_J})`, LX + half / 2 - 90, y + 28, { width: 180, align: 'center' });
+    doc.font('Helvetica-Bold').fontSize(8).fillColor(INK).text(`${CRECI_F} · ${RAZAO} (${CRECI_J})`, LX + half / 2 - 90, y + 28, { width: 180, align: 'center' });
 
     const range = doc.bufferedPageRange();
     for (let i = 0; i < range.count; i++) { doc.switchToPage(range.start + i); chrome(); }
@@ -704,7 +705,7 @@ function gerarRepassePdf(dados, resultado, opts = {}) {
     doc.lineWidth(0.7).strokeColor(NAVY).moveTo(LX + half / 2 - 80, y).lineTo(LX + half / 2 + 80, y).stroke();
     doc.font('Helvetica').fontSize(8).fillColor(LABEL).text('CORRETOR RESPONSÁVEL', LX + half / 2 - 80, y + 5, { width: 160, align: 'center' });
     doc.font('Helvetica-Bold').fontSize(9).fillColor(INK).text(CORRETOR, LX + half / 2 - 90, y + 16, { width: 180, align: 'center' });
-    doc.font('Helvetica').fontSize(8).fillColor(MUTED).text(`${CRECI_F} · ${RAZAO} (${CRECI_J})`, LX + half / 2 - 90, y + 28, { width: 180, align: 'center' });
+    doc.font('Helvetica-Bold').fontSize(8).fillColor(INK).text(`${CRECI_F} · ${RAZAO} (${CRECI_J})`, LX + half / 2 - 90, y + 28, { width: 180, align: 'center' });
 
     const range = doc.bufferedPageRange();
     for (let i = 0; i < range.count; i++) { doc.switchToPage(range.start + i); chrome(); }
@@ -809,7 +810,7 @@ function gerarTerrenoPdf(r, opts = {}) {
     doc.lineWidth(0.7).strokeColor(NAVY).moveTo(LX + half / 2 - 80, y).lineTo(LX + half / 2 + 80, y).stroke();
     doc.font('Helvetica').fontSize(8).fillColor(LABEL).text('CORRETOR RESPONSÁVEL', LX + half / 2 - 80, y + 5, { width: 160, align: 'center' });
     doc.font('Helvetica-Bold').fontSize(9).fillColor(INK).text(CORRETOR, LX + half / 2 - 90, y + 16, { width: 180, align: 'center' });
-    doc.font('Helvetica').fontSize(8).fillColor(MUTED).text(`${CRECI_F} · ${RAZAO} (${CRECI_J})`, LX + half / 2 - 90, y + 28, { width: 180, align: 'center' });
+    doc.font('Helvetica-Bold').fontSize(8).fillColor(INK).text(`${CRECI_F} · ${RAZAO} (${CRECI_J})`, LX + half / 2 - 90, y + 28, { width: 180, align: 'center' });
 
     const range = doc.bufferedPageRange();
     for (let i = 0; i < range.count; i++) { doc.switchToPage(range.start + i); chrome(); }
@@ -914,7 +915,7 @@ function gerarBtsPdf(r, opts = {}) {
     doc.lineWidth(0.7).strokeColor(NAVY).moveTo(LX + half / 2 - 80, y).lineTo(LX + half / 2 + 80, y).stroke();
     doc.font('Helvetica').fontSize(8).fillColor(LABEL).text('CORRETOR RESPONSÁVEL', LX + half / 2 - 80, y + 5, { width: 160, align: 'center' });
     doc.font('Helvetica-Bold').fontSize(9).fillColor(INK).text(CORRETOR, LX + half / 2 - 90, y + 16, { width: 180, align: 'center' });
-    doc.font('Helvetica').fontSize(8).fillColor(MUTED).text(`${CRECI_F} · ${RAZAO} (${CRECI_J})`, LX + half / 2 - 90, y + 28, { width: 180, align: 'center' });
+    doc.font('Helvetica-Bold').fontSize(8).fillColor(INK).text(`${CRECI_F} · ${RAZAO} (${CRECI_J})`, LX + half / 2 - 90, y + 28, { width: 180, align: 'center' });
 
     const range = doc.bufferedPageRange();
     for (let i = 0; i < range.count; i++) { doc.switchToPage(range.start + i); chrome(); }
@@ -1100,7 +1101,7 @@ function gerarFazendaPdf(r, opts = {}) {
     doc.lineWidth(0.7).strokeColor(NAVY).moveTo(LX + half / 2 - 80, y).lineTo(LX + half / 2 + 80, y).stroke();
     doc.font('Helvetica').fontSize(8).fillColor(LABEL).text('CORRETOR RESPONSÁVEL', LX + half / 2 - 80, y + 5, { width: 160, align: 'center' });
     doc.font('Helvetica-Bold').fontSize(9).fillColor(INK).text(CORRETOR, LX + half / 2 - 90, y + 16, { width: 180, align: 'center' });
-    doc.font('Helvetica').fontSize(8).fillColor(MUTED).text(`${CRECI_F} · ${RAZAO} (${CRECI_J})`, LX + half / 2 - 90, y + 28, { width: 180, align: 'center' });
+    doc.font('Helvetica-Bold').fontSize(8).fillColor(INK).text(`${CRECI_F} · ${RAZAO} (${CRECI_J})`, LX + half / 2 - 90, y + 28, { width: 180, align: 'center' });
 
     const range = doc.bufferedPageRange();
     for (let i = 0; i < range.count; i++) { doc.switchToPage(range.start + i); chrome(); }
@@ -1202,7 +1203,7 @@ function gerarDecisaoPdf(r, opts = {}) {
     doc.lineWidth(0.7).strokeColor(NAVY).moveTo(LX + half / 2 - 80, y).lineTo(LX + half / 2 + 80, y).stroke();
     doc.font('Helvetica').fontSize(8).fillColor(LABEL).text('CORRETOR RESPONSÁVEL', LX + half / 2 - 80, y + 5, { width: 160, align: 'center' });
     doc.font('Helvetica-Bold').fontSize(9).fillColor(INK).text(CORRETOR, LX + half / 2 - 90, y + 16, { width: 180, align: 'center' });
-    doc.font('Helvetica').fontSize(8).fillColor(MUTED).text(`${CRECI_F} · ${RAZAO} (${CRECI_J})`, LX + half / 2 - 90, y + 28, { width: 180, align: 'center' });
+    doc.font('Helvetica-Bold').fontSize(8).fillColor(INK).text(`${CRECI_F} · ${RAZAO} (${CRECI_J})`, LX + half / 2 - 90, y + 28, { width: 180, align: 'center' });
 
     const range = doc.bufferedPageRange();
     for (let i = 0; i < range.count; i++) { doc.switchToPage(range.start + i); chrome(); }
