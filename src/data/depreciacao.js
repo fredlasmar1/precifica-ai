@@ -97,10 +97,10 @@ function caPresumido(anoConstrucao) {
  * custa (terreno + CUB). Logo FC = âncora ÷ custo_novo. Com isso o evolutivo
  * herda o prêmio de localização — que o custo de reedição, sozinho, ignora.
  */
-function composicao({ cidade, bairro, padrao, ca, anoConstrucao }) {
+function composicao({ cidade, bairro, padrao, ca, anoConstrucao, mercadoRefM2 }) {
   const terreno = getAncora('terreno', 'venda', cidade, bairro);
   const venda = getAncora('apartamento', 'venda', cidade, bairro);
-  if (!terreno || !(terreno.m2 > 0) || !venda || !(venda.m2 > 0)) return null;
+  if (!terreno || !(terreno.m2 > 0)) return null;
 
   const cubInfo = cubDoPadrao(padrao);
   const caInfo = ca > 0 ? { ca: Number(ca), fonte: 'informado' } : caPresumido(anoConstrucao);
@@ -108,11 +108,34 @@ function composicao({ cidade, bairro, padrao, ca, anoConstrucao }) {
   // Fração ideal de terreno por m² construído = 1 m² de lote ÷ CA m² construídos.
   const terrenoM2 = Math.round(terreno.m2 / caInfo.ca);
   const custoNovo = terrenoM2 + cubInfo.valor;
-  const fcBruto = venda.m2 / custoNovo;
+
+  // De onde sai o FC — é a decisão mais sensível deste módulo.
+  // PREFERIDO: mediana real do estoque anunciado no bairro, cuja idade média
+  // presumimos ser IDADE_REFERENCIA (por isso o custo de comparação é o
+  // depreciado, não o novo). Assim o evolutivo CONVERGE com o laudo comparativo.
+  // FALLBACK: âncora EBM = preço de prédio NOVO. Perigoso sozinho: no Jundiaí a
+  // EBM (8.500/m²) é o TOPO do mercado, enquanto a mediana real dos anúncios é
+  // ~4.400/m² — calibrar por ela dobrava a estimativa e fazia a ficha brigar
+  // com o laudo da mesma unidade na mesma tela.
+  let ref, custoRef, refFonte;
+  if (Number(mercadoRefM2) > 0) {
+    ref = Number(mercadoRefM2);
+    custoRef = terrenoM2 + cubInfo.valor * (1 - rossHeidecke(IDADE_REFERENCIA).k);
+    refFonte = 'mercado real do bairro';
+  } else if (venda && venda.m2 > 0) {
+    ref = venda.m2;
+    custoRef = custoNovo;
+    refFonte = 'âncora EBM do bairro (prédio novo) — sem mercado real p/ calibrar';
+  } else {
+    return null;
+  }
+
+  const fcBruto = ref / custoRef;
   const fc = Math.min(FC_MAX, Math.max(FC_MIN, fcBruto));
 
   return {
     terreno, venda, cubInfo, caInfo, terrenoM2, custoNovo,
+    ref, custoRef, refFonte,
     fc, fcClampado: fc !== fcBruto,
     // Peso da construção no custo — só ela deprecia; o terreno não.
     pesoConstrucao: cubInfo.valor / custoNovo,
@@ -124,14 +147,14 @@ function composicao({ cidade, bairro, padrao, ca, anoConstrucao }) {
  * Devolve a MEMÓRIA DE CÁLCULO — a decisão de produto é mostrar a conta, não só
  * o número: sem anúncio por trás, um valor nu seria indistinguível de um chute.
  */
-function estimarEvolutivo({ cidade, bairro, area, anoConstrucao, conservacao = 'bom', padrao, ca, anoRef }) {
+function estimarEvolutivo({ cidade, bairro, area, anoConstrucao, conservacao = 'bom', padrao, ca, anoRef, mercadoRefM2 }) {
   const ano = Number(anoConstrucao);
   if (!(ano > 1900)) return null; // sem ano de construção não há evolutivo
 
   const anoAtual = Number(anoRef) || new Date().getFullYear();
   const idade = Math.max(0, anoAtual - ano);
 
-  const c = composicao({ cidade, bairro, padrao, ca, anoConstrucao: ano });
+  const c = composicao({ cidade, bairro, padrao, ca, anoConstrucao: ano, mercadoRefM2 });
   if (!c) return null;
 
   const dep = rossHeidecke(idade, conservacao);
@@ -143,8 +166,9 @@ function estimarEvolutivo({ cidade, bairro, area, anoConstrucao, conservacao = '
   const a = Number(area) > 0 ? Number(area) : null;
 
   // Confiança: roda sobre presumidos (CA, padrão, conservação). Nunca é "alta" —
-  // se fosse, não precisaríamos avisar que é estimativa.
-  const confianca = (c.terreno.confianca === 'alta' && c.venda.confianca === 'alta' && ca > 0) ? 'media' : 'baixa';
+  // se fosse, não precisaríamos avisar que é estimativa. Calibrado no mercado
+  // real vale mais que calibrado na âncora.
+  const confianca = Number(mercadoRefM2) > 0 ? 'media' : 'baixa';
 
   return {
     metodo: 'evolutivo',
@@ -157,6 +181,7 @@ function estimarEvolutivo({ cidade, bairro, area, anoConstrucao, conservacao = '
     residualAplicado: dep.residualAplicado,
     vidaUtil: dep.vidaUtil,
     fc: Math.round(c.fc * 100) / 100, fcClampado: c.fcClampado, custoNovo: c.custoNovo,
+    fcRef: Math.round(c.ref), fcCustoRef: Math.round(c.custoRef), fcRefFonte: c.refFonte,
     construcaoM2, valorM2, faixaMinM2, faixaMaxM2,
     area: a,
     valorTotal: a ? Math.round(valorM2 * a) : null,
@@ -179,7 +204,7 @@ function formatarEvolutivo(e, condominio) {
   t += `  Depreciação (${e.idade} anos, ${e.conservacao})  −${e.depreciacaoPct}%  → ${brl(e.construcaoM2)}/m²\n`;
   t += `    Ross-Heidecke, vida útil ${e.vidaUtil} anos${e.residualAplicado ? ' (piso residual de 20% aplicado — prédio de pé não vale zero)' : ''}\n`;
   t += `  Fator de comercialização    ×${String(e.fc).replace('.', ',')}\n`;
-  t += `    calibrado no bairro: ${brl(e.ancoraBairroM2)}/m² (prédio novo) ÷ ${brl(e.custoNovo)}/m² de custo\n`;
+  t += `    calibrado em ${brl(e.fcRef)}/m² (${e.fcRefFonte}) ÷ ${brl(e.fcCustoRef)}/m² de custo\n`;
   t += `  ──────────────────────────────────────────\n`;
   t += `  *Estimativa: ${brl(e.faixaMinM2)} – ${brl(e.faixaMaxM2)}/m²*\n`;
   if (e.valorTotal) {

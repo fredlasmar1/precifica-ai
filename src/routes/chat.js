@@ -290,15 +290,28 @@ router.post('/predio', async (req, res) => {
     if (ficha && anoInformado) { ficha.anoConstrucao = anoInformado; ficha.anoFonte = 'informado'; }
     const conservacao = b.conservacao || b.aptoConservacao || 'bom';
 
-    // Sem anúncio no prédio o comparativo não tem o que comparar. Com o ano, dá
-    // pra estimar SEM mercado (evolutivo): a âncora do bairro é preço de prédio
-    // NOVO e superestimaria um prédio velho em 30-50%.
+    // Sem anúncio no prédio o comparativo não tem o que comparar; com o ano, dá
+    // pra estimar pelo custo depreciado (evolutivo).
+    // MAS: se o usuário pediu o laudo de uma unidade (área informada), o laudo roda
+    // sobre o mercado REAL do bairro — e mercado real ganha de custo estimado.
+    // Publicar os dois na mesma tela colocaria dois números discordantes lado a
+    // lado, que é exatamente o defeito que esta ficha veio corrigir.
+    const temLaudoDeUnidade = !!(b.modoApto && Number(b.aptoArea) > 0);
     let evolutivo = null;
-    if (!comps.length && ficha && ficha.anoConstrucao) {
+    if (!comps.length && ficha && ficha.anoConstrucao && !temLaudoDeUnidade) {
+      // Calibra o FC no mercado REAL do bairro (mesma fonte do laudo), não na
+      // âncora EBM: a EBM é o topo do mercado e inflava a estimativa ~2x.
+      let mercadoRefM2 = null;
+      try {
+        const { buscarComparativos } = require('../data/portais');
+        const mkt = await buscarComparativos({ tipo: 'apartamento', finalidade: 'venda', cidade, bairro });
+        if (mkt && mkt.precoMedioM2 > 0) mercadoRefM2 = mkt.precoMedioM2;
+      } catch (e) { console.warn('[Predio] mercado ref:', e.message); }
       try {
         evolutivo = require('../data/depreciacao').estimarEvolutivo({
           cidade, bairro, area: Number(b.aptoArea) || null,
           anoConstrucao: ficha.anoConstrucao, padrao: ficha.padrao, conservacao,
+          mercadoRefM2,
         });
       } catch (e) { console.warn('[Predio] evolutivo:', e.message); }
     }
