@@ -66,6 +66,31 @@ async function buscarCnpjPredio(condominio, cidade) {
     return m ? m[0] : null;
   } catch { return null; }
 }
+/**
+ * Busca FOCADA do ano de construção (fallback do dossiê).
+ * Mesmo padrão do CNPJ: query de UM campo acerta muito mais que o dossiê inteiro.
+ * Medido em 17 prédios de Anápolis: o dossiê só devolveu o ano em 3 — e sem ano
+ * o método evolutivo não roda, que é justamente o que precifica prédio antigo.
+ */
+async function buscarAnoPredio(condominio, bairro, cidade) {
+  const apiKey = process.env.PERPLEXITY_API_KEY;
+  if (!apiKey) return null;
+  try {
+    const { data } = await axios.post('https://api.perplexity.ai/chat/completions', {
+      model: 'sonar-pro',
+      messages: [
+        { role: 'system', content: 'Responda APENAS com o ano (4 dígitos) de construção/entrega do edifício, ou a palavra "nenhum". Sem nenhum texto extra.' },
+        { role: 'user', content: `Em que ano foi construído/entregue o edifício "${condominio}", bairro ${bairro}, ${cidade}-GO? Procure em anúncios de imóveis, site da construtora, condomínio, matrícula. Se não tiver certeza, responda "nenhum".` },
+      ],
+      temperature: 0, max_tokens: 12,
+    }, { timeout: 40000, headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' } });
+    const m = String(data.choices[0].message.content).match(/(19|20)\d{2}/);
+    const ano = m ? Number(m[0]) : null;
+    const atual = new Date().getFullYear();
+    return ano && ano >= 1900 && ano <= atual + 5 ? ano : null;
+  } catch { return null; }
+}
+
 // Remove marcadores de citação da Perplexity ([1], [2][3]...) e espaços duplos
 function semCit(s) { return s == null ? s : String(s).replace(/\s*\[\d+\](\[\d+\])*/g, '').replace(/\s{2,}/g, ' ').trim(); }
 
@@ -108,6 +133,15 @@ async function gerarFichaPredio({ condominio, bairro, cidade, valorMercado }) {
   let cnpj = cnpjValido(d.cnpj) ? d.cnpj : null;
   if (!cnpj) { const c = await buscarCnpjPredio(condominio, cidade); if (cnpjValido(c)) cnpj = c; }
 
+  // Ano de construção: mesma tática do CNPJ. É o insumo que destrava o
+  // evolutivo — sem ele, prédio sem anúncio fica sem preço nenhum.
+  let anoConstrucao = Number(d.anoConstrucao) > 1900 ? Number(d.anoConstrucao) : null;
+  let anoFonte = anoConstrucao ? 'dossiê' : null;
+  if (!anoConstrucao) {
+    const a = await buscarAnoPredio(condominio, bairro, cidade);
+    if (a) { anoConstrucao = a; anoFonte = 'busca focada'; }
+  }
+
   // Processos contra o condomínio (DirectData, por CNPJ)
   let processos = null;
   if (cnpjValido(cnpj)) processos = await processosPorCnpj(cnpj, 'GO');
@@ -119,7 +153,7 @@ async function gerarFichaPredio({ condominio, bairro, cidade, valorMercado }) {
     condominioMensal: d.valorCondominioMensal || null,
     iptu, iptuFonte,
     padrao: d.padrao || null,
-    anoConstrucao: Number(d.anoConstrucao) > 1900 ? Number(d.anoConstrucao) : null,
+    anoConstrucao, anoFonte,
     lazer: Array.isArray(d.lazer) ? d.lazer.filter(Boolean) : [],
     perfilUnidades: d.perfilUnidades || null,
     perfilConfirmado: d.perfilConfirmado === true,
