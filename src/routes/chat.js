@@ -271,7 +271,25 @@ router.post('/predio', async (req, res) => {
     //    o laudo de unidade já descartava, a aba Prédios exibia mesmo assim.
     // 2) R$/m² fora da faixa plausível do bairro (pega prédio homônimo de outra
     //    cidade e preço inconsistente).
-    const unidades = await estimarPrecoPredio({ finalidade: 'venda', cidade, bairro, condominio });
+    // Cache por condomínio (3 dias). `precos_mercado` já é chaveada por
+    // condominio — a aba ignorava e disparava 2-3 chamadas Perplexity a cada
+    // busca, inclusive para repetir a MESMA pesquisa. Pior: sem cache, duas
+    // buscas do mesmo prédio podiam devolver unidades diferentes (o LLM não é
+    // determinístico). Cacheia inclusive o resultado VAZIO — descobrir que um
+    // prédio não tem anúncio custa as mesmas 3 chamadas.
+    const db = require('../data/database');
+    let unidades = null, veioDoCache = false;
+    try {
+      const c = await db.buscarPreco(cidade, bairro, 'apartamento', 'venda', condominio);
+      if (c && Number(c.dias_desde) < 3) {
+        const cs = Array.isArray(c.comparativos) ? c.comparativos : [];
+        unidades = { comparativos: cs, precoMedioM2: Number(c.preco_m2) || 0, anunciosAnalisados: cs.length, confianca: c.confianca, citacoes: [] };
+        veioDoCache = true;
+        console.log(`[Predio] cache hit: ${condominio} (${cs.length} unid, ${Math.round(c.dias_desde * 24)}h)`);
+      }
+    } catch (e) { console.warn('[Predio] cache leitura:', e.message); }
+
+    if (!unidades) unidades = await estimarPrecoPredio({ finalidade: 'venda', cidade, bairro, condominio });
     const fabricada = !!(unidades && unidades.suspeitaFabricacao);
     const brutos = (unidades && !fabricada) ? (unidades.comparativos || []) : [];
     const { ok: comps, descartados } = filtrarCompsSanos(brutos, { tipo: 'apartamento', finalidade: 'venda', cidade, bairro });
@@ -279,6 +297,22 @@ router.post('/predio', async (req, res) => {
     if (comps.length) {
       const precos = comps.map(c => Number(c.preco)).filter(p => p > 0).sort((a, b) => a - b);
       valorRef = precos[Math.floor(precos.length / 2)] || 0;
+    }
+
+    // Grava o que veio da Perplexity (inclusive vazio) — só o que é NOVO.
+    if (!veioDoCache) {
+      try {
+        await db.salvarPreco({
+          cidade, bairro, tipo: 'apartamento', finalidade: 'venda', condominio,
+          preco_m2: (unidades && unidades.precoMedioM2) || 0,
+          faixa_min: (unidades && unidades.faixaMinM2) || null,
+          faixa_max: (unidades && unidades.faixaMaxM2) || null,
+          amostras: comps.length,
+          confianca: (unidades && unidades.confianca) || 'baixa',
+          fonte: `Prédio: ${condominio}`,
+          comparativos: comps,
+        });
+      } catch (e) { console.warn('[Predio] cache gravação:', e.message); }
     }
 
     const ficha = await gerarFichaPredio({ condominio, bairro, cidade, valorMercado: valorRef });

@@ -146,6 +146,22 @@ async function inicializar() {
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_laudos_data ON laudos(criado_em DESC)`);
     await pool.query(`ALTER TABLE laudos ADD COLUMN IF NOT EXISTS kind TEXT DEFAULT 'imovel'`);
     await pool.query(`ALTER TABLE laudos ADD COLUMN IF NOT EXISTS titulo TEXT`);
+
+    // ─── precos_mercado: coluna `condominio` (correção de schema) ─────────────
+    // A coluna foi adicionada ao CREATE TABLE acima DEPOIS que a tabela já
+    // existia em produção — e CREATE TABLE IF NOT EXISTS não altera tabela
+    // existente. Resultado: a coluna nunca chegou ao banco, e como
+    // salvarPreco/buscarPreco a referenciam, o CACHE DE PREÇOS estava MORTO em
+    // produção (todo salvar/buscar estourava "column condominio does not
+    // exist", silenciado pelo try/catch). Efeito: toda avaliação re-raspava os
+    // portais e queimava crédito de ScraperAPI à toa.
+    await pool.query(`ALTER TABLE precos_mercado ADD COLUMN IF NOT EXISTS condominio VARCHAR(200) DEFAULT ''`);
+    await pool.query(`UPDATE precos_mercado SET condominio='' WHERE condominio IS NULL`);
+    // A UNIQUE antiga não inclui condominio, então o ON CONFLICT de salvarPreco
+    // (que usa as 5 colunas) não acha constraint. Troca por índice equivalente
+    // com condominio — com todos os valores atuais em '', não gera duplicata.
+    await pool.query(`ALTER TABLE precos_mercado DROP CONSTRAINT IF EXISTS precos_mercado_cidade_bairro_tipo_finalidade_key`);
+    await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS precos_mercado_uniq ON precos_mercado (cidade, bairro, tipo, finalidade, condominio)`);
     console.log('[DB] Tabelas inicializadas com sucesso');
   } catch (err) {
     console.error('[DB] Erro ao inicializar:', err.message);
