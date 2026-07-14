@@ -206,10 +206,11 @@ function gerarRelatorioPdf(dados, resultado, opts = {}) {
         if (fp.endereco) linhas.push(['Endereço', fp.endereco]);
         if (fp.cnpj) linhas.push(['CNPJ (público)', fp.cnpj]);
         if (fp.padrao) linhas.push(['Padrão', fp.padrao]);
+        if (fp.anoConstrucao) linhas.push(['Construção', `${fp.anoConstrucao} (${new Date().getFullYear() - fp.anoConstrucao} anos)`]);
         if (fp.lazer && fp.lazer.length) linhas.push(['Lazer', fp.lazer.slice(0, 8).join(', ')]);
         if (fp.condominioMensal) linhas.push(['Condomínio/mês', typeof fp.condominioMensal === 'number' ? brl(fp.condominioMensal) : String(fp.condominioMensal)]);
         if (fp.iptu) linhas.push(['IPTU/ano', `${brl(fp.iptu)} (${fp.iptuFonte})`]);
-        if (fp.perfilUnidades) linhas.push(['Unidades', fp.perfilUnidades]);
+        if (fp.perfilUnidades) linhas.push([fp.perfilConfirmado ? 'Unidades' : 'Unidades (perfil do entorno — NÃO confirmado neste prédio)', fp.perfilUnidades]);
         const dd = fp.processos;
         if (dd && dd.disponivel) linhas.push(['Processos (CNPJ do condomínio)', dd.total > 0 ? `${dd.total} encontrado(s) — verificar antes de fechar` : 'nada consta']);
         else if (fp.cnpj) linhas.push(['Processos', `due diligence indisponível (${(dd && dd.motivo) || 'sem DirectData'})`]);

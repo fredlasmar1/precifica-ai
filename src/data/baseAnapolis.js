@@ -164,6 +164,34 @@ function getAncora(tipo, finalidade, cidade, bairro) {
 
 function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
 
+// Teto de plausibilidade de um comparável: múltiplo da âncora do bairro.
+const TETO_ANCORA = 1.6;
+// Piso de um COMPARÁVEL — deliberadamente muito abaixo de VENDA_MIN (2200).
+// VENDA_MIN limita a ÂNCORA, que é média de bairro; uma unidade individual
+// velha e mal conservada vende legitimamente abaixo disso. Usar VENDA_MIN aqui
+// descartaria justamente o prédio antigo real que queremos conseguir avaliar.
+// Abaixo deste piso não é venda de apartamento: é erro de dado.
+const PISO_COMP_VENDA = 800;
+
+/**
+ * Descarta comparáveis com R$/m² implausível para o bairro.
+ * Assimétrico de propósito: a âncora EBM é preço de prédio NOVO, então um prédio
+ * antigo legitimamente fica muito abaixo dela — por baixo só corta erro de dado
+ * grosseiro. Por cima, nada passa muito da âncora (pega homônimo de outra cidade
+ * e preço inventado).
+ */
+function filtrarCompsSanos(comps, { tipo, finalidade, cidade, bairro }) {
+  const a = getAncora(tipo || 'apartamento', finalidade || 'venda', cidade, bairro);
+  const piso = finalidade === 'aluguel' ? a.m2 * 0.2 : PISO_COMP_VENDA;
+  const teto = Math.round(a.m2 * TETO_ANCORA);
+  const ok = [], descartados = [];
+  (comps || []).forEach((c) => {
+    const p = Number(c.precoM2) || 0;
+    (p >= piso && p <= teto ? ok : descartados).push(c);
+  });
+  return { ok, descartados, piso: Math.round(piso), teto, ancora: a.m2 };
+}
+
 // Bairros da FIPE (principais de Anápolis)
 const FIPE_BAIRROS = [
   'Jundiaí', 'Anápolis City', 'Cidade Jardim', 'Bairro JK', 'Jardim Europa',
@@ -187,6 +215,6 @@ function tabelaFipe(tipo, finalidade) {
 }
 
 module.exports = {
-  getAncora, getBaseVenda, getBaseAluguel, getBaseLote, tabelaFipe,
-  EBM_VENDA_M2, ALUGUEL_YIELD_MES, LOTE_FRACAO, FIPE_BAIRROS,
+  getAncora, getBaseVenda, getBaseAluguel, getBaseLote, tabelaFipe, filtrarCompsSanos,
+  EBM_VENDA_M2, ALUGUEL_YIELD_MES, LOTE_FRACAO, FIPE_BAIRROS, VENDA_MIN, VENDA_MAX,
 };

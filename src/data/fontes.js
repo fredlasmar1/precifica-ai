@@ -51,14 +51,21 @@ function fontesEmpresa(r) {
 }
 
 /** Fontes da FICHA DO PRÉDIO. */
-function fontesPredio(f) {
+function fontesPredio(f, comps = [], citacoes = []) {
+  const n = comps.length;
   const bases = [BASE_MAPS + ' (endereço)', 'Anúncios de imóveis (condomínio, IPTU, unidades)'];
   if (f.cnpj) bases.push(BASE_RECEITA);
   if (f.processos && f.processos.disponivel) bases.push(BASE_ESCAVADOR);
+  const links = [...new Set([...comps.map(c => c.url).filter(Boolean), ...citacoes])].slice(0, 8);
   return {
     metodo: 'Dossiê do edifício por amostragem de fontes públicas e anúncios de mercado',
-    data: hoje(), bases,
-    obs: 'IPTU e condomínio variam por unidade; o IPTU pode ser estimado. Confirme o oficial na Prefeitura.',
+    amostra: n ? `${n} unidade(s) anunciada(s) neste prédio` : 'nenhuma unidade anunciada neste prédio',
+    data: hoje(),
+    grau: n >= 3 ? 'Médio' : n >= 1 ? 'Indicativo' : 'Sem base de preço',
+    links, bases,
+    obs: n
+      ? 'IPTU e condomínio variam por unidade; o IPTU, quando estimado, deriva dos anúncios e NÃO é o valor oficial. Confirme na Prefeitura.'
+      : 'Sem unidade anunciada, esta ficha NÃO precifica o prédio. Metragens sem confirmação vêm do entorno, não deste edifício.',
   };
 }
 

@@ -263,10 +263,18 @@ router.post('/predio', async (req, res) => {
   try {
     const { estimarPrecoPredio } = require('../data/analistaIA');
     const { gerarFichaPredio, formatarBuscaPredio } = require('../data/fichaPredio');
+    const { filtrarCompsSanos } = require('../data/baseAnapolis');
 
-    // unidades anunciadas no prédio (para faixa de preço + base do IPTU)
+    // Unidades anunciadas no prédio — única origem legítima de preço nesta ficha.
+    // Duas travas antes de um número virar "faixa do prédio":
+    // 1) suspeitaFabricacao (preços quase idênticos entre si = dado inventado);
+    //    o laudo de unidade já descartava, a aba Prédios exibia mesmo assim.
+    // 2) R$/m² fora da faixa plausível do bairro (pega prédio homônimo de outra
+    //    cidade e preço inconsistente).
     const unidades = await estimarPrecoPredio({ finalidade: 'venda', cidade, bairro, condominio });
-    const comps = (unidades && unidades.comparativos) || [];
+    const fabricada = !!(unidades && unidades.suspeitaFabricacao);
+    const brutos = (unidades && !fabricada) ? (unidades.comparativos || []) : [];
+    const { ok: comps, descartados } = filtrarCompsSanos(brutos, { tipo: 'apartamento', finalidade: 'venda', cidade, bairro });
     let valorRef = 0;
     if (comps.length) {
       const precos = comps.map(c => Number(c.preco)).filter(p => p > 0).sort((a, b) => a - b);
@@ -274,7 +282,10 @@ router.post('/predio', async (req, res) => {
     }
 
     const ficha = await gerarFichaPredio({ condominio, bairro, cidade, valorMercado: valorRef });
-    let texto = formatarBuscaPredio(ficha, unidades);
+    let texto = formatarBuscaPredio(ficha, {
+      ...(unidades || {}), comparativos: comps,
+      descartados: descartados.length, suspeitaFabricacao: fabricada,
+    });
 
     // Modo "Prédio + Apartamento": mostra o panorama das unidades (venda já veio
     // na ficha; aqui adiciona ALUGUEL) e, SÓ se a área for informada, o laudo da unidade.
@@ -282,7 +293,8 @@ router.post('/predio', async (req, res) => {
     if (b.modoApto) {
       try {
         const unidadesAlug = await estimarPrecoPredio({ finalidade: 'aluguel', cidade, bairro, condominio });
-        const compsA = (unidadesAlug && unidadesAlug.comparativos) || [];
+        const brutosA = (unidadesAlug && !unidadesAlug.suspeitaFabricacao) ? (unidadesAlug.comparativos || []) : [];
+        const { ok: compsA } = filtrarCompsSanos(brutosA, { tipo: 'apartamento', finalidade: 'aluguel', cidade, bairro });
         if (compsA.length) {
           texto += `\n🏠 *Unidades para ALUGUEL neste prédio (${compsA.length}):*\n`;
           compsA.slice(0, 8).forEach((c, i) => {
@@ -309,7 +321,9 @@ router.post('/predio', async (req, res) => {
           }
         } catch (e) { console.warn('[Predio] avaliação apto:', e.message); }
       } else {
-        texto += `\n💡 _As metragens acima são as unidades reais do prédio. Quer o laudo de uma específica? Informe a **área** (e a finalidade)._\n`;
+        texto += comps.length
+          ? `\n💡 _As metragens acima são de unidades realmente anunciadas neste prédio. Quer o laudo de uma específica? Informe a **área** (e a finalidade)._\n`
+          : `\n💡 _Sem anúncio confirmado, não dá pra saber as metragens reais deste prédio. Se você souber a **área** da unidade, informe que eu faço o laudo pela referência do bairro — lembrando que ela ainda não desconta a idade do prédio._\n`;
       }
     }
     try {
