@@ -136,7 +136,7 @@ function formatarFichaPredio(f) {
   if (f.padrao) t += `• Padrão: ${f.padrao}\n`;
   if (f.anoConstrucao) {
     const idade = new Date().getFullYear() - f.anoConstrucao;
-    t += `• Construção: ${f.anoConstrucao} (${idade} anos)\n`;
+    t += `• Construção: ${f.anoConstrucao} (${idade} anos)${f.anoFonte === 'informado' ? ' — informado por você' : ''}\n`;
   }
   if (f.lazer && f.lazer.length) t += `• Lazer: ${f.lazer.slice(0, 8).join(', ')}\n`;
   if (f.condominioMensal) t += `• Condomínio: ${typeof f.condominioMensal === 'number' ? 'R$ ' + f.condominioMensal.toLocaleString('pt-BR') + '/mês' : f.condominioMensal}\n`;
@@ -161,7 +161,7 @@ function formatarFichaPredio(f) {
 }
 
 /** Resultado da aba "Prédios": ficha + unidades anunciadas + faixa de preço. */
-function formatarBuscaPredio(ficha, unidades) {
+function formatarBuscaPredio(ficha, unidades, evolutivo) {
   if (!ficha) return '⚠️ Não consegui montar a ficha desse prédio.';
   let t = `🏢 *${ficha.condominio}*\n`;
   t += formatarFichaPredio(ficha);
@@ -176,11 +176,15 @@ function formatarBuscaPredio(ficha, unidades) {
       const med = m2[Math.floor(m2.length / 2)];
       t += `\n💰 *Faixa do prédio:* R$ ${m2[0].toLocaleString('pt-BR')} – R$ ${m2[m2.length - 1].toLocaleString('pt-BR')}/m² (mediana R$ ${med.toLocaleString('pt-BR')}/m²)\n`;
     }
+  } else if (evolutivo) {
+    // Sem anúncio no prédio, mas com ano de construção: dá pra estimar SEM
+    // mercado, pelo custo depreciado. Nunca sai número nu — vai a conta junto.
+    try { t += require('./depreciacao').formatarEvolutivo(evolutivo, ficha.condominio); } catch {}
   } else {
     t += `\n🚫 *Sem base para precificar este prédio*\n`;
     t += `Nenhuma unidade anunciada aqui agora — e sem anúncio confirmado *não emitimos faixa de preço*.\n`;
     t += `Para precificar um prédio sem mercado ativo (método evolutivo, NBR 14653-2) precisamos de:\n`;
-    if (!ficha.anoConstrucao) t += `  • Ano de construção\n`;
+    if (!ficha.anoConstrucao) t += `  • *Ano de construção* ← é o que falta aqui\n`;
     t += `  • Fração ideal do terreno (matrícula)\n  • 1 transação real (ITBI ou matrícula)\n  • Estado de conservação (vistoria)\n`;
   }
   if (unidades && unidades.descartados > 0) {
@@ -191,7 +195,7 @@ function formatarBuscaPredio(ficha, unidades) {
   }
   try {
     const { fontesPredio, textoFontes } = require('./fontes');
-    t += textoFontes(fontesPredio(ficha, comps, (unidades && unidades.citacoes) || []));
+    t += textoFontes(fontesPredio(ficha, comps, (unidades && unidades.citacoes) || [], evolutivo));
   } catch {}
   return t;
 }

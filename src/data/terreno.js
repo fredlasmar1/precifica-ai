@@ -198,4 +198,4 @@ function formatarTerreno(r) {
   return t;
 }
 
-module.exports = { analisarTerreno, formatarTerreno, ZONAS };
+module.exports = { analisarTerreno, formatarTerreno, ZONAS, CUB };

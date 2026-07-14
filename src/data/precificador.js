@@ -26,7 +26,7 @@ const db = require('./database');
  * A inteligência local complementa com contexto, não com preço fixo.
  */
 async function calcularPreco(dadosImovel) {
-  const { tipo, finalidade, cidade, bairro, endereco, condominio, metragem, areaLote, quartos, vagas, diferenciais, conservacao, idade } = dadosImovel;
+  const { tipo, finalidade, cidade, bairro, endereco, condominio, metragem, areaLote, quartos, vagas, diferenciais, conservacao, idade, padrao } = dadosImovel;
 
   // 1. Validar endereço e analisar rua via Google Maps
   let geoInfo = null;
@@ -276,10 +276,12 @@ async function calcularPreco(dadosImovel) {
   // Modo inteligente: unidades do mesmo prédio são o melhor comparável.
   // 3+ unidades → o prédio manda; 1-2 → mistura com o bairro; 0 → usa o bairro.
   let notaPredio = null;
+  let compsPredioUsados = 0; // >0 = o preço já carrega a idade REAL deste prédio
   if (condominio && tipo === 'apartamento') {
     try {
       const predio = await estimarPrecoPredio(dadosImovel);
       const compsPredio = (predio && !predio.suspeitaFabricacao) ? (predio.comparativos || []) : [];
+      compsPredioUsados = compsPredio.length;
       if (compsPredio.length > 0) {
         // marca os comparativos atuais como "bairro"
         if (analiseIA?.comparativos) analiseIA.comparativos.forEach(c => { if (!c.origem) c.origem = 'bairro'; });
@@ -417,6 +419,23 @@ async function calcularPreco(dadosImovel) {
       ajustesDescricao.push(`-${Math.round((1 - fatorIdade) * 100)}% depreciação da construção (${idade} anos)`);
       console.log(`[Precificador] Depreciação idade ${idade}a: ×${fatorIdade.toFixed(3)} → R$ ${precoM2Final}/m²`);
     }
+  }
+
+  // ─── Depreciação por idade — APARTAMENTO (Ross-Heidecke) ────────────────────
+  // SÓ quando o preço veio do BAIRRO. Se veio de unidades do próprio prédio, a
+  // idade já está embutida no comparável (é o mesmo prédio!) e descontar de novo
+  // contaria duas vezes. Deprecia só o EXCEDENTE de idade sobre o estoque
+  // anunciado e só sobre a parcela construída — terreno não deprecia.
+  if (tipo === 'apartamento' && compsPredioUsados === 0 && idade != null && conservacao !== 'novo') {
+    try {
+      const { fatorIdadeMercado } = require('./depreciacao');
+      const f = fatorIdadeMercado({ idade, conservacao: conservacao || 'bom', cidade, bairro, padrao, anoConstrucao: new Date().getFullYear() - idade });
+      if (f && f.fator < 1.0) {
+        precoM2Final = Math.round(precoM2Final * f.fator);
+        ajustesDescricao.push(`-${f.pct}% depreciação da construção (${idade} anos — comparáveis do bairro são mais novos)`);
+        console.log(`[Precificador] Depreciação apto ${idade}a: ×${f.fator.toFixed(3)} → R$ ${precoM2Final}/m²`);
+      }
+    } catch (e) { console.warn('[Precificador] depreciação apto:', e.message); }
   }
 
   // ─── Ajuste por lote generoso (casas) ───────────────────────────────────────

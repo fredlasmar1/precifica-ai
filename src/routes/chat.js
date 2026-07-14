@@ -282,10 +282,31 @@ router.post('/predio', async (req, res) => {
     }
 
     const ficha = await gerarFichaPredio({ condominio, bairro, cidade, valorMercado: valorRef });
+
+    // Ano informado pelo corretor MANDA no que a IA achou: quem conhece o prédio
+    // é ele. Sem ano (dele ou do dossiê) não há evolutivo — e aí a ficha diz isso
+    // em vez de inventar.
+    const anoInformado = Number(b.anoConstrucao) > 1900 ? Number(b.anoConstrucao) : null;
+    if (ficha && anoInformado) { ficha.anoConstrucao = anoInformado; ficha.anoFonte = 'informado'; }
+    const conservacao = b.conservacao || b.aptoConservacao || 'bom';
+
+    // Sem anúncio no prédio o comparativo não tem o que comparar. Com o ano, dá
+    // pra estimar SEM mercado (evolutivo): a âncora do bairro é preço de prédio
+    // NOVO e superestimaria um prédio velho em 30-50%.
+    let evolutivo = null;
+    if (!comps.length && ficha && ficha.anoConstrucao) {
+      try {
+        evolutivo = require('../data/depreciacao').estimarEvolutivo({
+          cidade, bairro, area: Number(b.aptoArea) || null,
+          anoConstrucao: ficha.anoConstrucao, padrao: ficha.padrao, conservacao,
+        });
+      } catch (e) { console.warn('[Predio] evolutivo:', e.message); }
+    }
+
     let texto = formatarBuscaPredio(ficha, {
       ...(unidades || {}), comparativos: comps,
       descartados: descartados.length, suspeitaFabricacao: fabricada,
-    });
+    }, evolutivo);
 
     // Modo "Prédio + Apartamento": mostra o panorama das unidades (venda já veio
     // na ficha; aqui adiciona ALUGUEL) e, SÓ se a área for informada, o laudo da unidade.
@@ -309,9 +330,13 @@ router.post('/predio', async (req, res) => {
       if (aptoArea > 0) {
         const { calcularPreco } = require('../data/precificador');
         const finalidade = b.aptoFinalidade === 'aluguel' ? 'aluguel' : 'venda';
+        // Idade e padrão saem do dossiê do prédio: sem eles o laudo usaria a
+        // âncora do bairro (preço de prédio NOVO) para um prédio velho.
         const dadosApto = {
           tipo: 'apartamento', finalidade, cidade, bairro, condominio,
-          metragem: aptoArea, quartos: b.aptoQuartos, vagas: b.aptoVagas, conservacao: b.aptoConservacao || 'bom',
+          metragem: aptoArea, quartos: b.aptoQuartos, vagas: b.aptoVagas, conservacao,
+          idade: ficha && ficha.anoConstrucao ? new Date().getFullYear() - ficha.anoConstrucao : undefined,
+          padrao: ficha && ficha.padrao ? ficha.padrao : undefined,
         };
         try {
           apto = await calcularPreco(dadosApto);
@@ -329,8 +354,8 @@ router.post('/predio', async (req, res) => {
     try {
       require('../data/database').salvarLaudo({
         kind: 'predio', titulo: condominio, tipo: 'predio', cidade, bairro,
-        valor: valorRef || 0, dados: { condominio, bairro, cidade },
-        resultado: { ficha, unidades: comps },
+        valor: valorRef || (evolutivo && evolutivo.valorTotal) || 0, dados: { condominio, bairro, cidade },
+        resultado: { ficha, unidades: comps, evolutivo },
       });
     } catch (e) { console.warn('[Predio] salvar:', e.message); }
     return res.json({ type: 'predio', response: texto, ficha, unidades: comps, apto });
@@ -823,7 +848,7 @@ router.get('/laudos/:id', async (req, res) => {
     else if (l.kind === 'empresa') response = require('../data/valuationEmpresa').formatarEmpresa(l.resultado);
     else if (l.kind === 'terreno') response = require('../data/terreno').formatarTerreno(l.resultado);
     else if (l.kind === 'bts') response = require('../data/bts').formatarBTS(l.resultado);
-    else if (l.kind === 'predio') response = require('../data/fichaPredio').formatarBuscaPredio((l.resultado || {}).ficha, { comparativos: (l.resultado || {}).unidades || [] });
+    else if (l.kind === 'predio') response = require('../data/fichaPredio').formatarBuscaPredio((l.resultado || {}).ficha, { comparativos: (l.resultado || {}).unidades || [] }, (l.resultado || {}).evolutivo);
     else if (l.kind === 'fazenda') {
       const view = l.resultado && l.resultado.view;
       const fz = require('../data/fazenda');

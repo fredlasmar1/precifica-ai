@@ -51,12 +51,26 @@ function fontesEmpresa(r) {
 }
 
 /** Fontes da FICHA DO PRÉDIO. */
-function fontesPredio(f, comps = [], citacoes = []) {
+function fontesPredio(f, comps = [], citacoes = [], evolutivo = null) {
   const n = comps.length;
   const bases = [BASE_MAPS + ' (endereço)', 'Anúncios de imóveis (condomínio, IPTU, unidades)'];
   if (f.cnpj) bases.push(BASE_RECEITA);
   if (f.processos && f.processos.disponivel) bases.push(BASE_ESCAVADOR);
   const links = [...new Set([...comps.map(c => c.url).filter(Boolean), ...citacoes])].slice(0, 8);
+
+  // Sem anúncio no prédio o método MUDA (comparativo → evolutivo), e o bloco de
+  // fontes tem que mudar junto: dizer "sem base de preço" embaixo de uma
+  // estimativa publicada seria o mesmo tipo de contradição que originou o chute.
+  if (!n && evolutivo) {
+    return {
+      metodo: 'Método EVOLUTIVO (ref. ABNT NBR 14653-2, 8.2.2): terreno (fração ideal) + custo de reedição CUB-GO depreciado por Ross-Heidecke × fator de comercialização',
+      amostra: `nenhuma unidade anunciada neste prédio — estimativa por custo, sem mercado`,
+      data: hoje(),
+      grau: 'Indicativo (estimativa — não é laudo)',
+      links, bases: bases.concat([BASE_PGV + ' — terreno', BASE_EBM + ' — calibração do fator de comercialização', 'CUB-GO / Sinduscon (custo de reedição)']),
+      obs: `Estimativa por custo depreciado, NÃO por mercado: ${evolutivo.idade} anos, CA e estado de conservação presumidos. Para laudo: vistoria + fração ideal da matrícula + transação real (ITBI).`,
+    };
+  }
   return {
     metodo: 'Dossiê do edifício por amostragem de fontes públicas e anúncios de mercado',
     amostra: n ? `${n} unidade(s) anunciada(s) neste prédio` : 'nenhuma unidade anunciada neste prédio',
