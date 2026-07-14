@@ -117,14 +117,24 @@ function composicao({ cidade, bairro, padrao, ca, anoConstrucao, mercadoRefM2 })
   // EBM (8.500/m²) é o TOPO do mercado, enquanto a mediana real dos anúncios é
   // ~4.400/m² — calibrar por ela dobrava a estimativa e fazia a ficha brigar
   // com o laudo da mesma unidade na mesma tela.
+  // O custo de referência usa um padrão e um CA FIXOS (o imóvel mediano do
+  // bairro), NÃO os do prédio avaliado. Se usasse os do prédio, o padrão se
+  // cancelaria — FC subiria na mesma proporção que o CUB e todo prédio do bairro
+  // receberia o mesmo valor, variando só pela idade. Medido em 3 prédios de
+  // Jundiaí: com o padrão cancelado o modelo errava −30% em todos e só conseguia
+  // reproduzir 1,2x de spread, contra 2,81x do mercado real.
+  const refCA = ZONAS['residencial-media'].ca;
+  const custoBase = Math.round(terreno.m2 / refCA) + CUB.normal * (1 - rossHeidecke(IDADE_REFERENCIA).k);
+
   let ref, custoRef, refFonte;
   if (Number(mercadoRefM2) > 0) {
     ref = Number(mercadoRefM2);
-    custoRef = terrenoM2 + cubInfo.valor * (1 - rossHeidecke(IDADE_REFERENCIA).k);
+    custoRef = custoBase;
     refFonte = 'mercado real do bairro';
   } else if (venda && venda.m2 > 0) {
+    // Âncora EBM = prédio NOVO: compara com o custo do padrão de referência novo.
     ref = venda.m2;
-    custoRef = custoNovo;
+    custoRef = Math.round(terreno.m2 / refCA) + CUB.normal;
     refFonte = 'âncora EBM do bairro (prédio novo) — sem mercado real p/ calibrar';
   } else {
     return null;
