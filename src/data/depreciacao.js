@@ -49,9 +49,13 @@ const HEIDECKE = {
 // Limites só para não propagar âncora/CUB absurdos.
 const FC_MIN = 0.6, FC_MAX = 3.0;
 
-// Amplitude da faixa em torno do valor central. O evolutivo é estimativa, não
-// laudo: entregar número cravado seria mentir sobre a precisão.
-const AMPLITUDE = 0.12;
+// Amplitude da faixa em torno do valor central. NÃO é escolhida a dedo: é o erro
+// MEDIDO do modelo contra prédios reais de Anápolis (média 14,9%, chegando a 22%
+// nos casos individuais). O ±12% inicial era um chute meu e prometia uma precisão
+// que o próprio teste desmente — faixa estreita demais é mentira sobre o que
+// sabemos. Se a calibração melhorar (mais prédios corrigidos pelo dono na tabela
+// `predios`), este número tem que CAIR junto.
+const AMPLITUDE = 0.22;
 
 function norm(s) {
   return String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
