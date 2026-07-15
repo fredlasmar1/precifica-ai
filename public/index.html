@@ -541,7 +541,21 @@
               </select>
             </div>
           </div>
-          <div class="hint" style="margin:0 0 12px">🗓️ Prédio <b>sem anúncio</b> só pode ser precificado pelo <b>ano de construção</b> (método evolutivo: terreno + custo depreciado). Se eu não achar o ano sozinho, informe aqui.</div>
+          <div class="row">
+            <div class="field">
+              <label>🏗️ Padrão do prédio <span class="opt">(opcional)</span></label>
+              <select id="pr-padrao">
+                <option value="">Deixar a IA descobrir</option>
+                <option value="popular">Popular</option>
+                <option value="médio para baixo">Médio para baixo</option>
+                <option value="médio">Médio</option>
+                <option value="médio-alto">Médio-alto</option>
+                <option value="alto">Alto</option>
+              </select>
+            </div>
+            <div class="field"></div>
+          </div>
+          <div class="hint" style="margin:0 0 12px">🗓️ Prédio <b>sem anúncio</b> só pode ser precificado pelo <b>ano de construção</b> (método evolutivo: terreno + custo depreciado). Se eu não achar o ano sozinho, informe aqui.<br>🏗️ O <b>padrão</b> é o que mais mexe no preço (chega a 2x entre prédios da mesma época) e é o que a IA mais erra — se você conhece o prédio, crave.</div>
           <div id="pr-apto-fields" style="display:none">
             <div class="hint" style="margin:0 0 12px">🔎 Deixe vazio pra ver <b>as unidades do prédio</b> (metragens, quartos, venda e aluguel). Só preencha se quiser o <b>laudo de uma unidade específica</b>.</div>
             <div class="row">
@@ -2275,6 +2289,8 @@
       const ano = Number(document.getElementById('pr-ano').value);
       if (ano > 1900) payload.anoConstrucao = ano;
       payload.conservacao = document.getElementById('pr-conservacao').value;
+      const padrao = document.getElementById('pr-padrao').value;
+      if (padrao) payload.padrao = padrao;
       const comApto = window._predioModo === 'apto';
       if (comApto) {
         payload.modoApto = true;

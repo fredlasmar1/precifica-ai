@@ -322,6 +322,11 @@ router.post('/predio', async (req, res) => {
     // em vez de inventar.
     const anoInformado = Number(b.anoConstrucao) > 1900 ? Number(b.anoConstrucao) : null;
     if (ficha && anoInformado) { ficha.anoConstrucao = anoInformado; ficha.anoFonte = 'informado'; }
+    // Padrão informado também manda: é o driver mais forte do valor (2x entre
+    // prédios da mesma época) e o campo que a IA mais erra — chega a mudar entre
+    // duas buscas do MESMO prédio.
+    const padraoInformado = String(b.padrao || '').trim();
+    if (ficha && padraoInformado) { ficha.padrao = padraoInformado; ficha.padraoFonte = 'informado'; }
     const conservacao = b.conservacao || b.aptoConservacao || 'bom';
 
     // Sem anúncio no prédio o comparativo não tem o que comparar; com o ano, dá

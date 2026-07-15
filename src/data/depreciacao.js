@@ -16,8 +16,17 @@ const { ZONAS, CUB } = require('./terreno');
  *   FC = fator de comercialização
  */
 
-// Vida útil de referência p/ edifício de concreto armado (prática de avaliação BR).
-const VIDA_UTIL_ANOS = 60;
+// Vida útil de referência. A prática clássica usa 60-70 anos (desgaste FÍSICO do
+// concreto), mas aqui ela é CALIBRADA no mercado de Anápolis: 60 anos deprecia
+// devagar demais e o modelo lia +26% acima do único prédio antigo real medido
+// (Ed. Luciano, 1998, médio, R$3.480/m²). Com 40 anos o erro nele vai a -1% e o
+// erro médio da amostra cai de 19,3% p/ 14,9%.
+// O número menor que o físico absorve a OBSOLESCÊNCIA FUNCIONAL: o mercado pune
+// prédio velho além do desgaste (planta antiga, sem lazer/vaga, elevador velho).
+// ⚠️ Calibrado sobre UM prédio antigo — a ponta velha da curva é o ponto fraco.
+// Justificativa de alvo: o evolutivo só roda em prédio SEM anúncio (imóvel comum
+// e desconhecido, tipo o Luciano). Os premium têm anúncio e nunca chegam aqui.
+const VIDA_UTIL_ANOS = 40;
 
 // Piso residual da construção: prédio DE PÉ e em uso nunca vale zero de
 // benfeitoria, por mais velho que seja. Ross puro chega a 100% aos 60 anos.
@@ -65,10 +74,21 @@ function rossHeidecke(idade, conservacao = 'bom', vidaUtil = VIDA_UTIL_ANOS) {
   return { k, kRoss, c, vidaUtil, residualAplicado: kBruto > k };
 }
 
-/** CUB-GO do padrão declarado na ficha ('alto'/'médio-alto'/'médio'/'popular'). */
+/**
+ * CUB-GO do padrão. É o driver MAIS forte do valor: entre dois prédios da mesma
+ * época no Jundiaí, o padrão respondeu por 2x de diferença de preço (Ed. Luciano
+ * médio R$3.480/m² vs prédios médio-alto ~R$7.000/m²). Vale mais que a idade.
+ */
 function cubDoPadrao(padrao) {
   const p = norm(padrao);
   if (/popular/.test(p)) return { valor: CUB.popular, label: 'popular' };
+  // "baixo" antes de tudo que casa /medio/ ou /alto/: "médio para baixo" e
+  // "médio-baixo" têm que cair aqui, não em médio.
+  if (/baixo/.test(p)) {
+    return /medio/.test(p)
+      ? { valor: Math.round((CUB.popular + CUB.normal) / 2), label: 'médio para baixo' }
+      : { valor: CUB.popular, label: 'baixo' };
+  }
   // médio-alto ANTES de alto: senão "médio-alto" casa em /alto/ e vira padrão alto.
   if (/alto/.test(p) && /medio/.test(p)) return { valor: Math.round((CUB.normal + CUB.alto) / 2), label: 'médio-alto' };
   if (/alto/.test(p)) return { valor: CUB.alto, label: 'alto' };

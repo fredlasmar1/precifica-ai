@@ -167,7 +167,7 @@ function formatarFichaPredio(f) {
   let t = `\n🏢 *FICHA DO PRÉDIO — ${f.condominio}*\n`;
   if (f.endereco) t += `• Endereço: ${f.endereco}\n`;
   if (f.cnpj) t += `• CNPJ (público): ${f.cnpj}\n`;
-  if (f.padrao) t += `• Padrão: ${f.padrao}\n`;
+  if (f.padrao) t += `• Padrão: ${f.padrao}${f.padraoFonte === 'informado' ? ' — informado por você' : ''}\n`;
   if (f.anoConstrucao) {
     const idade = new Date().getFullYear() - f.anoConstrucao;
     t += `• Construção: ${f.anoConstrucao} (${idade} anos)${f.anoFonte === 'informado' ? ' — informado por você' : ''}\n`;
