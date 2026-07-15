@@ -162,6 +162,34 @@ async function inicializar() {
     // com condominio — com todos os valores atuais em '', não gera duplicata.
     await pool.query(`ALTER TABLE precos_mercado DROP CONSTRAINT IF EXISTS precos_mercado_cidade_bairro_tipo_finalidade_key`);
     await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS precos_mercado_uniq ON precos_mercado (cidade, bairro, tipo, finalidade, condominio)`);
+
+    // ─── predios: memória do que já sabemos de cada edifício ───────────────────
+    // Sem isto, cada busca reconstruía a ficha do zero via LLM (não determinístico)
+    // → ano e padrão MUDAVAM entre duas buscas do MESMO prédio. E padrão é o
+    // driver mais forte do valor (2x), então a estimativa balançava junto.
+    // Guarda também a correção do corretor: `*_fonte='informado'` é verdade e
+    // NUNCA é sobrescrita pela IA (ver salvarPredio). O que o dono corrige uma
+    // vez, fica — e vira ponto de calibração acumulado.
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS predios (
+        id SERIAL PRIMARY KEY,
+        cidade VARCHAR(100) NOT NULL,
+        bairro VARCHAR(100) NOT NULL,
+        condominio VARCHAR(200) NOT NULL,
+        endereco TEXT,
+        cnpj VARCHAR(20),
+        ano_construcao INT,
+        ano_fonte VARCHAR(20),          -- informado | dossiê | busca focada
+        padrao VARCHAR(40),
+        padrao_fonte VARCHAR(20),       -- informado | dossiê
+        condominio_mensal TEXT,
+        lazer JSONB,
+        perfil_unidades TEXT,
+        perfil_confirmado BOOLEAN DEFAULT FALSE,
+        atualizado_em TIMESTAMP DEFAULT NOW()
+      )
+    `);
+    await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS predios_uniq ON predios (LOWER(cidade), LOWER(bairro), LOWER(condominio))`);
     console.log('[DB] Tabelas inicializadas com sucesso');
   } catch (err) {
     console.error('[DB] Erro ao inicializar:', err.message);
@@ -223,6 +251,55 @@ async function salvarPreco(dados) {
     RETURNING *
   `, [cidade, bairro, tipo, finalidade, condominio || '', preco_m2, faixa_min, faixa_max, amostras, confianca, fonte, JSON.stringify(comparativos || [])]);
   return result.rows[0];
+}
+
+/** Ficha conhecida do prédio (memória), com a idade do registro em dias. */
+async function buscarPredio(cidade, bairro, condominio) {
+  const r = await pool.query(
+    `SELECT *, EXTRACT(DAY FROM NOW() - atualizado_em) AS dias_desde
+     FROM predios
+     WHERE LOWER(cidade)=LOWER($1) AND LOWER(bairro)=LOWER($2) AND LOWER(condominio)=LOWER($3)`,
+    [cidade, bairro, condominio]
+  );
+  return r.rows[0] || null;
+}
+
+/**
+ * Grava a ficha do prédio. REGRA CENTRAL: o que veio como 'informado' (o corretor
+ * conhece o prédio) é verdade e NUNCA é sobrescrito por palpite de IA — só por
+ * outro 'informado'. O CASE abaixo é o que garante isso mesmo quando uma busca
+ * posterior da IA devolver ano/padrão diferentes.
+ */
+async function salvarPredio(d) {
+  const r = await pool.query(`
+    INSERT INTO predios (cidade,bairro,condominio,endereco,cnpj,ano_construcao,ano_fonte,padrao,padrao_fonte,condominio_mensal,lazer,perfil_unidades,perfil_confirmado,atualizado_em)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,NOW())
+    ON CONFLICT (LOWER(cidade), LOWER(bairro), LOWER(condominio)) DO UPDATE SET
+      endereco = COALESCE(EXCLUDED.endereco, predios.endereco),
+      cnpj = COALESCE(EXCLUDED.cnpj, predios.cnpj),
+      ano_construcao = CASE WHEN predios.ano_fonte='informado' AND EXCLUDED.ano_fonte IS DISTINCT FROM 'informado'
+                            THEN predios.ano_construcao ELSE COALESCE(EXCLUDED.ano_construcao, predios.ano_construcao) END,
+      ano_fonte = CASE WHEN predios.ano_fonte='informado' AND EXCLUDED.ano_fonte IS DISTINCT FROM 'informado'
+                       THEN predios.ano_fonte ELSE COALESCE(EXCLUDED.ano_fonte, predios.ano_fonte) END,
+      padrao = CASE WHEN predios.padrao_fonte='informado' AND EXCLUDED.padrao_fonte IS DISTINCT FROM 'informado'
+                    THEN predios.padrao ELSE COALESCE(EXCLUDED.padrao, predios.padrao) END,
+      padrao_fonte = CASE WHEN predios.padrao_fonte='informado' AND EXCLUDED.padrao_fonte IS DISTINCT FROM 'informado'
+                          THEN predios.padrao_fonte ELSE COALESCE(EXCLUDED.padrao_fonte, predios.padrao_fonte) END,
+      condominio_mensal = COALESCE(EXCLUDED.condominio_mensal, predios.condominio_mensal),
+      lazer = COALESCE(EXCLUDED.lazer, predios.lazer),
+      perfil_unidades = COALESCE(EXCLUDED.perfil_unidades, predios.perfil_unidades),
+      perfil_confirmado = EXCLUDED.perfil_confirmado,
+      atualizado_em = NOW()
+    RETURNING *
+  `, [
+    d.cidade, d.bairro, d.condominio, d.endereco || null, d.cnpj || null,
+    d.ano_construcao || null, d.ano_fonte || null,
+    d.padrao || null, d.padrao_fonte || null,
+    d.condominio_mensal || null,
+    d.lazer ? JSON.stringify(d.lazer) : null,
+    d.perfil_unidades || null, d.perfil_confirmado === true,
+  ]);
+  return r.rows[0];
 }
 
 async function buscarPreco(cidade, bairro, tipo, finalidade, condominio) {
@@ -390,6 +467,7 @@ module.exports = {
   pool, inicializar,
   salvarBairro, buscarBairro, listarBairros,
   salvarPreco, buscarPreco, invalidarPreco, salvarHistorico, buscarHistorico,
+  buscarPredio, salvarPredio,
   salvarAvaliacao, salvarFeedback,
   salvarConhecimentoCidade, buscarConhecimentoCidade,
   stats, registrarUso, obterUso,

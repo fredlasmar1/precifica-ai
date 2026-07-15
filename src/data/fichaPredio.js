@@ -114,9 +114,28 @@ function semPreco(s) {
   return partes.join(', ').trim() || null;
 }
 
-async function gerarFichaPredio({ condominio, bairro, cidade, valorMercado }) {
+/** Converte a linha da tabela `predios` no formato do dossiê (evita chamar a IA). */
+function dossieDoCache(r) {
+  return {
+    endereco: r.endereco, cnpj: r.cnpj,
+    valorCondominioMensal: r.condominio_mensal,
+    padrao: r.padrao, padraoFonte: r.padrao_fonte,
+    anoConstrucao: r.ano_construcao, anoFonte: r.ano_fonte,
+    lazer: Array.isArray(r.lazer) ? r.lazer : [],
+    perfilUnidades: r.perfil_unidades,
+    perfilConfirmado: r.perfil_confirmado === true,
+    iptuAnual: null,
+  };
+}
+
+/**
+ * `cache` = linha da tabela `predios`. Quando vem, NÃO chama a Perplexity: além
+ * de economizar 2-3 chamadas, é o que impede ano/padrão de mudarem entre duas
+ * buscas do mesmo prédio (o LLM não é determinístico e o padrão vale 2x no preço).
+ */
+async function gerarFichaPredio({ condominio, bairro, cidade, valorMercado, cache }) {
   if (!condominio) return null;
-  const d = (await dossiePredio(condominio, bairro, cidade)) || {};
+  const d = cache ? dossieDoCache(cache) : ((await dossiePredio(condominio, bairro, cidade)) || {});
   // limpa marcadores de citação dos campos de texto
   ['endereco', 'padrao', 'perfilUnidades', 'valorCondominioMensal'].forEach(k => { if (typeof d[k] === 'string') d[k] = semCit(d[k]); });
   if (Array.isArray(d.lazer)) d.lazer = d.lazer.map(semCit);
@@ -136,8 +155,9 @@ async function gerarFichaPredio({ condominio, bairro, cidade, valorMercado }) {
   // Ano de construção: mesma tática do CNPJ. É o insumo que destrava o
   // evolutivo — sem ele, prédio sem anúncio fica sem preço nenhum.
   let anoConstrucao = Number(d.anoConstrucao) > 1900 ? Number(d.anoConstrucao) : null;
-  let anoFonte = anoConstrucao ? 'dossiê' : null;
-  if (!anoConstrucao) {
+  let anoFonte = anoConstrucao ? (d.anoFonte || 'dossiê') : null;
+  // Do cache não adianta re-perguntar: se a IA não achou antes, não acha agora.
+  if (!anoConstrucao && !cache) {
     const a = await buscarAnoPredio(condominio, bairro, cidade);
     if (a) { anoConstrucao = a; anoFonte = 'busca focada'; }
   }
@@ -153,6 +173,7 @@ async function gerarFichaPredio({ condominio, bairro, cidade, valorMercado }) {
     condominioMensal: d.valorCondominioMensal || null,
     iptu, iptuFonte,
     padrao: d.padrao || null,
+    padraoFonte: d.padraoFonte || (d.padrao ? 'dossiê' : null),
     anoConstrucao, anoFonte,
     lazer: Array.isArray(d.lazer) ? d.lazer.filter(Boolean) : [],
     perfilUnidades: d.perfilUnidades || null,

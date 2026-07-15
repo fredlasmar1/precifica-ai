@@ -315,18 +315,40 @@ router.post('/predio', async (req, res) => {
       } catch (e) { console.warn('[Predio] cache gravação:', e.message); }
     }
 
-    const ficha = await gerarFichaPredio({ condominio, bairro, cidade, valorMercado: valorRef });
+    // Memória do prédio (tabela `predios`, 30 dias). Sem ela, cada busca
+    // reconstruía a ficha via LLM e ano/padrão MUDAVAM entre duas buscas do
+    // mesmo prédio — e padrão vale 2x no preço, então a estimativa balançava.
+    let memoria = null;
+    try { memoria = await db.buscarPredio(cidade, bairro, condominio); } catch (e) { console.warn('[Predio] memoria leitura:', e.message); }
+    const memoriaFresca = memoria && Number(memoria.dias_desde) < 30;
 
-    // Ano informado pelo corretor MANDA no que a IA achou: quem conhece o prédio
-    // é ele. Sem ano (dele ou do dossiê) não há evolutivo — e aí a ficha diz isso
-    // em vez de inventar.
+    const ficha = await gerarFichaPredio({
+      condominio, bairro, cidade, valorMercado: valorRef,
+      cache: memoriaFresca ? memoria : null,
+    });
+
+    // Ano/padrão informados pelo corretor MANDAM no que a IA achou — quem conhece
+    // o prédio é ele — e ficam gravados como verdade (salvarPredio nunca deixa a
+    // IA sobrescrever um 'informado').
     const anoInformado = Number(b.anoConstrucao) > 1900 ? Number(b.anoConstrucao) : null;
     if (ficha && anoInformado) { ficha.anoConstrucao = anoInformado; ficha.anoFonte = 'informado'; }
-    // Padrão informado também manda: é o driver mais forte do valor (2x entre
-    // prédios da mesma época) e o campo que a IA mais erra — chega a mudar entre
-    // duas buscas do MESMO prédio.
     const padraoInformado = String(b.padrao || '').trim();
     if (ficha && padraoInformado) { ficha.padrao = padraoInformado; ficha.padraoFonte = 'informado'; }
+
+    // Grava o que aprendemos (inclusive a correção do dono).
+    if (ficha) {
+      try {
+        await db.salvarPredio({
+          cidade, bairro, condominio,
+          endereco: ficha.endereco, cnpj: ficha.cnpj,
+          ano_construcao: ficha.anoConstrucao, ano_fonte: ficha.anoFonte,
+          padrao: ficha.padrao, padrao_fonte: ficha.padraoFonte,
+          condominio_mensal: typeof ficha.condominioMensal === 'string' ? ficha.condominioMensal : (ficha.condominioMensal ? String(ficha.condominioMensal) : null),
+          lazer: ficha.lazer, perfil_unidades: ficha.perfilUnidades,
+          perfil_confirmado: ficha.perfilConfirmado,
+        });
+      } catch (e) { console.warn('[Predio] memoria gravação:', e.message); }
+    }
     const conservacao = b.conservacao || b.aptoConservacao || 'bom';
 
     // Sem anúncio no prédio o comparativo não tem o que comparar; com o ano, dá
@@ -340,11 +362,28 @@ router.post('/predio', async (req, res) => {
     if (!comps.length && ficha && ficha.anoConstrucao && !temLaudoDeUnidade) {
       // Calibra o FC no mercado REAL do bairro (mesma fonte do laudo), não na
       // âncora EBM: a EBM é o topo do mercado e inflava a estimativa ~2x.
+      // Passa pelo cache do bairro (linha condominio='') — sem ele o scraping
+      // devolvia mediana diferente a cada rodada (4.857 / 5.217 / 6.180) e a
+      // estimativa do MESMO prédio balançava junto. É a mesma linha que o
+      // calcularPreco usa, então os dois se aproveitam do trabalho um do outro.
       let mercadoRefM2 = null;
       try {
-        const { buscarComparativos } = require('../data/portais');
-        const mkt = await buscarComparativos({ tipo: 'apartamento', finalidade: 'venda', cidade, bairro });
-        if (mkt && mkt.precoMedioM2 > 0) mercadoRefM2 = mkt.precoMedioM2;
+        const cacheBairro = await db.buscarPreco(cidade, bairro, 'apartamento', 'venda', '');
+        if (cacheBairro && Number(cacheBairro.dias_desde) < 3 && Number(cacheBairro.preco_m2) > 0) {
+          mercadoRefM2 = Number(cacheBairro.preco_m2);
+        } else {
+          const { buscarComparativos } = require('../data/portais');
+          const mkt = await buscarComparativos({ tipo: 'apartamento', finalidade: 'venda', cidade, bairro });
+          if (mkt && mkt.precoMedioM2 > 0) {
+            mercadoRefM2 = mkt.precoMedioM2;
+            await db.salvarPreco({
+              cidade, bairro, tipo: 'apartamento', finalidade: 'venda', condominio: '',
+              preco_m2: mercadoRefM2, faixa_min: mkt.precoMinimo || null, faixa_max: mkt.precoMaximo || null,
+              amostras: (mkt.imoveis || []).length, confianca: mkt.confianca || 'media',
+              fonte: mkt.fonte || 'portais', comparativos: mkt.imoveis || [],
+            });
+          }
+        }
       } catch (e) { console.warn('[Predio] mercado ref:', e.message); }
       try {
         evolutivo = require('../data/depreciacao').estimarEvolutivo({
