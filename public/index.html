@@ -248,6 +248,19 @@
     /* Mapa de concorrentes no laudo */
     .laudo-map { width: 100%; border-radius: 14px; border: 1px solid var(--line); margin-bottom: 16px; display: block; }
     /* Botões de PDF */
+    .mt-step { display: flex; gap: 12px; align-items: flex-start; margin: 4px 0 16px; }
+    .mt-step-n {
+      flex: none; width: 26px; height: 26px; border-radius: 50%; background: var(--blue); color: #fff;
+      display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 13px;
+    }
+    .mt-step-t { font-weight: 700; font-size: 14.5px; }
+    .mt-step-s { font-size: 12.5px; color: #64748b; margin-top: 2px; }
+    .mt-info { font-size: 12px; color: #64748b; margin-top: 6px; }
+    .mt-achado { display: flex; gap: 9px; padding: 10px 12px; border-radius: 10px; margin-bottom: 8px; font-size: 12.5px; line-height: 1.45; }
+    .mt-achado b { display: block; margin-bottom: 2px; }
+    .mt-alto { background: #fef2f2; border: 1px solid #fecaca; color: #7f1d1d; }
+    .mt-medio { background: #fffbeb; border: 1px solid #fde68a; color: #78350f; }
+    .mt-bom { background: #f0fdf4; border: 1px solid #bbf7d0; color: #14532d; }
     .pdf-bar { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
     .btn-pdf {
       display: inline-flex; align-items: center; gap: 7px; padding: 10px 16px; border-radius: 11px;
@@ -347,6 +360,7 @@
     <div class="card">
       <div class="tabs">
         <button class="tab active" id="tab-form" onclick="switchTab('form')"><svg viewBox="0 0 24 24"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 13l2 2 4-4"/></svg>Avaliar</button>
+        <button class="tab" id="tab-matricula" onclick="switchTab('matricula')"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h5"/></svg>Matrícula</button>
         <button class="tab" id="tab-comercial" onclick="switchTab('comercial')"><svg viewBox="0 0 24 24"><path d="M4 9V20h16V9"/><path d="M2 9l2-5h16l2 5a3 3 0 0 1-6 0 3 3 0 0 1-6 0 3 3 0 0 1-6 0z"/><path d="M9 20v-5h6v5"/></svg>Comercial</button>
         <button class="tab" id="tab-predio" onclick="switchTab('predio')"><svg viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="1"/><path d="M9 7h2M13 7h2M9 11h2M13 11h2M9 15h2M13 15h2"/></svg>Prédios</button>
         <button class="tab" id="tab-terreno" onclick="switchTab('terreno')"><svg viewBox="0 0 24 24"><path d="M3 20h18"/><path d="M5 20V9l7-5 7 5v11"/><path d="M9 20v-5h6v5"/></svg>Terrenos</button>
@@ -468,6 +482,135 @@
       </div>
 
       <!-- Ponto Comercial -->
+      <div class="pane" id="pane-matricula">
+        <div class="mt-step">
+          <div class="mt-step-n">1</div>
+          <div>
+            <div class="mt-step-t">Documentos do imóvel</div>
+            <div class="mt-step-s">Certidão da matrícula (PDF ou foto) e as fotos do imóvel. A IA lê, você confere.</div>
+          </div>
+        </div>
+        <div class="field">
+          <label>Certidão da matrícula <span class="opt">(PDF ou imagem — obrigatória)</span></label>
+          <input id="mt-doc" type="file" accept="application/pdf,image/*" onchange="mtArquivos('doc')" />
+          <div class="mt-info" id="mt-doc-info"></div>
+        </div>
+        <div class="field">
+          <label>Fotos do imóvel <span class="opt">(pode selecionar várias — usadas para padrão e conservação)</span></label>
+          <input id="mt-fotos" type="file" accept="image/*" multiple onchange="mtArquivos('fotos')" />
+          <div class="mt-info" id="mt-fotos-info"></div>
+        </div>
+        <button class="btn-primary" id="btn-mt-ler" type="button" onclick="mtLer()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+          Ler documentos
+        </button>
+
+        <div id="mt-conferencia" style="display:none">
+          <div class="mt-step" style="margin-top:22px">
+            <div class="mt-step-n">2</div>
+            <div>
+              <div class="mt-step-t">Confira o que a IA leu</div>
+              <div class="mt-step-s">Corrija o que estiver errado. O que você digitar aqui manda no palpite da IA.</div>
+            </div>
+          </div>
+          <div id="mt-achados"></div>
+          <div class="row">
+            <div class="field">
+              <label>Cidade</label>
+              <input id="mt-cidade" value="Anápolis" />
+            </div>
+            <div class="field">
+              <label>Bairro / loteamento</label>
+              <input id="mt-bairro" placeholder="Ex: Residencial Alphaville" />
+            </div>
+          </div>
+          <div class="row">
+            <div class="field">
+              <label>Área do terreno (m²)</label>
+              <input id="mt-areaterreno" type="number" min="0" step="0.01" />
+            </div>
+            <div class="field">
+              <label>Área construída (m²) <span class="opt" id="mt-area-origem"></span></label>
+              <input id="mt-areaconstruida" type="number" min="0" step="0.01" />
+            </div>
+          </div>
+          <div class="row">
+            <div class="field">
+              <label>Quanto disso é área secundária (m²) <span class="opt">(garagem, subsolo, varanda — JÁ incluída acima; vale metade)</span></label>
+              <input id="mt-areasec" type="number" min="0" step="0.01" placeholder="0" />
+            </div>
+            <div class="field">
+              <label>Idade do imóvel (anos)</label>
+              <input id="mt-idade" type="number" min="0" placeholder="0" />
+            </div>
+          </div>
+          <div class="row">
+            <div class="field">
+              <label>Padrão de acabamento</label>
+              <select id="mt-padrao">
+                <option value="popular">Popular (CUB ~R$1.900/m²)</option>
+                <option value="normal" selected>Normal (CUB ~R$2.400/m²)</option>
+                <option value="normal-alto">Normal alto (CUB ~R$3.100/m²)</option>
+                <option value="alto">Alto (CUB ~R$3.800/m²)</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>Estado de conservação</label>
+              <select id="mt-conservacao">
+                <option value="novo">Novo / nunca habitado</option>
+                <option value="otimo">Ótimo</option>
+                <option value="bom" selected>Bom</option>
+                <option value="regular">Regular</option>
+                <option value="ruim">Ruim</option>
+              </select>
+            </div>
+          </div>
+          <div class="row">
+            <div class="field">
+              <label>Avaliação anterior (R$) <span class="opt">(opcional — vira o 3º método)</span></label>
+              <input id="mt-anterior" type="number" min="0" placeholder="Ex: 560000" />
+            </div>
+            <div class="field">
+              <label>Há quantos anos</label>
+              <input id="mt-anosant" type="number" min="0" step="0.5" placeholder="1" />
+            </div>
+          </div>
+          <div class="field">
+            <label><input type="checkbox" id="mt-regularizou" /> Regularizou (habite-se/averbação) depois daquela avaliação</label>
+          </div>
+          <div class="row">
+            <div class="field">
+              <label>R$/m² do terreno <span class="opt">(deixe vazio: vem da pesquisa)</span></label>
+              <input id="mt-terrenom2" type="number" min="0" placeholder="automático" />
+            </div>
+            <div class="field">
+              <label>R$/m² construído <span class="opt">(deixe vazio: vem da pesquisa)</span></label>
+              <input id="mt-vendam2" type="number" min="0" placeholder="automático" />
+            </div>
+          </div>
+          <div class="row">
+            <div class="field">
+              <label>Marca do parecer</label>
+              <select id="mt-marca">
+                <option value="balladao" selected>Balladão Advogados (advogado + OAB)</option>
+                <option value="bens">Bens Imóveis (corretor + CRECI)</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>Solicitante <span class="opt">(aparece no PDF)</span></label>
+              <input id="mt-solicitante" placeholder="Nome do cliente" />
+            </div>
+          </div>
+          <div class="field">
+            <label><input type="checkbox" id="mt-pesquisar" checked /> Pesquisar o mercado agora (preenche o Anexo I com anúncios reais)</label>
+          </div>
+          <button class="btn-primary" id="btn-mt-avaliar" type="button" onclick="mtAvaliar()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l4-4 3 3 5-6"/></svg>
+            Gerar parecer de valor
+          </button>
+        </div>
+      </div>
+
       <div class="pane" id="pane-comercial">
         <div class="searchbox">
           <label>🔎 Pergunte: qual o melhor bairro para o negócio?</label>
@@ -1297,12 +1440,13 @@
     toggleCamposTipo();
 
     function switchTab(which) {
-      for (const t of ['form', 'chat', 'comercial', 'predio', 'terreno', 'bts', 'fazenda', 'fipe', 'empresa', 'decisao', 'historico']) {
+      for (const t of ['form', 'chat', 'matricula', 'comercial', 'predio', 'terreno', 'bts', 'fazenda', 'fipe', 'empresa', 'decisao', 'historico']) {
         document.getElementById('tab-' + t).classList.toggle('active', which === t);
         document.getElementById('pane-' + t).classList.toggle('active', which === t);
       }
       const head = document.getElementById('result-title');
-      if (head) head.textContent = which === 'comercial' ? 'Análise de Ponto Comercial'
+      if (head) head.textContent = which === 'matricula' ? 'Parecer por Amostragem — Matrícula'
+        : which === 'comercial' ? 'Análise de Ponto Comercial'
         : which === 'predio' ? 'Ficha do Prédio'
         : which === 'terreno' ? 'Terreno — Viabilidade'
         : which === 'bts' ? 'BTS — Build to Suit'
@@ -1575,9 +1719,10 @@
       { key: 'bts', label: '🏗️ BTS' },
       { key: 'fazenda', label: '🌾 Fazendas' },
       { key: 'empresa', label: '💼 Empresas' },
+      { key: 'matricula', label: '📄 Matrículas' },
     ];
     let histLista = [], histFiltro = 'todos';
-    function histKind(l) { return ['imovel', 'predio', 'comercial', 'terreno', 'bts', 'fazenda', 'empresa'].includes(l.kind) ? l.kind : 'imovel'; }
+    function histKind(l) { return ['imovel', 'predio', 'comercial', 'terreno', 'bts', 'fazenda', 'empresa', 'matricula'].includes(l.kind) ? l.kind : 'imovel'; }
     async function carregarHistorico() {
       const box = document.getElementById('lista-historico');
       box.innerHTML = '<div style="color:var(--muted2);font-size:13px;text-align:center;padding:20px;">Carregando…</div>';
@@ -1619,6 +1764,7 @@
         else if (l.kind === 'terreno') { main = `🌳 ${l.titulo || 'Terreno'}`; sub = `${l.bairro || ''} — ${l.cidade || 'Anápolis'} · ${data}`; }
         else if (l.kind === 'bts') { main = `🏗️ ${l.titulo || 'BTS'}`; sub = `${l.bairro || ''} — ${l.cidade || 'Anápolis'} · ${data}`; }
         else if (l.kind === 'predio') { main = `🏢 Prédio: ${l.titulo || ''}`; sub = `${l.bairro || ''} — ${l.cidade || 'Anápolis'} · ${data}`; }
+        else if (l.kind === 'matricula') { main = `📄 ${l.titulo || 'Matrícula'}`; sub = `${[l.bairro, l.cidade].filter(Boolean).join(' — ') || 'Anápolis'} · ${data}`; }
         else if (l.kind === 'fazenda') { main = `🌾 ${l.titulo || 'Rural'}`; sub = `${[l.bairro, l.cidade].filter(Boolean).join(' — ') || 'Anápolis'} · ${data}`; }
         else {
           const local = [l.endereco, l.bairro].filter(Boolean).join(', ') || l.bairro || '—';
@@ -2394,6 +2540,243 @@
     function autoResize(el) {
       el.style.height = 'auto';
       el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+    }
+    // ─────────────────────────────────────────────────────────────────
+    // ABA MATRÍCULA — parecer por amostragem a partir do documento
+    // O navegador faz o trabalho pesado: converte o PDF em imagens e
+    // encolhe as fotos. O servidor só recebe imagem pronta.
+    // ─────────────────────────────────────────────────────────────────
+    let mtPaginas = [], mtFotosData = [], mtLeitura = null, matriculaAtual = null;
+
+    function loadPdfJs() {
+      if (window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
+      return new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+        s.onload = () => {
+          window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+          resolve(window.pdfjsLib);
+        };
+        s.onerror = () => reject(new Error('Não consegui carregar o leitor de PDF. Se estiver sem internet, mande a matrícula como foto.'));
+        document.head.appendChild(s);
+      });
+    }
+
+    function mtEncolher(file, max, q) {
+      return new Promise((resolve, reject) => {
+        const img = new Image();
+        const url = URL.createObjectURL(file);
+        img.onload = () => {
+          const s = Math.min(1, max / Math.max(img.width, img.height));
+          const c = document.createElement('canvas');
+          c.width = Math.round(img.width * s); c.height = Math.round(img.height * s);
+          c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+          URL.revokeObjectURL(url);
+          resolve(c.toDataURL('image/jpeg', q));
+        };
+        img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Arquivo de imagem inválido.')); };
+        img.src = url;
+      });
+    }
+
+    async function mtPdfParaImagens(file) {
+      const pdfjs = await loadPdfJs();
+      const buf = await file.arrayBuffer();
+      const pdf = await pdfjs.getDocument({ data: buf }).promise;
+      const out = [];
+      const n = Math.min(pdf.numPages, 8);
+      for (let i = 1; i <= n; i++) {
+        const page = await pdf.getPage(i);
+        const base = page.getViewport({ scale: 1 });
+        const vp = page.getViewport({ scale: Math.min(2.2, 1500 / base.width) });
+        const c = document.createElement('canvas');
+        c.width = vp.width; c.height = vp.height;
+        await page.render({ canvasContext: c.getContext('2d'), viewport: vp }).promise;
+        out.push(c.toDataURL('image/jpeg', 0.85));
+      }
+      return { imagens: out, total: pdf.numPages };
+    }
+
+    async function mtArquivos(qual) {
+      const input = document.getElementById(qual === 'doc' ? 'mt-doc' : 'mt-fotos');
+      const info = document.getElementById(qual === 'doc' ? 'mt-doc-info' : 'mt-fotos-info');
+      const files = Array.from(input.files || []);
+      if (!files.length) return;
+      info.textContent = 'preparando…';
+      try {
+        if (qual === 'doc') {
+          const f = files[0];
+          if (/pdf$/i.test(f.type) || /\.pdf$/i.test(f.name)) {
+            const { imagens, total } = await mtPdfParaImagens(f);
+            mtPaginas = imagens;
+            info.textContent = `${imagens.length} página(s) prontas${total > imagens.length ? ` (de ${total} — leio as ${imagens.length} primeiras)` : ''}.`;
+          } else {
+            mtPaginas = [await mtEncolher(f, 1600, 0.85)];
+            info.textContent = '1 imagem pronta.';
+          }
+        } else {
+          const usar = files.slice(0, 16);
+          mtFotosData = [];
+          for (const f of usar) mtFotosData.push(await mtEncolher(f, 1024, 0.7));
+          info.textContent = `${mtFotosData.length} foto(s) prontas${files.length > usar.length ? ` — das ${files.length} enviadas, uso as ${usar.length} primeiras na leitura` : ''}.`;
+        }
+      } catch (err) {
+        info.textContent = err.message;
+      }
+    }
+
+    async function mtLer() {
+      if (busy) return;
+      if (!mtPaginas.length) { showError('Envie a *certidão da matrícula* (PDF ou foto).'); return; }
+      busy = true;
+      document.getElementById('btn-mt-ler').disabled = true;
+      showSpinner('Lendo a matrícula e as fotos…');
+      try {
+        const res = await fetch('/api/matricula/ler', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ matricula: mtPaginas, fotos: mtFotosData })
+        });
+        const data = await res.json();
+        if (data.error) { showError(data.error); return; }
+        mtLeitura = data;
+        mtPreencher(data.matricula, data.fotos);
+        showLaudo(mtResumoLeitura(data.matricula, data.fotos));
+      } catch (err) {
+        showError('Erro de conexão ao ler o documento.');
+      } finally {
+        busy = false;
+        document.getElementById('btn-mt-ler').disabled = false;
+      }
+    }
+
+    function mtResumoLeitura(m, f) {
+      let t = '📄 *LEITURA DO DOCUMENTO*\nConfira os campos ao lado antes de gerar o parecer — o que você corrigir manda no que a IA leu.\n\n';
+      t += `• Matrícula nº ${m.numero || '—'} · ${m.cartorio || ''}\n`;
+      t += `• Imóvel: ${(m.imovel || {}).descricao || '—'}\n`;
+      t += `• Terreno: ${m.areaTerreno ? m.areaTerreno + ' m²' : 'não identificado'}\n`;
+      t += `• Construção: ${m.construcaoAverbada ? (m.areaConstruida || '?') + ' m² averbados' : 'NÃO averbada na matrícula'}\n`;
+      t += `• Proprietário registral: ${((m.proprietarios || [])[0] || {}).nome || '—'}\n`;
+      if (m.promessa && m.promessa.existe) t += `• Promitente comprador: ${m.promessa.comprador || '—'}\n`;
+      if (f) {
+        t += `\n📷 *FOTOS*\n• Padrão: ${f.padrao} · conservação: ${f.conservacao}${f.idadeAparente ? ' · ' + f.idadeAparente : ''}\n`;
+        if (f.areaConstruidaEstimada) t += `• Área construída aparente: ~${f.areaConstruidaEstimada} m² (estimativa grosseira pelas fotos)\n`;
+        (f.avisos || []).forEach(a => { t += `⚠️ ${a}\n`; });
+      }
+      return t;
+    }
+
+    function mtPreencher(m, f) {
+      const i = m.imovel || {};
+      document.getElementById('mt-conferencia').style.display = 'block';
+      const set = (id, v) => { if (v != null && v !== '') document.getElementById(id).value = v; };
+      set('mt-cidade', i.cidade || 'Anápolis');
+      set('mt-bairro', i.loteamento || i.endereco || '');
+      set('mt-areaterreno', m.areaTerreno || '');
+      const origem = document.getElementById('mt-area-origem');
+      if (m.construcaoAverbada && m.areaConstruida) {
+        set('mt-areaconstruida', m.areaConstruida);
+        origem.textContent = '(averbada na matrícula)';
+      } else if (f && f.areaConstruidaEstimada) {
+        set('mt-areaconstruida', f.areaConstruidaEstimada);
+        origem.textContent = '(NÃO consta da matrícula — estimada pelas fotos, confirme)';
+      } else {
+        origem.textContent = '(NÃO consta da matrícula — informe a metragem)';
+      }
+      if (f) {
+        if (f.padrao) document.getElementById('mt-padrao').value = f.padrao;
+        if (f.conservacao) document.getElementById('mt-conservacao').value = f.conservacao;
+      }
+      const box = document.getElementById('mt-achados');
+      box.innerHTML = (m.alertas || []).map(a =>
+        `<div class="mt-achado mt-${a.nivel}"><div><b>${a.titulo}</b>${a.texto}</div></div>`
+      ).join('');
+      document.getElementById('mt-conferencia').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    async function mtAvaliar() {
+      if (busy) return;
+      if (!mtLeitura) { showError('Leia os documentos primeiro.'); return; }
+      const v = (id) => document.getElementById(id).value;
+      const m = mtLeitura.matricula || {};
+      const premissas = {
+        cidade: v('mt-cidade').trim() || 'Anápolis',
+        bairro: v('mt-bairro').trim(),
+        tipoImovel: 'casa',
+        areaTerreno: v('mt-areaterreno'),
+        areaConstruida: v('mt-areaconstruida'),
+        areaSecundaria: v('mt-areasec'),
+        idade: v('mt-idade'),
+        padrao: v('mt-padrao'),
+        conservacao: v('mt-conservacao'),
+        avaliacaoAnterior: v('mt-anterior'),
+        anosDesdeAvaliacao: v('mt-anosant'),
+        regularizouDepois: document.getElementById('mt-regularizou').checked,
+        terrenoM2: v('mt-terrenom2'),
+        vendaM2: v('mt-vendam2'),
+        marca: v('mt-marca'),
+        solicitante: v('mt-solicitante').trim(),
+        pesquisarMercado: document.getElementById('mt-pesquisar').checked,
+        semAverbacao: !m.construcaoAverbada,
+        semTitulo: !!(m.promessa && m.promessa.existe),
+        comOnus: !!(m.onus && m.onus.existe)
+      };
+      if (!(Number(premissas.areaTerreno) > 0) && !(Number(premissas.areaConstruida) > 0)) {
+        showError('Informe a *área do terreno* e/ou a *área construída*.');
+        return;
+      }
+      busy = true;
+      document.getElementById('btn-mt-avaliar').disabled = true;
+      showSpinner(premissas.pesquisarMercado ? 'Pesquisando o mercado do bairro e apurando o valor…' : 'Apurando o valor pelos três métodos…');
+      try {
+        const res = await fetch('/api/matricula/avaliar', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ matricula: m, fotos: mtLeitura.fotos, premissas })
+        });
+        const data = await res.json();
+        if (data.error) { showError(data.error); matriculaAtual = null; }
+        else { showLaudo(data.response); matriculaAtual = data.resultado; mostrarAcoesPdfMatricula(); }
+      } catch (err) {
+        showError('Erro de conexão. Tente novamente.');
+      } finally {
+        busy = false;
+        document.getElementById('btn-mt-avaliar').disabled = false;
+      }
+    }
+
+    function mostrarAcoesPdfMatricula() {
+      const laudo = document.querySelector('#result-body .laudo');
+      if (!laudo) return;
+      const bar = document.createElement('div');
+      bar.className = 'pdf-bar';
+      bar.innerHTML = '<button class="btn-pdf" onclick="baixarMatriculaPdf(this)">📄 Baixar parecer (PDF)</button>';
+      laudo.prepend(bar);
+    }
+
+    async function baixarMatriculaPdf(btn) {
+      if (!matriculaAtual) return;
+      btn.disabled = true;
+      try {
+        const res = await fetch('/api/relatorio-matricula', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            resultado: matriculaAtual,
+            solicitante: matriculaAtual.solicitante || '',
+            marca: matriculaAtual.marca
+          })
+        });
+        if (!res.ok) { alert('Não foi possível gerar o PDF. Tente de novo.'); return; }
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `parecer-matricula-${((matriculaAtual.matricula || {}).numero || 'imovel').replace(/[^0-9a-zA-Z]+/g, '-')}.pdf`;
+        document.body.appendChild(a); a.click(); a.remove();
+        URL.revokeObjectURL(url);
+      } catch (err) {
+        alert('Erro de conexão ao gerar o PDF.');
+      } finally {
+        btn.disabled = false;
+      }
     }
   </script>
 </body>

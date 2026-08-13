@@ -449,8 +449,36 @@ function mediana(arr) {
   return s.length % 2 ? s[mid] : Math.round((s[mid - 1] + s[mid]) / 2);
 }
 
+// Bairro homônimo: em Anápolis, "Residencial Alphaville" (loteamento aberto,
+// R$ 2-3,5 mil/m²) e "Condomínio/Terras Alphaville" (fechado, R$ 7-11 mil/m²)
+// são mercados DIFERENTES que o buscador dos portais mistura pelo nome. Sem
+// esta trava, uma casa do loteamento aberto era avaliada com comparável do
+// condomínio de luxo — medido em 13/08/2026: erro de 2,3x.
+function fechado(nome) {
+  return /condominio|condomínio|terras|fechado|residencial\s+park/.test(String(nome || '').toLowerCase());
+}
+function filtrarHomonimos(imoveis, bairroAlvo) {
+  if (!bairroAlvo) return { usados: imoveis, descartados: [] };
+  const alvoFechado = fechado(bairroAlvo);
+  const usados = [], descartados = [];
+  imoveis.forEach((i) => {
+    const b = i.bairro || i.titulo || '';
+    // Sem bairro no anúncio não dá para afirmar que é homônimo — mantém.
+    (!b || fechado(b) === alvoFechado ? usados : descartados).push(i);
+  });
+  return { usados, descartados };
+}
+
 function montarResultado(imoveis, fontes, dados = {}) {
-  const { metragem, tipo, finalidade } = dados;
+  const { metragem, tipo, finalidade, bairro } = dados;
+
+  // Trava de bairro homônimo (condomínio fechado × loteamento aberto de mesmo nome)
+  const hom = filtrarHomonimos(imoveis, bairro);
+  if (hom.descartados.length) {
+    console.log(`[Homônimo] ${hom.descartados.length} anúncio(s) de bairro homônimo descartado(s) para "${bairro}"`);
+    if (hom.usados.length >= 3) imoveis = hom.usados;
+    else console.log('[Homônimo] amostra ficaria pequena demais — mantendo os anúncios, com ressalva');
+  }
 
   // Filtro de sanidade: descarta R$/m² absurdo (erro de parsing / anúncio quebrado)
   const faixas = {
@@ -518,4 +546,4 @@ function extrairNumero(texto) {
   return num ? parseInt(num, 10) : null;
 }
 
-module.exports = { buscarComparativos };
+module.exports = { buscarComparativos, filtrarHomonimos };

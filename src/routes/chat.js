@@ -640,6 +640,101 @@ router.post('/terreno', async (req, res) => {
 });
 
 /**
+ * POST /api/matricula/ler — a IA transcreve a certidão e descreve as fotos.
+ * NÃO avalia nada: devolve o que leu para o usuário conferir/corrigir na tela.
+ * Corpo: { matricula: [dataURL], fotos: [dataURL] }
+ */
+router.post('/matricula/ler', async (req, res) => {
+  const b = req.body || {};
+  const paginas = Array.isArray(b.matricula) ? b.matricula : [];
+  const fotos = Array.isArray(b.fotos) ? b.fotos : [];
+  if (!paginas.length) return res.status(400).json({ error: 'Envie a certidão da matrícula (PDF ou foto).' });
+  try {
+    const { lerMatricula, lerFotos } = require('../data/matricula');
+    const [m, f] = await Promise.all([
+      lerMatricula(paginas),
+      fotos.length ? lerFotos(fotos).catch((e) => { console.warn('[Matrícula] fotos:', e.message); return null; }) : Promise.resolve(null)
+    ]);
+    return res.json({ type: 'matricula-leitura', matricula: m, fotos: f });
+  } catch (err) {
+    console.error('[Matrícula API] Erro na leitura:', err);
+    return res.status(500).json({ error: `⚠️ Não consegui ler o documento: ${err.message}` });
+  }
+});
+
+/**
+ * POST /api/matricula/avaliar — parecer de valor por amostragem.
+ * Recebe a leitura JÁ CONFERIDA pelo usuário + as premissas que ele aceitou.
+ */
+router.post('/matricula/avaliar', async (req, res) => {
+  const b = req.body || {};
+  const m = b.matricula || {};
+  const fotos = b.fotos || null;
+  const p = b.premissas || {};
+  if (!(Number(p.areaTerreno) > 0) && !(Number(p.areaConstruida) > 0)) {
+    return res.status(400).json({ error: 'Informe a área do terreno e/ou a área construída.' });
+  }
+  try {
+    const { pesquisarMercado, avaliar, diligencias, formatar } = require('../data/matricula');
+
+    let mercado = { n: 0, casas: [], lotes: [], grau: 'Sem amostra' };
+    if (p.pesquisarMercado !== false && p.bairro) {
+      try {
+        mercado = await pesquisarMercado({
+          cidade: p.cidade || 'Anápolis', bairro: p.bairro,
+          tipo: p.tipoImovel || 'casa', metragem: Number(p.areaConstruida) || null,
+          quartos: p.quartos || null
+        });
+      } catch (e) { console.warn('[Matrícula] pesquisa de mercado falhou:', e.message); }
+    }
+
+    const resultado = avaliar({ ...p, mercado });
+    if (resultado.erro) return res.status(422).json({ error: resultado.erro });
+    resultado.matricula = m;
+    resultado.leituraFotos = fotos;
+    resultado.diligencias = diligencias(m, resultado);
+    resultado.marca = p.marca === 'bens' ? 'bens' : 'balladao';
+    resultado.solicitante = p.solicitante || '';
+
+    try {
+      require('../data/database').salvarLaudo({
+        kind: 'matricula',
+        titulo: `Matrícula ${m.numero || 's/nº'} — ${resultado.bairro || resultado.cidade}`,
+        tipo: p.tipoImovel || 'casa', finalidade: 'venda',
+        cidade: resultado.cidade, bairro: resultado.bairro,
+        endereco: (m.imovel || {}).endereco || null, valor: resultado.valor,
+        dados: { numero: m.numero, areaTerreno: resultado.areaTerreno, areaConstruida: resultado.areaConstruida },
+        resultado,
+      });
+    } catch (e) { console.warn('[Matrícula] salvar:', e.message); }
+
+    return res.json({ type: 'matricula', response: formatar(m, fotos, resultado), resultado });
+  } catch (err) {
+    console.error('[Matrícula API] Erro na avaliação:', err);
+    return res.status(500).json({ error: '⚠️ Erro ao gerar o parecer. Tente novamente.' });
+  }
+});
+
+/**
+ * POST /api/relatorio-matricula — PDF do parecer (formato do modelo, 16 seções).
+ */
+router.post('/relatorio-matricula', async (req, res) => {
+  const { resultado, solicitante, marca } = req.body || {};
+  if (!resultado) return res.status(400).json({ error: 'Gere o parecer primeiro.' });
+  try {
+    const { gerarMatriculaPdf } = require('../data/relatorioPdf');
+    const pdf = await gerarMatriculaPdf(resultado, { solicitante, marca: marca || resultado.marca });
+    const slug = String((resultado.matricula || {}).numero || 'imovel').replace(/[^0-9a-zA-Z]+/g, '-');
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="parecer-matricula-${slug}.pdf"`);
+    res.send(pdf);
+  } catch (err) {
+    console.error('[RelatMatricula API] Erro:', err);
+    res.status(500).json({ error: '⚠️ Erro ao gerar o PDF. Tente novamente.' });
+  }
+});
+
+/**
  * POST /api/bts — Estudo de viabilidade BTS (Build to Suit): investimento × aluguel
  * de mercado (cap rate) + melhor uso do ponto + empresas em expansão.
  */
@@ -944,6 +1039,10 @@ router.get('/laudos/:id', async (req, res) => {
       const view = l.resultado && l.resultado.view;
       const fz = require('../data/fazenda');
       response = view ? (view.modo === 'recreio' ? fz.formatarChacara(view) : fz.formatarFazenda(view)) : ((l.resultado || {}).texto || 'Laudo indisponível.');
+    }
+    else if (l.kind === 'matricula') {
+      const r = l.resultado || {};
+      response = require('../data/matricula').formatar(r.matricula || {}, r.leituraFotos || null, r);
     }
     else response = gerarLaudo(l.dados, l.resultado);
     res.json({ id: l.id, criado_em: l.criado_em, kind: l.kind, dados: l.dados, resultado: l.resultado, response });

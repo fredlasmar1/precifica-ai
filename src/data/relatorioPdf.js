@@ -1234,4 +1234,313 @@ function gerarDecisaoPdf(r, opts = {}) {
   });
 }
 
-module.exports = { gerarRelatorioPdf, gerarDossiePdf, gerarEmpresaPdf, gerarRepassePdf, gerarTerrenoPdf, gerarBtsPdf, gerarRadarPdf, gerarFazendaPdf, gerarDecisaoPdf };
+/**
+ * PARECER TÉCNICO DE AVALIAÇÃO POR AMOSTRAGEM (matrícula + fotos).
+ * Segue a estrutura de 16 seções do modelo do escritório. Duas marcas: o
+ * parecer jurídico (Balladão Advogados, assinado por advogado) e o parecer
+ * imobiliário (Bens Imóveis, assinado pelo corretor com CRECI). Mesmo
+ * cálculo, documentos com peso diferente.
+ */
+function gerarMatriculaPdf(r, opts = {}) {
+  const marca = opts.marca === 'bens' ? 'bens' : 'balladao';
+  const solicitante = opts.solicitante || r.solicitante || '';
+  const dataEmissao = new Date().toLocaleDateString('pt-BR');
+  const m = r.matricula || {};
+  const im = m.imovel || {};
+  const fotos = r.leituraFotos || null;
+  const mk = r.mercado || {};
+  const ACCENT = marca === 'bens' ? BLUE : NAVY;
+  const SOFT = marca === 'bens' ? '#cfe0ff' : '#b9c2d4';
+
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ size: 'A4', bufferPages: true, margins: { top: TOP, bottom: BOTTOM, left: LX, right: 44 } });
+    const chunks = [];
+    doc.on('data', (d) => chunks.push(d));
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
+    doc.on('error', reject);
+    let y = TOP;
+    const ensure = (need) => { if (y + need > PAGE_H - BOTTOM) { doc.addPage(); y = TOP; } };
+
+    const chrome = () => {
+      doc.rect(0, 0, PAGE_W, 64).fill(ACCENT);
+      if (marca === 'bens') { try { doc.image(LOGO, LX, 22, { height: 20 }); } catch {} }
+      else { doc.font('Helvetica-Bold').fontSize(12).fillColor(WHITE).text('BALLADÃO ADVOGADOS', LX, 24, { lineBreak: false }); }
+      doc.font('Helvetica-Bold').fontSize(11).fillColor(WHITE).text('Parecer técnico de avaliação', LX, 21, { width: W, align: 'right' });
+      doc.font('Helvetica').fontSize(7.5).fillColor(SOFT)
+        .text(`Matrícula nº ${txt(m.numero)}${m.cartorio ? ' · ' + clean(m.cartorio) : ''}`, LX, 38, { width: W, align: 'right' });
+      const fy = PAGE_H - 46; doc.page.margins.bottom = 0;
+      doc.moveTo(LX, fy).lineTo(RX, fy).lineWidth(0.5).strokeColor(LINE).stroke();
+      const rodape = marca === 'bens'
+        ? [`${RAZAO} · ${CRECI_J} · ${ENDERECO}`, `${CONTATO}  ·  documento gerado por Precifica Aí`]
+        : ['Balladão Advogados · Anápolis, Goiás', 'Estimativa de valor de mercado por amostragem  ·  documento gerado por Precifica Aí'];
+      doc.font('Helvetica').fontSize(6.8).fillColor(MUTED).text(rodape[0], LX, fy + 5, { width: W, lineBreak: false });
+      doc.font('Helvetica').fontSize(6.8).fillColor(MUTED).text(rodape[1], LX, fy + 15, { width: W * 0.8, lineBreak: false });
+      doc.font('Helvetica').fontSize(6.8).fillColor(MUTED).text(`Emitido em ${dataEmissao}`, RX - 120, fy + 15, { width: 120, align: 'right' });
+    };
+    const band = (t) => { ensure(24); doc.rect(LX, y, W, 15).fill(ACCENT); doc.font('Helvetica-Bold').fontSize(8).fillColor(WHITE).text(clean(t).toUpperCase(), LX + 8, y + 4, { lineBreak: false }); y += 21; };
+    const p = (t, size = 8.5) => { if (!t) return; ensure(30); doc.font('Helvetica').fontSize(size).fillColor(INK).text(clean(t), LX, y, { width: W, align: 'justify', lineGap: 1.6 }); y = doc.y + 7; };
+    const kv = (k, v) => { ensure(14); doc.font('Helvetica-Bold').fontSize(8).fillColor(INK).text(`${clean(k)}: `, LX + 4, y, { continued: true, width: W - 8 }); doc.font('Helvetica').fontSize(8).fillColor(INK).text(clean(String(v))); y = doc.y + 3; };
+    const bullet = (t) => { ensure(16); doc.font('Helvetica').fontSize(8).fillColor(INK).text(`•  ${clean(t)}`, LX + 6, y, { width: W - 12, align: 'justify', lineGap: 1.4 }); y = doc.y + 4; };
+    const linhaTabela = (cols, larguras, bold = false, alturaMin = 14) => {
+      const h = Math.max(alturaMin, ...cols.map((c, i) => doc.font(bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(7.5).heightOfString(clean(String(c ?? '')), { width: larguras[i] - 8 }) + 6));
+      ensure(h + 2);
+      let x = LX;
+      cols.forEach((c, i) => {
+        doc.rect(x, y, larguras[i], h).lineWidth(0.4).strokeColor(LINE).stroke();
+        doc.font(bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(7.5).fillColor(INK)
+          .text(clean(String(c ?? '')), x + 4, y + 3, { width: larguras[i] - 8 });
+        x += larguras[i];
+      });
+      y += h;
+    };
+
+    // ── Capa ──────────────────────────────────────────────────────────
+    doc.font('Helvetica-Bold').fontSize(16).fillColor(NAVY).text('PARECER TÉCNICO DE AVALIAÇÃO IMOBILIÁRIA', LX, y, { width: W, align: 'center' });
+    doc.font('Helvetica').fontSize(9).fillColor(ACCENT).text('Estimativa de valor de mercado por amostragem', LX, y + 22, { width: W, align: 'center' });
+    doc.font('Helvetica').fontSize(8).fillColor(MUTED).text(`Matrícula nº ${txt(m.numero)}${m.cartorio ? ', ' + clean(m.cartorio) : ''}`, LX, y + 36, { width: W, align: 'center' });
+    y += 58;
+
+    const idn = [
+      ['Imóvel avaliado', txt(im.descricao)],
+      ['Endereço', `${txt(im.endereco)}${im.cep ? ', CEP ' + clean(im.cep) : ''}`],
+      ['Matrícula', `Nº ${txt(m.numero)}${m.livro ? ', ' + clean(m.livro) : ''}, ${txt(m.cartorio)}`],
+      ...(im.cadastroMunicipal ? [['Cadastro municipal', clean(im.cadastroMunicipal)]] : []),
+      ['Área do terreno', `${num(r.areaTerreno)} m²`],
+      ['Área construída', r.areaConstruida ? `${num(r.areaConstruida)} m²${m.construcaoAverbada ? ' (averbada)' : ' (NÃO averbada — informada/estimada)'}` : 'não averbada e não informada'],
+      ['Proprietário registral', (m.proprietarios || []).map((x) => `${x.nome}${x.documento ? ', ' + x.documento : ''}`).join('; ') || '—'],
+      ...(m.promessa?.existe ? [['Promitente comprador', `${txt(m.promessa.comprador)}${m.promessa.data ? ' (compromisso de ' + m.promessa.data + ')' : ''}`]] : []),
+      ['Finalidade', 'Subsidiar decisão negocial quanto a aquisição, venda ou garantia'],
+      ['Data-base', r.dataBase || dataEmissao],
+      ['Natureza do trabalho', 'Parecer técnico de valor por amostragem, sem vistoria presencial'],
+      ...(solicitante ? [['Solicitante', clean(solicitante)]] : [])
+    ];
+    idn.forEach(([k, v]) => linhaTabela([k, v], [W * 0.28, W * 0.72]));
+    y += 12;
+
+    // ── 1. Sumário executivo ──────────────────────────────────────────
+    band('1. Sumário executivo');
+    p(`Este documento apresenta a estimativa de valor de mercado do imóvel identificado acima, elaborada a partir da certidão de inteiro teor da matrícula nº ${txt(m.numero)}${m.dataCertidao ? ', expedida em ' + clean(m.dataCertidao) : ''}${fotos ? ', e do conjunto fotográfico fornecido' : ''}.`);
+    ensure(72);
+    doc.roundedRect(LX, y, W, 64, 8).fill(ACCENT);
+    doc.font('Helvetica').fontSize(8).fillColor(SOFT).text('VALOR DE MERCADO ESTIMADO', LX + 16, y + 10);
+    doc.font('Helvetica-Bold').fontSize(24).fillColor(WHITE).text(brl(r.valor), LX + 16, y + 22);
+    doc.font('Helvetica').fontSize(7.5).fillColor(SOFT).text(`Faixa técnica: ${brl(r.faixaMin)} a ${brl(r.faixaMax)}`, LX + 16, y + 50);
+    if (r.valorM2Resultante) doc.font('Helvetica').fontSize(7.5).fillColor(SOFT).text(`${brl(r.valorM2Resultante)}/m² de área construída`, RX - 200, y + 50, { width: 190, align: 'right' });
+    y += 76;
+    (m.alertas || []).slice(0, 4).forEach((a) => {
+      bullet(`${a.titulo}: ${a.texto}`);
+    });
+    if (r.descontos && r.descontos.length) {
+      bullet(`Ajuste documental de -${r.descontoTotal}% aplicado sobre ${brl(r.valorBruto)}, pelos motivos indicados na seção 7. Regularizada a pendência, o valor volta ao patamar cheio.`);
+    }
+
+    // ── 2. Objeto e finalidade ────────────────────────────────────────
+    band('2. Objeto e finalidade do trabalho');
+    p(`O objeto deste parecer é a estimativa do valor provável de negociação, em condições normais de mercado, do imóvel descrito na matrícula nº ${txt(m.numero)}.`);
+    p('Por valor de mercado entende-se a quantia mais provável pela qual o bem seria negociado, voluntária e conscientemente, em uma data de referência, entre comprador e vendedor que ajam sem pressão indevida e com prazo razoável de exposição. Não se confunde com o valor de anúncio, com o valor de venda urgente, nem com o valor fiscal adotado pela Prefeitura ou pela Receita Federal.');
+
+    // ── 3. Documentos analisados ──────────────────────────────────────
+    band('3. Documentos e elementos analisados');
+    bullet(`Certidão de inteiro teor da matrícula nº ${txt(m.numero)}${m.livro ? ', ' + clean(m.livro) : ''}, ${txt(m.cartorio)}${m.dataCertidao ? ', expedida em ' + clean(m.dataCertidao) : ''}${m.horaCertidao ? ' às ' + clean(m.horaCertidao) : ''}${m.pedidoCertidao ? ', pedido nº ' + clean(m.pedidoCertidao) : ''}${m.seloDigital ? ', selo digital nº ' + clean(m.seloDigital) : ''}.`);
+    if (fotos) bullet(`Conjunto fotográfico do imóvel${(fotos.ambientes || []).length ? ', compreendendo ' + (fotos.ambientes || []).map((a) => a.ambiente).join(', ') : ''}.`);
+    if (mk.n > 0) bullet(`Pesquisa de mercado com ${mk.n} anúncio(s) de imóveis à venda no bairro, coletada em ${r.dataBase} (relacionada no Anexo I).`);
+    p('Não foram apresentados planta aprovada, projeto arquitetônico, memorial descritivo, carnê de IPTU, certidões pessoais do proprietário nem laudo de vistoria, salvo quando expressamente indicado.');
+
+    // ── 4. Limitações ─────────────────────────────────────────────────
+    band('4. Limitações do trabalho');
+    bullet('Não houve vistoria presencial. Padrão de acabamento e estado de conservação foram avaliados exclusivamente pelas fotografias fornecidas, que retratam o imóvel de forma parcial.');
+    bullet(m.construcaoAverbada
+      ? `Não houve medição no local. As áreas utilizadas são as constantes da matrícula: ${num(r.areaTerreno)} m² de terreno e ${num(r.areaConstruida)} m² de construção averbada.`
+      : `Não houve medição no local. A matrícula NÃO traz área construída — a construção não está averbada. A área de ${num(r.areaConstruida)} m² usada neste parecer é premissa informada, e alterada a área, altera-se o resultado.`);
+    bullet(mk.n > 0
+      ? `A pesquisa de mercado é de preços de ANÚNCIO, não de transações registradas. Preço pedido costuma ficar acima do preço de fechamento.`
+      : 'Não foi possível coletar anúncios no bairro nesta consulta; as premissas vieram das bases oficiais de referência. Recomenda-se confirmar com dois ou três imóveis à venda na região.');
+    bullet('Não foram examinadas instalações hidráulicas, elétricas, estruturais e de impermeabilização, nem eventual existência de vícios ocultos.');
+    bullet('Não foram consultadas certidões pessoais do proprietário, de distribuição judicial, protestos ou débitos tributários incidentes sobre o imóvel.');
+    p('Em razão dessas limitações, os valores devem ser tratados como estimativa técnica de referência, sujeita a ajuste após a confirmação das premissas da seção 9. Para fins judiciais, bancários ou tributários, recomenda-se laudo formal firmado por engenheiro ou arquiteto com registro no CREA ou CAU, ou por corretor com CNAI.');
+
+    // ── 5. O terreno ──────────────────────────────────────────────────
+    band('5. Descrição do imóvel: o terreno');
+    const md = m.medidas || {};
+    if (md.frente || md.fundos) {
+      [['Frente', md.frente], ['Fundos', md.fundos], ['Lado direito', md.ladoDireito], ['Lado esquerdo', md.ladoEsquerdo]]
+        .filter(([, v]) => v).forEach(([k, v]) => linhaTabela([k, clean(v)], [W * 0.28, W * 0.72]));
+      linhaTabela(['Área total', `${num(r.areaTerreno)} m²`], [W * 0.28, W * 0.72]);
+      y += 8;
+    } else {
+      kv('Área total', `${num(r.areaTerreno)} m²`);
+    }
+    if (m.confrontacoes) p(clean(m.confrontacoes));
+    if (m.registroAnterior) kv('Origem', clean(m.registroAnterior));
+
+    // ── 6. A construção e o padrão ────────────────────────────────────
+    band('6. Descrição do imóvel: a construção e o padrão de acabamento');
+    if (m.construcaoAverbada && m.obra) {
+      const o = m.obra;
+      [['Alvará de construção', o.alvara], ['Habite-se', o.habitese], ['CND da obra', o.cnd],
+       ['Averbação na matrícula', o.dataAverbacao], ['Valor da obra declarado', o.valorDeclarado ? brl(o.valorDeclarado) : null]]
+        .filter(([, v]) => v).forEach(([k, v]) => linhaTabela([k, clean(String(v))], [W * 0.28, W * 0.72]));
+      y += 8;
+    } else {
+      p('A matrícula não registra averbação de construção. Do ponto de vista registral, o imóvel é um terreno — a edificação existe de fato, mas não de direito, e essa diferença tem efeito direto sobre liquidez, financiabilidade e preço.');
+    }
+    if (fotos) {
+      kv('Padrão de acabamento', `${cap(fotos.padrao || '')}${fotos.padraoJustificativa ? ' — ' + clean(fotos.padraoJustificativa) : ''}`);
+      kv('Conservação', `${cap(fotos.conservacao || '')}${fotos.idadeAparente ? ' · ' + clean(fotos.idadeAparente) : ''}${fotos.ocupado ? ' · imóvel ocupado' : ' · imóvel desocupado'}`);
+      y += 4;
+      if ((fotos.ambientes || []).length) {
+        linhaTabela(['Elemento', 'Constatação a partir das fotografias'], [W * 0.26, W * 0.74], true);
+        fotos.ambientes.slice(0, 14).forEach((a) => linhaTabela([a.ambiente, a.constatacao], [W * 0.26, W * 0.74]));
+        y += 8;
+      }
+      if ((fotos.pontosAtencao || []).length) {
+        kv('Pontos de atenção', fotos.pontosAtencao.join('; '));
+      }
+    }
+
+    // ── 7. Situação registral ─────────────────────────────────────────
+    band('7. Situação registral e jurídica');
+    if ((m.atos || []).length) {
+      linhaTabela(['Ato', 'Data', 'Conteúdo'], [W * 0.12, W * 0.15, W * 0.73], true);
+      m.atos.slice(0, 10).forEach((a) => linhaTabela([a.codigo, a.data || '—', a.resumo], [W * 0.12, W * 0.15, W * 0.73]));
+      y += 8;
+    }
+    (m.alertas || []).forEach((a) => {
+      const tag = a.nivel === 'alto' ? '[ATENÇÃO] ' : a.nivel === 'medio' ? '[CONFIRMAR] ' : '[FAVORÁVEL] ';
+      bullet(`${tag}${a.titulo}. ${a.texto}`);
+    });
+    if (m.dataCertidao) {
+      p(`Para fins de transmissão imobiliária, a certidão apresentada tem validade de 30 dias (art. 1º, IV, do Decreto nº 93.240/1986). Emitida em ${clean(m.dataCertidao)}, será necessária certidão atualizada na data da escritura.`);
+    }
+
+    // ── 8. Metodologia ────────────────────────────────────────────────
+    band('8. Metodologia adotada');
+    p(`O valor foi apurado por ${r.metodos.length} caminho(s) independente(s), comparando-se depois as respostas. Quando métodos distintos convergem para a mesma faixa, a confiança no resultado aumenta.`);
+    linhaTabela(['Método', 'Como funciona'], [W * 0.3, W * 0.7], true);
+    if (r.evolutivo) linhaTabela(['Evolutivo', 'Soma o valor do terreno ao custo de reprodução da construção, depreciado pelo tempo e pelo estado de conservação (Ross-Heidecke), aplicando ao final um fator de comercialização que corrige a diferença entre o custo de construir e o preço que o mercado paga.'], [W * 0.3, W * 0.7]);
+    if (r.comparativo) linhaTabela(['Comparativo por valor unitário', 'Aplica sobre a área construída o valor por metro quadrado praticado na região para imóveis de padrão, idade e localização semelhantes, com o terreno já embutido no indicador.'], [W * 0.3, W * 0.7]);
+    if (r.ancora) linhaTabela(['Atualização do valor-âncora', 'Parte de avaliação anterior informada, atualiza-a pela valorização do período e acrescenta o efeito de eventual regularização documental ocorrida depois.'], [W * 0.3, W * 0.7]);
+    y += 10;
+
+    // ── 9. Premissas ──────────────────────────────────────────────────
+    band('9. Premissas adotadas e o que precisa ser confirmado');
+    p('As premissas abaixo são o coração do trabalho. Alterada qualquer uma delas, altera-se o resultado.');
+    linhaTabela(['Premissa', 'Adotada', 'Faixa possível', 'Observação'], [W * 0.26, W * 0.16, W * 0.2, W * 0.38], true);
+    (r.premissas || []).forEach((pr) => linhaTabela([pr.item, pr.adotado, pr.faixa, pr.obs], [W * 0.26, W * 0.16, W * 0.2, W * 0.38]));
+    y += 10;
+
+    // ── 10. Apuração ──────────────────────────────────────────────────
+    band('10. Apuração do valor');
+    if (r.evolutivo) {
+      doc.font('Helvetica-Bold').fontSize(8.5).fillColor(NAVY).text('10.1. Método evolutivo', LX, y); y = doc.y + 5;
+      linhaTabela(['Componente', 'Cálculo', 'Valor'], [W * 0.34, W * 0.4, W * 0.26], true);
+      r.evolutivo.memoria.forEach(([c, calc, v]) => linhaTabela([c, calc, v == null ? '' : brl(v)], [W * 0.34, W * 0.4, W * 0.26]));
+      y += 10;
+    }
+    if (r.comparativo) {
+      ensure(60);
+      doc.font('Helvetica-Bold').fontSize(8.5).fillColor(NAVY).text('10.2. Método comparativo por valor unitário', LX, y); y = doc.y + 5;
+      linhaTabela(['Cenário', 'Cálculo', 'Valor'], [W * 0.24, W * 0.5, W * 0.26], true);
+      r.comparativo.cenarios.forEach(([c, calc, v]) => linhaTabela([c, calc, brl(v)], [W * 0.24, W * 0.5, W * 0.26]));
+      y += 6;
+      if (r.comparativo.notaExcedente) p(r.comparativo.notaExcedente, 7.5);
+      y += 4;
+    }
+    if (r.ancora) {
+      ensure(60);
+      doc.font('Helvetica-Bold').fontSize(8.5).fillColor(NAVY).text('10.3. Atualização do valor-âncora', LX, y); y = doc.y + 5;
+      linhaTabela(['Etapa', 'Cálculo', 'Valor'], [W * 0.34, W * 0.4, W * 0.26], true);
+      r.ancora.memoria.forEach(([c, calc, v]) => linhaTabela([c, calc, brl(v)], [W * 0.34, W * 0.4, W * 0.26]));
+      y += 10;
+    }
+
+    // ── 11. Conclusão ─────────────────────────────────────────────────
+    band('11. Conclusão de valor');
+    r.metodos.forEach((mt) => linhaTabela([mt.nome, brl(mt.valor)], [W * 0.62, W * 0.38]));
+    linhaTabela(['Média aritmética', brl(r.media)], [W * 0.62, W * 0.38], true);
+    if (r.descontos && r.descontos.length) {
+      r.descontos.forEach((d) => linhaTabela([`(-) ${d.motivo}`, `-${Math.round(d.pct * 100)}%`], [W * 0.62, W * 0.38]));
+    }
+    linhaTabela(['Valor adotado, com arredondamento', brl(r.valor)], [W * 0.62, W * 0.38], true);
+    y += 8;
+    if (r.dispersao != null) {
+      p(`A dispersão entre o menor e o maior resultado é de aproximadamente ${r.dispersao}%${r.dispersao <= 10 ? ', o que indica boa convergência metodológica' : r.dispersao <= 25 ? ', dentro do razoável para avaliação por amostragem' : ' — dispersão alta, que recomenda confirmar as premissas antes de usar o número'}. Adota-se, portanto, o valor de ${brl(r.valor)}, com faixa de referência entre ${brl(r.faixaMin)} e ${brl(r.faixaMax)}.`);
+    }
+
+    // ── 12. Negociação ────────────────────────────────────────────────
+    band('12. Referências para a negociação');
+    linhaTabela(['Referência', 'Valor', 'Racional'], [W * 0.26, W * 0.18, W * 0.56], true);
+    (r.negociacao || []).forEach((n) => linhaTabela([n.ref, `${brl(n.valor)}${n.mensal ? '/mês' : ''}`, n.racional], [W * 0.26, W * 0.18, W * 0.56]));
+    y += 8;
+    if (fotos && (fotos.pontosFortes || []).length) p(`Argumentos que sustentam preço mais alto: ${fotos.pontosFortes.join('; ')}.`);
+    if (fotos && (fotos.pontosAtencao || []).length) p(`Argumentos que o comprador usará para reduzir preço: ${fotos.pontosAtencao.join('; ')}.`);
+
+    // ── 13. Custos ────────────────────────────────────────────────────
+    band('13. Custos estimados da transmissão');
+    linhaTabela(['Item', 'Estimativa', 'Observação'], [W * 0.26, W * 0.22, W * 0.52], true);
+    (r.custos || []).forEach((c) => linhaTabela([c.item, c.min === c.max ? brl(c.min) : `${brl(c.min)} a ${brl(c.max)}`, c.obs], [W * 0.26, W * 0.22, W * 0.52]));
+    linhaTabela(['Total estimado', `${brl(r.custoMin)} a ${brl(r.custoMax)}`, `Equivale a ${Math.round((r.custoMin / r.valor) * 100)}% a ${Math.round((r.custoMax / r.valor) * 100)}% do valor do imóvel`], [W * 0.26, W * 0.22, W * 0.52], true);
+    y += 10;
+
+    // ── 14. Diligências ───────────────────────────────────────────────
+    band('14. Diligências recomendadas antes de fechar negócio');
+    const dg = r.diligencias || {};
+    if ((dg.imovel || []).length) { doc.font('Helvetica-Bold').fontSize(8).fillColor(NAVY).text('Sobre o imóvel', LX, y); y = doc.y + 4; dg.imovel.forEach(bullet); }
+    if ((dg.vendedor || []).length) { ensure(30); doc.font('Helvetica-Bold').fontSize(8).fillColor(NAVY).text('Sobre o vendedor', LX, y); y = doc.y + 4; dg.vendedor.forEach(bullet); }
+    if ((dg.contratacao || []).length) { ensure(30); doc.font('Helvetica-Bold').fontSize(8).fillColor(NAVY).text('Sobre a contratação', LX, y); y = doc.y + 4; dg.contratacao.forEach(bullet); }
+
+    // ── 15. Anexo I ───────────────────────────────────────────────────
+    band('15. Anexo I — pesquisa de mercado');
+    if (mk.n > 0) {
+      p(`Amostra coletada em ${r.dataBase} nos portais ${(mk.fontes || []).join(', ') || 'consultados'}. Grau de fundamentação: ${mk.grau}. São preços de anúncio, verificáveis pelos links.`);
+      linhaTabela(['Nº', 'Área', 'Preço pedido', 'R$/m²', 'Fonte / link'], [W * 0.06, W * 0.12, W * 0.18, W * 0.14, W * 0.5], true);
+      const linhas = [...(mk.casas || []).map((c) => ({ ...c, t: '' })), ...(mk.lotes || []).map((l) => ({ ...l, t: 'lote ' }))];
+      linhas.slice(0, 14).forEach((c, i) => linhaTabela([
+        String(i + 1), `${c.t}${c.area ? num(c.area) + ' m²' : '—'}`, brl(c.preco),
+        c.precoM2 ? brl(Math.round(c.precoM2)) : '—', c.url || c.fonte || '—'
+      ], [W * 0.06, W * 0.12, W * 0.18, W * 0.14, W * 0.5]));
+      y += 8;
+      if (r.vendaM2) p(`O valor por metro quadrado adotado na seção 9 (${brl(r.vendaM2)}/m²) deve ser comparado com esta amostra. Divergência superior a 10% para mais ou para menos recomenda revisão do resultado.`, 7.5);
+    } else {
+      p('Não foi possível coletar anúncios no bairro nesta consulta. A planilha abaixo fica preparada para que o escritório insira de três a seis imóveis efetivamente ofertados na região, o que permitirá refinar o resultado.');
+      linhaTabela(['Nº', 'Endereço / bairro', 'Terreno m²', 'Constr. m²', 'Preço pedido', 'R$/m²', 'Fonte'], [W * 0.06, W * 0.28, W * 0.12, W * 0.12, W * 0.16, W * 0.12, W * 0.14], true);
+      for (let i = 1; i <= 6; i++) linhaTabela([String(i), '', '', '', '', '', ''], [W * 0.06, W * 0.28, W * 0.12, W * 0.12, W * 0.16, W * 0.12, W * 0.14], false, 16);
+      y += 8;
+    }
+
+    // ── 16. Encerramento ──────────────────────────────────────────────
+    band('16. Encerramento');
+    p(`O presente parecer foi elaborado com base exclusivamente nos documentos e informações relacionados na seção 3, observadas as limitações da seção 4, e reflete a melhor estimativa possível a partir desses elementos. Sua validade recomendada é de 180 dias contados da data-base, período após o qual se sugere revisão em razão da variação do mercado.`);
+    p(`${clean(r.cidade || 'Anápolis')}, ${dataEmissao}.`);
+
+    ensure(120);
+    y += 62;
+    const cx = LX + W / 2;
+    if (marca === 'bens') desenharAssinatura(doc, cx, y);
+    doc.lineWidth(0.7).strokeColor(NAVY).moveTo(cx - 90, y).lineTo(cx + 90, y).stroke();
+    if (marca === 'bens') {
+      doc.font('Helvetica').fontSize(7.5).fillColor(LABEL).text('CORRETOR RESPONSÁVEL', cx - 90, y + 5, { width: 180, align: 'center' });
+      doc.font('Helvetica-Bold').fontSize(9).fillColor(INK).text(CORRETOR, cx - 100, y + 16, { width: 200, align: 'center' });
+      doc.font('Helvetica-Bold').fontSize(8).fillColor(INK).text(`${CRECI_F} · ${RAZAO} (${CRECI_J})`, cx - 100, y + 28, { width: 200, align: 'center' });
+    } else {
+      doc.font('Helvetica').fontSize(7.5).fillColor(LABEL).text('ADVOGADO RESPONSÁVEL', cx - 90, y + 5, { width: 180, align: 'center' });
+      doc.font('Helvetica-Bold').fontSize(9).fillColor(INK).text(clean(opts.advogado || '[INSERIR NOME DO ADVOGADO]'), cx - 100, y + 16, { width: 200, align: 'center' });
+      doc.font('Helvetica-Bold').fontSize(8).fillColor(INK).text(clean(opts.oab || '[INSERIR OAB/GO]') + ' · Balladão Advogados', cx - 100, y + 28, { width: 200, align: 'center' });
+    }
+    y += 52;
+
+    ensure(58);
+    doc.roundedRect(LX, y, W, 50, 6).lineWidth(0.6).strokeColor(LINE).stroke();
+    doc.font('Helvetica-Bold').fontSize(7.5).fillColor(NAVY).text('Aviso importante ao destinatário', LX + 10, y + 7);
+    doc.font('Helvetica').fontSize(7).fillColor(MUTED).text(
+      'Este documento é um parecer técnico de valor por amostragem, elaborado sem vistoria presencial. Não constitui laudo de avaliação nos moldes da NBR 14.653 da ABNT e não substitui trabalho firmado por engenheiro, arquiteto ou corretor habilitado, exigível para fins bancários, judiciais e tributários. Os valores apresentados são estimativas de referência para orientação negocial.',
+      LX + 10, y + 19, { width: W - 20, align: 'justify' });
+
+    const range = doc.bufferedPageRange();
+    for (let i = 0; i < range.count; i++) { doc.switchToPage(range.start + i); chrome(); }
+    doc.flushPages();
+    doc.end();
+  });
+}
+
+module.exports = { gerarRelatorioPdf, gerarDossiePdf, gerarEmpresaPdf, gerarRepassePdf, gerarTerrenoPdf, gerarBtsPdf, gerarRadarPdf, gerarFazendaPdf, gerarDecisaoPdf, gerarMatriculaPdf };

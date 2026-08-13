@@ -7,7 +7,9 @@ const chatRoutes = require('./routes/chat');
 const estimateRoutes = require('./routes/estimate');
 
 const app = express();
-app.use(express.json({ limit: '8mb' })); // 8mb: o dossiê comercial envia o mapa em base64
+// 25mb: a aba Matrícula envia a certidão em imagens + as fotos do imóvel em
+// base64 (o navegador já encolhe; ainda assim passa dos 8mb do dossiê comercial).
+app.use(express.json({ limit: '25mb' }));
 
 // Interface web (pasta public)
 app.use(express.static(path.join(__dirname, '../public')));
