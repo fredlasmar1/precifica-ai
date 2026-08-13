@@ -1320,6 +1320,14 @@ function gerarMatriculaPdf(r, opts = {}) {
     // ── 1. Sumário executivo ──────────────────────────────────────────
     band('1. Sumário executivo');
     p(`Este documento apresenta a estimativa de valor de mercado do imóvel identificado acima, elaborada a partir da certidão de inteiro teor da matrícula nº ${txt(m.numero)}${m.dataCertidao ? ', expedida em ' + clean(m.dataCertidao) : ''}${fotos ? ', e do conjunto fotográfico fornecido' : ''}.`);
+    if (r.aviso) {
+      ensure(56);
+      doc.roundedRect(LX, y, W, 46, 6).fill('#fff7ed');
+      doc.roundedRect(LX, y, W, 46, 6).lineWidth(0.8).strokeColor('#fdba74').stroke();
+      doc.font('Helvetica-Bold').fontSize(8).fillColor('#9a3412').text(clean(r.aviso.titulo), LX + 10, y + 7, { width: W - 20 });
+      doc.font('Helvetica').fontSize(7.2).fillColor('#7c2d12').text(clean(r.aviso.texto), LX + 10, y + 19, { width: W - 20, align: 'justify' });
+      y += 56;
+    }
     ensure(72);
     doc.roundedRect(LX, y, W, 64, 8).fill(ACCENT);
     doc.font('Helvetica').fontSize(8).fillColor(SOFT).text('VALOR DE MERCADO ESTIMADO', LX + 16, y + 10);

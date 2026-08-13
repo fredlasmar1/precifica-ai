@@ -17,7 +17,7 @@
  */
 
 const OpenAI = require('openai');
-const { buscarComparativos } = require('./portais');
+const { buscarComparativos, filtrarHomonimos } = require('./portais');
 const { getBaseVenda, getBaseLote } = require('./baseAnapolis');
 const { rossHeidecke } = require('./depreciacao');
 
@@ -70,6 +70,8 @@ REGRAS ABSOLUTAS:
 - Atenção especial: se NÃO houver averbação de construção, "areaConstruida" é null e "construcaoAverbada" é false. Muitas matrículas descrevem apenas o LOTE — nesse caso a área que aparece é do TERRENO, jamais a construída.
 - Ônus: só marque "existe" se houver hipoteca, alienação fiduciária, penhora, arresto, sequestro, usufruto, servidão, cláusula de inalienabilidade ou indisponibilidade efetivamente registrada.
 - Se o proprietário registral for diferente de quem consta como comprador em compromisso/promessa de compra e venda, registre os dois.
+- NÚMEROS EXIGEM DOBRO DE ATENÇÃO. Número de lote, quadra, matrícula, CPF/CNPJ, área e valor são o que mais se lê errado em documento digitalizado. Releia cada um antes de responder e confira a coerência interna: as confrontações costumam citar os lotes vizinhos, então o lote do imóvel NÃO pode ser igual a nenhum dos confrontantes.
+- Se um número estiver ilegível ou você ficar em dúvida, devolva null naquele campo em vez de arriscar. Campo vazio o usuário preenche; campo errado ele não percebe.
 
 Responda SOMENTE com JSON válido nesta forma:
 {
@@ -229,6 +231,8 @@ async function pesquisarMercado({ cidade, bairro, tipo = 'casa', metragem, quart
     buscarComparativos({ tipo, finalidade: 'venda', cidade, bairro, metragem, quartos }),
     buscarComparativos({ tipo: 'terreno', finalidade: 'venda', cidade, bairro })
   ]);
+  if (casa.status === 'rejected') console.warn('[Matrícula] portais casa:', casa.reason?.message);
+  if (lote.status === 'rejected') console.warn('[Matrícula] portais lote:', lote.reason?.message);
 
   if (casa.status === 'fulfilled' && casa.value) {
     out.casas = casa.value.imoveis || [];
@@ -244,6 +248,30 @@ async function pesquisarMercado({ cidade, bairro, tipo = 'casa', metragem, quart
     out.loteM2 = lote.value.precoMedioM2 || null;
     if (lote.value.fonte) out.fontes.push(lote.value.fonte);
   }
+  // Os portais dependem de ScraperAPI e do slug do bairro; quando não voltam
+  // (medido em produção: zero anúncio para "Residencial Alphaville"), cai na
+  // cascata canônica do precificador, que ainda tenta Perplexity e cache. Sem
+  // isso o parecer inteiro rodava sem amostra nenhuma e não avisava direito.
+  if (out.casas.length < 3) {
+    try {
+      const { calcularPreco } = require('./precificador');
+      const r = await calcularPreco({
+        tipo, finalidade: 'venda', cidade, bairro,
+        metragem: metragem || null, quartos: quartos || null, conservacao: 'bom'
+      });
+      const comps = ((r || {}).analiseIA || {}).comparativos || [];
+      const { usados } = filtrarHomonimos(comps, bairro);
+      if (usados.length) {
+        out.casas = usados.slice(0, 12);
+        out.medianaM2 = mediana(usados.map((c) => c.precoM2)) || out.medianaM2;
+        out.fontes.push('Pesquisa de mercado (precificador)');
+        out.viaFallback = true;
+      }
+      if (!out.medianaM2 && r && r.precoM2Mercado) out.medianaM2 = r.precoM2Mercado;
+      out.confiancaFonte = (r || {}).confiancaFonte || null;
+    } catch (e) { console.warn('[Matrícula] fallback do precificador falhou:', e.message); }
+  }
+
   out.medianaTotal = mediana(out.casas.map((c) => c.preco));
   out.n = out.casas.length + out.lotes.length;
   out.grau = out.n >= 10 ? 'Forte' : out.n >= 5 ? 'Médio' : out.n >= 1 ? 'Indicativo' : 'Sem amostra';
@@ -417,7 +445,19 @@ function avaliar(p) {
   const dispersao = valores.length > 1
     ? Math.round(((Math.max(...valores) - Math.min(...valores)) / Math.min(...valores)) * 1000) / 10
     : null;
-  const valorBruto = Math.round(media / 5000) * 5000;
+
+  // ⚠️ Média de métodos que discordam é o pior número possível: parece
+  // preciso e não é. Medido em produção: com a âncora do bairro contaminada,
+  // evolutivo R$ 381 mil × comparativo R$ 1.024 mil davam uma "média" de
+  // R$ 615 mil que nenhum dos dois métodos sustentava. Acima de 60% de
+  // dispersão o parecer passa a usar o método MAIS CONSERVADOR e diz por quê.
+  const divergente = dispersao != null && dispersao > 60;
+  const base = divergente ? Math.min(...valores) : media;
+  const valorBruto = Math.round(base / 5000) * 5000;
+  const aviso = divergente ? {
+    titulo: 'Métodos divergentes — valor a confirmar',
+    texto: `Os métodos aplicados chegaram a resultados muito distantes entre si (${dispersao}% de diferença): ${metodos.map((mt) => `${mt.nome.split('(')[0].trim()} ${brl(mt.valor)}`).join(' × ')}. Isso quase sempre significa falta de amostra de mercado no bairro ou premissa de metragem/padrão fora da realidade. Adotou-se o resultado mais conservador, e o número NÃO deve ser usado antes de confirmar as premissas da seção 9 com dois ou três imóveis à venda na região.`
+  } : null;
 
   // ── Ajuste documental ──────────────────────────────────────────────
   const descontos = [];
@@ -430,7 +470,7 @@ function avaliar(p) {
 
   // Amplitude = dispersão medida entre os métodos, com piso de ±6% (nunca
   // prometer precisão que a amostra não sustenta) e teto de ±20%.
-  const amplitude = Math.min(0.20, Math.max(0.06, (dispersao || 12) / 200));
+  const amplitude = divergente ? 0.25 : Math.min(0.20, Math.max(0.06, (dispersao || 12) / 200));
   const faixaMin = Math.round((valor * (1 - amplitude)) / 5000) * 5000;
   const faixaMax = Math.round((valor * (1 + amplitude)) / 5000) * 5000;
 
@@ -461,7 +501,7 @@ function avaliar(p) {
     areaTerreno, areaConstruida, areaSecundaria, areaEquivalente,
     terrenoM2: terrenoM2Ajustado, vendaM2, cub, fc,
     metodos, evolutivo, comparativo, ancora,
-    media, dispersao, valorBruto, descontos, descontoTotal: Math.round(descTotal * 100),
+    media, dispersao, divergente, aviso, valorBruto, descontos, descontoTotal: Math.round(descTotal * 100),
     valor, faixaMin, faixaMax, amplitude: Math.round(amplitude * 100),
     valorM2Resultante: areaConstruida > 0 ? Math.round(valor / areaConstruida) : null,
     negociacao, custos, custoMin, custoMax,
@@ -519,6 +559,7 @@ function formatar(m, fotos, r) {
   t += `${i.endereco || ''}${i.cep ? ' · CEP ' + i.cep : ''}\n`;
   t += `Data-base: ${r.dataBase}\n\n`;
 
+  if (r.aviso) t += `⚠️ *${r.aviso.titulo}*\n${r.aviso.texto}\n\n`;
   t += `💰 *VALOR DE MERCADO ESTIMADO*\n*${brl(r.valor)}*\n`;
   t += `Faixa técnica: ${brl(r.faixaMin)} a ${brl(r.faixaMax)} (±${r.amplitude}%)\n`;
   if (r.valorM2Resultante) t += `Valor unitário resultante: ${brl(r.valorM2Resultante)}/m² de área construída\n`;

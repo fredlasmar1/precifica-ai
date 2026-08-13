@@ -516,6 +516,16 @@
           <div id="mt-achados"></div>
           <div class="row">
             <div class="field">
+              <label>Matrícula nº <span class="opt">(confira no documento)</span></label>
+              <input id="mt-numero" placeholder="Ex: 66.605" />
+            </div>
+            <div class="field">
+              <label>Lote / Quadra <span class="opt">(confira: número pequeno erra na leitura)</span></label>
+              <input id="mt-loteqd" placeholder="Ex: Lote 16, Quadra 09" />
+            </div>
+          </div>
+          <div class="row">
+            <div class="field">
               <label>Cidade</label>
               <input id="mt-cidade" value="Anápolis" />
             </div>
@@ -523,6 +533,10 @@
               <label>Bairro / loteamento</label>
               <input id="mt-bairro" placeholder="Ex: Residencial Alphaville" />
             </div>
+          </div>
+          <div class="field">
+            <label>Endereço</label>
+            <input id="mt-endereco" placeholder="Rua, quadra, lote" />
           </div>
           <div class="row">
             <div class="field">
@@ -2588,11 +2602,11 @@
       for (let i = 1; i <= n; i++) {
         const page = await pdf.getPage(i);
         const base = page.getViewport({ scale: 1 });
-        const vp = page.getViewport({ scale: Math.min(2.2, 1500 / base.width) });
+        const vp = page.getViewport({ scale: Math.min(3.2, 2200 / base.width) });
         const c = document.createElement('canvas');
         c.width = vp.width; c.height = vp.height;
         await page.render({ canvasContext: c.getContext('2d'), viewport: vp }).promise;
-        out.push(c.toDataURL('image/jpeg', 0.85));
+        out.push(c.toDataURL('image/jpeg', 0.92));
       }
       return { imagens: out, total: pdf.numPages };
     }
@@ -2611,7 +2625,7 @@
             mtPaginas = imagens;
             info.textContent = `${imagens.length} página(s) prontas${total > imagens.length ? ` (de ${total} — leio as ${imagens.length} primeiras)` : ''}.`;
           } else {
-            mtPaginas = [await mtEncolher(f, 1600, 0.85)];
+            mtPaginas = [await mtEncolher(f, 2200, 0.92)];
             info.textContent = '1 imagem pronta.';
           }
         } else {
@@ -2669,6 +2683,9 @@
       const i = m.imovel || {};
       document.getElementById('mt-conferencia').style.display = 'block';
       const set = (id, v) => { if (v != null && v !== '') document.getElementById(id).value = v; };
+      set('mt-numero', m.numero || '');
+      set('mt-loteqd', [i.lote ? 'Lote ' + i.lote : '', i.quadra ? 'Quadra ' + i.quadra : ''].filter(Boolean).join(', '));
+      set('mt-endereco', i.endereco || '');
       set('mt-cidade', i.cidade || 'Anápolis');
       set('mt-bairro', i.loteamento || i.endereco || '');
       set('mt-areaterreno', m.areaTerreno || '');
@@ -2697,7 +2714,19 @@
       if (busy) return;
       if (!mtLeitura) { showError('Leia os documentos primeiro.'); return; }
       const v = (id) => document.getElementById(id).value;
-      const m = mtLeitura.matricula || {};
+      const m = JSON.parse(JSON.stringify(mtLeitura.matricula || {}));
+      // o que o dono corrigiu manda no que a IA leu
+      m.numero = v('mt-numero').trim() || m.numero;
+      m.imovel = m.imovel || {};
+      m.imovel.endereco = v('mt-endereco').trim() || m.imovel.endereco;
+      m.imovel.cidade = v('mt-cidade').trim() || m.imovel.cidade;
+      const lq = v('mt-loteqd').trim();
+      if (lq) {
+        const ml = lq.match(/lote\s*([\w-]+)/i), mq = lq.match(/quadra\s*([\w-]+)/i);
+        if (ml) m.imovel.lote = ml[1];
+        if (mq) m.imovel.quadra = mq[1];
+        m.imovel.loteQuadra = lq;
+      }
       const premissas = {
         cidade: v('mt-cidade').trim() || 'Anápolis',
         bairro: v('mt-bairro').trim(),

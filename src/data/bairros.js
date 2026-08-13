@@ -18,6 +18,14 @@ const BAIRROS_ANAPOLIS = {
   'bougainville':                   { mult: 1.70, perfil: 'alto padrão / condomínio fechado', zona: 'sul' },
   'cidade jardim':                  { mult: 1.40, perfil: 'alto padrão', zona: 'norte' },
   'alphaville':                     { mult: 1.80, perfil: 'condomínio fechado alto padrão', zona: 'sul' },
+  // ⚠️ "Residencial Alphaville" é LOTEAMENTO ABERTO e NÃO tem relação com o
+  // condomínio fechado de mesmo nome. Sem entrada própria, o match por
+  // "contém" dava a ele o mult 1,80 do condomínio (R$ 7.200/m²) — 2,2x o
+  // mercado real, medido em 13/08/2026 (mediana R$ 3.268/m² em 9 anúncios,
+  // casas de R$ 370 a 590 mil, lotes de 300 m² a R$ 115-160 mil).
+  'residencial alphaville':         { mult: 0.82, perfil: 'loteamento aberto, padrão popular/médio', zona: 'sul', aberto: true },
+  'res alphaville':                 { mult: 0.82, perfil: 'loteamento aberto, padrão popular/médio', zona: 'sul', aberto: true },
+  'loteamento residencial alphaville': { mult: 0.82, perfil: 'loteamento aberto, padrão popular/médio', zona: 'sul', aberto: true },
   'alphaville anapolis':            { mult: 1.80, perfil: 'condomínio fechado alto padrão', zona: 'sul' },
   'alphaville anápolis':            { mult: 1.80, perfil: 'condomínio fechado alto padrão', zona: 'sul' },
   'terras alpha':                   { mult: 1.75, perfil: 'condomínio fechado alto padrão', zona: 'sul' },
@@ -227,6 +235,22 @@ const BAIRROS = {
  * Retorna o multiplicador e perfil de um bairro.
  * Tenta match exato, depois parcial, depois retorna padrão.
  */
+/**
+ * O bairro consultado e a chave da tabela são do MESMO nome mas de mercados
+ * diferentes? Condomínio fechado × loteamento aberto de nome parecido é o
+ * caso clássico (Alphaville em Anápolis, Jardim Europa em Goiânia).
+ */
+function ehFechado(nome, perfil) {
+  return /condominio|condomínio|terras|fechado/.test(String(nome || '').toLowerCase())
+    || /condom[íi]nio|fechado/.test(String(perfil || '').toLowerCase());
+}
+function homonimoIncompativel(bairroConsultado, chaveTabela, valor) {
+  const consultadoAberto = /residencial|loteamento|setor|jardim|vila|parque/.test(bairroConsultado)
+    && !/condominio|condomínio|terras|fechado/.test(bairroConsultado);
+  const chaveFechada = ehFechado(chaveTabela, valor && valor.perfil);
+  return consultadoAberto && chaveFechada;
+}
+
 function getMultiplicadorBairro(cidade, bairro) {
   if (!cidade || !bairro) return { mult: 1.0, perfil: null, zona: null, conhecido: false };
 
@@ -255,9 +279,11 @@ function getMultiplicadorBairro(cidade, bairro) {
     }
   }
 
-  // Match parcial (contém)
+  // Match parcial (contém) — com trava de homônimo: loteamento ABERTO nunca
+  // casa com CONDOMÍNIO FECHADO de nome parecido (e vice-versa). São mercados
+  // diferentes; o Residencial Alphaville herdava o multiplicador do condomínio.
   for (const [key, value] of Object.entries(cidadeBairros)) {
-    if (bairroKey.includes(key) || key.includes(bairroKey)) {
+    if ((bairroKey.includes(key) || key.includes(bairroKey)) && !homonimoIncompativel(bairroKey, key, value)) {
       return { ...value, conhecido: true };
     }
   }
@@ -265,7 +291,7 @@ function getMultiplicadorBairro(cidade, bairro) {
   // Match parcial sem acentos
   for (const [key, value] of Object.entries(cidadeBairros)) {
     const keySemAcento = key.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-    if (bairroSemAcento.includes(keySemAcento) || keySemAcento.includes(bairroSemAcento)) {
+    if ((bairroSemAcento.includes(keySemAcento) || keySemAcento.includes(bairroSemAcento)) && !homonimoIncompativel(bairroSemAcento, keySemAcento, value)) {
       return { ...value, conhecido: true };
     }
   }
