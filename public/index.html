@@ -602,18 +602,9 @@
               <input id="mt-vendam2" type="number" min="0" placeholder="automático" />
             </div>
           </div>
-          <div class="row">
-            <div class="field">
-              <label>Marca do parecer</label>
-              <select id="mt-marca">
-                <option value="bens" selected>Bens Imóveis Corporativos (timbre azul)</option>
-                <option value="balladao">Balladão Advogados (timbre do escritório)</option>
-              </select>
-            </div>
-            <div class="field">
-              <label>Solicitante <span class="opt">(aparece no PDF)</span></label>
-              <input id="mt-solicitante" placeholder="Nome do cliente" />
-            </div>
+          <div class="field">
+            <label>Solicitante <span class="opt">(aparece no PDF)</span></label>
+            <input id="mt-solicitante" placeholder="Nome do cliente" />
           </div>
           <div class="row">
             <div class="field">
@@ -2756,7 +2747,6 @@
         regularizouDepois: document.getElementById('mt-regularizou').checked,
         terrenoM2: v('mt-terrenom2'),
         vendaM2: v('mt-vendam2'),
-        marca: v('mt-marca'),
         solicitante: v('mt-solicitante').trim(),
         assina: v('mt-assina').trim(),
         registro: v('mt-oab').trim(),
@@ -2807,7 +2797,6 @@
           body: JSON.stringify({
             resultado: matriculaAtual,
             solicitante: matriculaAtual.solicitante || '',
-            marca: matriculaAtual.marca,
             assina: matriculaAtual.assina || '',
             registro: matriculaAtual.registro || ''
           })

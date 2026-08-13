@@ -693,7 +693,6 @@ router.post('/matricula/avaliar', async (req, res) => {
     resultado.matricula = m;
     resultado.leituraFotos = fotos;
     resultado.diligencias = diligencias(m, resultado);
-    resultado.marca = p.marca === 'bens' ? 'bens' : 'balladao';
     resultado.solicitante = p.solicitante || '';
     resultado.assina = p.assina || p.advogado || '';
     resultado.registro = p.registro || p.oab || '';
@@ -721,13 +720,12 @@ router.post('/matricula/avaliar', async (req, res) => {
  * POST /api/relatorio-matricula — PDF do parecer (formato do modelo, 16 seções).
  */
 router.post('/relatorio-matricula', async (req, res) => {
-  const { resultado, solicitante, marca, assina, registro } = req.body || {};
+  const { resultado, solicitante, assina, registro } = req.body || {};
   if (!resultado) return res.status(400).json({ error: 'Gere o parecer primeiro.' });
   try {
     const { gerarMatriculaPdf } = require('../data/relatorioPdf');
     const pdf = await gerarMatriculaPdf(resultado, {
-      solicitante, marca: marca || resultado.marca,
-      assina: assina || resultado.assina, registro: registro || resultado.registro
+      solicitante, assina: assina || resultado.assina, registro: registro || resultado.registro
     });
     const slug = String((resultado.matricula || {}).numero || 'imovel').replace(/[^0-9a-zA-Z]+/g, '-');
     res.setHeader('Content-Type', 'application/pdf');

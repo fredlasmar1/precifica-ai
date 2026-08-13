@@ -1236,21 +1236,18 @@ function gerarDecisaoPdf(r, opts = {}) {
 
 /**
  * PARECER TÉCNICO DE AVALIAÇÃO POR AMOSTRAGEM (matrícula + fotos).
- * Segue a estrutura de 16 seções do modelo do escritório. Duas marcas: o
- * parecer jurídico (Balladão Advogados, assinado por advogado) e o parecer
- * imobiliário (Bens Imóveis, assinado pelo corretor com CRECI). Mesmo
- * cálculo, documentos com peso diferente.
+ * Estrutura de 16 seções, papel timbrado da Bens Imóveis Corporativos e
+ * assinatura do corretor responsável — a mesma identidade dos outros nove
+ * relatórios do sistema.
  */
 function gerarMatriculaPdf(r, opts = {}) {
-  const marca = opts.marca === 'bens' ? 'bens' : 'balladao';
   const solicitante = opts.solicitante || r.solicitante || '';
   const dataEmissao = new Date().toLocaleDateString('pt-BR');
   const m = r.matricula || {};
   const im = m.imovel || {};
   const fotos = r.leituraFotos || null;
   const mk = r.mercado || {};
-  const ACCENT = marca === 'bens' ? BLUE : NAVY;
-  const SOFT = marca === 'bens' ? '#cfe0ff' : '#b9c2d4';
+  const ACCENT = BLUE, SOFT = '#cfe0ff';
 
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ size: 'A4', bufferPages: true, margins: { top: TOP, bottom: BOTTOM, left: LX, right: 44 } });
@@ -1263,16 +1260,13 @@ function gerarMatriculaPdf(r, opts = {}) {
 
     const chrome = () => {
       doc.rect(0, 0, PAGE_W, 64).fill(ACCENT);
-      if (marca === 'bens') { try { doc.image(LOGO, LX, 22, { height: 20 }); } catch {} }
-      else { doc.font('Helvetica-Bold').fontSize(12).fillColor(WHITE).text('BALLADÃO ADVOGADOS', LX, 24, { lineBreak: false }); }
+      try { doc.image(LOGO, LX, 22, { height: 20 }); } catch {}
       doc.font('Helvetica-Bold').fontSize(11).fillColor(WHITE).text('Parecer técnico de avaliação', LX, 21, { width: W, align: 'right' });
       doc.font('Helvetica').fontSize(7.5).fillColor(SOFT)
         .text(`Matrícula nº ${txt(m.numero)}${m.cartorio ? ' · ' + clean(m.cartorio) : ''}`, LX, 38, { width: W, align: 'right' });
       const fy = PAGE_H - 46; doc.page.margins.bottom = 0;
       doc.moveTo(LX, fy).lineTo(RX, fy).lineWidth(0.5).strokeColor(LINE).stroke();
-      const rodape = marca === 'bens'
-        ? [`${RAZAO} · ${CRECI_J} · ${ENDERECO}`, `${CONTATO}  ·  documento gerado por Precifica Aí`]
-        : ['Balladão Advogados · Anápolis, Goiás', 'Estimativa de valor de mercado por amostragem  ·  documento gerado por Precifica Aí'];
+      const rodape = [`${RAZAO} · ${CRECI_J} · ${ENDERECO}`, `${CONTATO}  ·  documento gerado por Precifica Aí`];
       doc.font('Helvetica').fontSize(6.8).fillColor(MUTED).text(rodape[0], LX, fy + 5, { width: W, lineBreak: false });
       doc.font('Helvetica').fontSize(6.8).fillColor(MUTED).text(rodape[1], LX, fy + 15, { width: W * 0.8, lineBreak: false });
       doc.font('Helvetica').fontSize(6.8).fillColor(MUTED).text(`Emitido em ${dataEmissao}`, RX - 120, fy + 15, { width: 120, align: 'right' });
@@ -1552,9 +1546,8 @@ function gerarMatriculaPdf(r, opts = {}) {
     doc.lineWidth(0.7).strokeColor(NAVY).moveTo(cx - 90, y).lineTo(cx + 90, y).stroke();
     doc.font('Helvetica').fontSize(7.5).fillColor(LABEL).text('CORRETOR RESPONSÁVEL', cx - 90, y + 5, { width: 180, align: 'center' });
     doc.font('Helvetica-Bold').fontSize(9).fillColor(INK).text(assina, cx - 100, y + 16, { width: 200, align: 'center' });
-    doc.font('Helvetica-Bold').fontSize(8).fillColor(INK).text(
-      marca === 'bens' ? `${registro} · ${RAZAO} (${CRECI_J})` : `${registro} · parecer elaborado para Balladão Advogados`,
-      cx - 100, y + 28, { width: 200, align: 'center' });
+    doc.font('Helvetica-Bold').fontSize(8).fillColor(INK)
+      .text(`${registro} · ${RAZAO} (${CRECI_J})`, cx - 100, y + 28, { width: 200, align: 'center' });
     y += 52;
 
     ensure(58);

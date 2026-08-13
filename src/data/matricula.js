@@ -1,10 +1,10 @@
 /**
  * AVALIAÇÃO POR AMOSTRAGEM A PARTIR DA MATRÍCULA + FOTOS
  * ─────────────────────────────────────────────────────────────────────
- * A entrada aqui não é formulário: é DOCUMENTO. O corretor/advogado joga a
+ * A entrada aqui não é formulário: é DOCUMENTO. O corretor joga a
  * certidão de inteiro teor e o conjunto fotográfico, a IA lê os dois, ele
- * confere na tela, e sai o parecer técnico de valor (o mesmo formato do
- * modelo Balladão) com o Anexo I de pesquisa de mercado já preenchido.
+ * confere na tela, e sai o parecer técnico de valor da Bens Imóveis, com o
+ * Anexo I de pesquisa de mercado já preenchido.
  *
  * O que a IA faz: TRANSCREVER (matrícula) e DESCREVER (fotos).
  * O que o código faz: CALCULAR. Nenhum valor sai de LLM.
