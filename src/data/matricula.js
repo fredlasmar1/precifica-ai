@@ -286,6 +286,32 @@ async function pesquisarMercado({ cidade, bairro, tipo = 'casa', metragem, quart
   return out;
 }
 
+/**
+ * Quanto o preço realmente acompanha a metragem NESTE bairro. Mede a
+ * elasticidade entre todos os pares da amostra (mediana, robusta a outlier)
+ * em vez de assumir um expoente. Amostra fraca cai nos valores conservadores
+ * observados em loteamento popular de Anápolis.
+ */
+function elasticidades(casas) {
+  const validas = (casas || []).filter((c) => c.preco > 0 && c.area > 40 && c.area < 400);
+  const el = { area: 0.25, terreno: 0.33, medido: false, n: validas.length };
+  if (validas.length < 4) return el;
+  const pares = [];
+  for (let i = 0; i < validas.length; i++) {
+    for (let j = i + 1; j < validas.length; j++) {
+      const a = validas[i], b = validas[j];
+      if (a.area === b.area) continue;
+      const e = Math.log(b.preco / a.preco) / Math.log(b.area / a.area);
+      if (Number.isFinite(e) && e > -3 && e < 3) pares.push(e);
+    }
+  }
+  const m = mediana(pares.map((v) => v + 3));   // desloca p/ a mediana aceitar negativo
+  if (m == null) return el;
+  el.area = Math.round(Math.max(0.05, Math.min(0.60, m - 3)) * 100) / 100;
+  el.medido = true;
+  return el;
+}
+
 // ─────────────────────────────────────────────────────────────────────
 // 4. AVALIAÇÃO — os três métodos
 // ─────────────────────────────────────────────────────────────────────
@@ -380,43 +406,51 @@ function avaliar(p) {
   // baixo do mercado.
   const dep = rossHeidecke(idade, conservacao, VIDA_UTIL_CASA);
 
-  // O fator de comercialização NÃO é constante — esta é a mesma lição que a
-  // aba Prédios já tinha aprendido (FC fixo de 0,90 dava 47% do preço real).
-  // Aqui ele é calibrado no próprio bairro: quanto o mercado paga pelo imóvel
-  // mediano dividido pelo custo de repor esse mesmo imóvel.
+  // O fator de comercialização NÃO é constante — lição que a aba Prédios já
+  // tinha aprendido (FC fixo de 0,90 dava 47% do preço real). E ele incide
+  // sobre a CONSTRUÇÃO, não sobre o imóvel todo: o terreno já entra a preço
+  // de mercado, multiplicá-lo de novo dobra o ajuste. Medido no Residencial
+  // Alphaville em 13/08/2026: descontando o terreno do preço anunciado, a
+  // construção implícita sai a R$ 2.654/m² contra CUB normal de R$ 2.700 —
+  // ou seja, FC ~1,0. Um FC de 0,92 sobre o imóvel inteiro tirava R$ 40 mil
+  // que o mercado paga.
   let fc = Number(p.fc) || 0, fcFonte = 'informado por você';
   if (!fc) {
-    const precoRef = mediana((mercado.casas || []).map((c) => c.preco));
-    const areaRef = mediana((mercado.casas || []).map((c) => c.area).filter((a) => a > 40 && a < 400)) || areaConstruida;
-    const loteRef = mediana((mercado.lotes || []).map((l) => l.area)) || 250;
-    if (precoRef > 0 && areaRef > 0) {
-      const depRef = rossHeidecke(IDADE_REFERENCIA, 'bom', VIDA_UTIL_CASA);
-      const custoRef = loteRef * terrenoM2 + areaRef * cubDoPadraoLocal(padrao) * (1 - depRef.k);
-      const bruto = precoRef / custoRef;
-      fc = Math.round(Math.max(0.80, Math.min(1.60, bruto)) * 100) / 100;
-      fcFonte = `calibrado no bairro: imóvel mediano anunciado a ${brl(precoRef)} ÷ custo de repor ${brl(Math.round(custoRef))}`;
+    // O lote de referência é o das CASAS comparáveis, não o dos terrenos
+    // vagos à venda (que são maiores): descontar 300 m² de uma casa que está
+    // em 150 m² tirava metade do valor da construção e jogava o FC para 0,78.
+    const loteCasas = mediana((mercado.casas || []).map((c) => c.lote).filter((a) => a > 0));
+    const loteRef = loteCasas || Number(p.lotePadrao) || 250;
+    const liquidos = (mercado.casas || [])
+      .filter((c) => c.preco > 0 && c.area > 40 && c.area < 400)
+      .map((c) => (c.preco - (Number(c.lote) > 0 ? c.lote : loteRef) * terrenoM2) / c.area)
+      .filter((v) => v > 300);
+    const liqMediano = mediana(liquidos);
+    if (liqMediano > 0) {
+      fc = Math.round(Math.max(0.70, Math.min(1.80, liqMediano / cub)) * 100) / 100;
+      fcFonte = `medido em ${liquidos.length} anúncio(s) do bairro: descontado o terreno, a construção sai a ${brl(Math.round(liqMediano))}/m² contra CUB de ${brl(cub)}/m²`;
     } else {
       fc = FC_PADRAO;
       fcFonte = 'padrão do modelo (sem amostra do bairro para calibrar)';
     }
   }
+
   let evolutivo = null;
   if (areaTerreno > 0 && areaEquivalente > 0) {
     const custoNovo = Math.round(areaEquivalente * cub);
     const depreciacao = Math.round(custoNovo * dep.k);
-    const construcao = custoNovo - depreciacao;
+    const construcao = Math.round((custoNovo - depreciacao) * fc);
     const subtotal = valorTerreno + construcao;
     evolutivo = {
       nome: 'Método evolutivo (terreno + construção)',
       valorTerreno, custoNovo, depreciacao, depreciacaoPct: Math.round(dep.k * 100),
-      construcao, subtotal, fc, valor: Math.round(subtotal * fc),
+      construcao, subtotal, fc, valor: subtotal,
       memoria: [
-        ['Terreno', `${num(areaTerreno)} m² × ${brl(terrenoM2Ajustado)}/m²`, valorTerreno],
+        ['Terreno', `${num(areaTerreno)} m² × ${brl(terrenoM2Ajustado)}/m² (preço de mercado do lote)`, valorTerreno],
         ['Construção — custo de reedição', `${num(areaEquivalente)} m² equivalentes × ${brl(cub)}/m²`, custoNovo],
-        [`Depreciação de ${Math.round(dep.k * 100)}%`, `Ross-Heidecke · ${idade} ano(s) · conservação ${conservacao}`, -depreciacao],
-        ['Subtotal', 'terreno + construção depreciada', subtotal],
-        ['Fator de comercialização', `× ${fc}`, null],
-        ['Resultado pelo método evolutivo', '', Math.round(subtotal * fc)]
+        [`Depreciação de ${Math.round(dep.k * 100)}%`, `Ross-Heidecke · ${idade} ano(s) · conservação ${conservacao} · vida útil ${dep.vidaUtil} anos`, -depreciacao],
+        ['Fator de comercialização sobre a construção', `× ${fc}`, construcao],
+        ['Resultado pelo método evolutivo', 'terreno + construção depreciada e comercializada', subtotal]
       ]
     };
     metodos.push(evolutivo);
@@ -442,13 +476,21 @@ function avaliar(p) {
   const compsPreco = (mercado.casas || []).map((c) => c.preco).filter((v) => v > 0);
   const precoMedianoComp = mediana(compsPreco);
   const areaMedianaComp = mediana((mercado.casas || []).map((c) => c.area).filter((a) => a > 40 && a < 400));
-  const loteMedianoComp = mediana((mercado.lotes || []).map((l) => l.area)) || Number(p.lotePadrao) || 250;
+  // idem no comparativo: o "lote típico" da amostra é o das casas anunciadas
+  const loteMedianoComp = mediana((mercado.casas || []).map((c) => c.lote).filter((a) => a > 0))
+    || mediana((mercado.lotes || []).map((l) => l.area))
+    || Number(p.lotePadrao) || 250;
 
   if (precoMedianoComp > 0) {
-    // Expoentes < 1: dobrar o lote não dobra o preço da casa (retorno
-    // decrescente, conhecido na homogeneização de amostra).
-    const fLote = areaTerreno > 0 ? Math.pow(areaTerreno / loteMedianoComp, 0.35) : 1;
-    const fArea = areaConstruida > 0 && areaMedianaComp > 0 ? Math.pow(areaConstruida / areaMedianaComp, 0.55) : 1;
+    // Os expoentes saem da PRÓPRIA amostra, não de um palpite. No Residencial
+    // Alphaville a elasticidade medida entre pares de anúncios foi 0,08 para
+    // área construída e 0,33 para terreno — ou seja, casa de 89 m² sai a R$
+    // 500 mil e casa de 200 m² a R$ 420 mil: o que manda é ser casa boa no
+    // bairro, não o tamanho. Expoentes chutados em 0,55 inflavam o efeito da
+    // metragem e distorciam os dois extremos.
+    const el = elasticidades(mercado.casas || []);
+    const fLote = areaTerreno > 0 ? Math.pow(areaTerreno / loteMedianoComp, el.terreno) : 1;
+    const fArea = areaConstruida > 0 && areaMedianaComp > 0 ? Math.pow(areaConstruida / areaMedianaComp, el.area) : 1;
     const fPadrao = (FATOR_PADRAO[padrao] || 1) / 1.0;
     const fConserv = CONSERVACAO_FATOR[conservacao] != null ? CONSERVACAO_FATOR[conservacao] : 1;
     const valorComp = Math.round(precoMedianoComp * fLote * fArea * fPadrao * fConserv);
@@ -536,11 +578,18 @@ function avaliar(p) {
   } : null;
 
   // ── Ajuste documental ──────────────────────────────────────────────
+  // O ajuste documental é decisão do dono do negócio, não do algoritmo: em
+  // muita negociação o vendedor regulariza antes de fechar, e aí o desconto
+  // não se aplica. Desligado, os achados registrais continuam no parecer —
+  // só param de mexer no número.
   const descontos = [];
   let descTotal = 0;
-  if (p.semAverbacao) { descontos.push({ motivo: 'Construção não averbada na matrícula (imóvel não financiável)', pct: DESC_SEM_AVERBACAO }); descTotal += DESC_SEM_AVERBACAO; }
-  if (p.semTitulo) { descontos.push({ motivo: 'Vendedor não é o proprietário registral (cessão de direitos)', pct: DESC_SEM_TITULO }); descTotal += DESC_SEM_TITULO; }
-  if (p.comOnus) { descontos.push({ motivo: 'Ônus real registrado na matrícula', pct: DESC_ONUS }); descTotal += DESC_ONUS; }
+  const aplicarDesc = p.aplicarDescontoDocumental !== false;
+  if (aplicarDesc) {
+    if (p.semAverbacao) { descontos.push({ motivo: 'Construção não averbada na matrícula (imóvel não financiável)', pct: DESC_SEM_AVERBACAO }); descTotal += DESC_SEM_AVERBACAO; }
+    if (p.semTitulo) { descontos.push({ motivo: 'Vendedor não é o proprietário registral (cessão de direitos)', pct: DESC_SEM_TITULO }); descTotal += DESC_SEM_TITULO; }
+    if (p.comOnus) { descontos.push({ motivo: 'Ônus real registrado na matrícula', pct: DESC_ONUS }); descTotal += DESC_ONUS; }
+  }
   descTotal = Math.min(descTotal, DESC_TETO);
   const valor = descTotal > 0 ? Math.round((valorBruto * (1 - descTotal)) / 5000) * 5000 : valorBruto;
 
