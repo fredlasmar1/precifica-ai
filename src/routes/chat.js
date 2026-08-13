@@ -675,7 +675,7 @@ router.post('/matricula/avaliar', async (req, res) => {
     return res.status(400).json({ error: 'Informe a área do terreno e/ou a área construída.' });
   }
   try {
-    const { pesquisarMercado, avaliar, diligencias, formatar } = require('../data/matricula');
+    const { pesquisarMercado, metricasBens, avaliar, diligencias, formatar } = require('../data/matricula');
 
     let mercado = { n: 0, casas: [], lotes: [], grau: 'Sem amostra' };
     if (p.pesquisarMercado !== false && p.bairro) {
@@ -693,6 +693,15 @@ router.post('/matricula/avaliar', async (req, res) => {
     resultado.matricula = m;
     resultado.leituraFotos = fotos;
     resultado.diligencias = diligencias(m, resultado);
+    // métricas padrão dos laudos da Bens (rentabilidade, financiamento, FIPE,
+    // entorno, tendência) — best-effort, o parecer sai mesmo se falharem
+    try {
+      resultado.metricas = await metricasBens({
+        cidade: resultado.cidade, bairro: resultado.bairro, tipo: p.tipoImovel || 'casa',
+        metragem: resultado.areaConstruida, valor: resultado.valor,
+        precoM2: resultado.valorM2Resultante || resultado.vendaM2
+      });
+    } catch (e) { console.warn('[Matrícula] métricas:', e.message); }
     resultado.solicitante = p.solicitante || '';
     resultado.assina = p.assina || p.advogado || '';
     resultado.registro = p.registro || p.oab || '';
@@ -720,12 +729,13 @@ router.post('/matricula/avaliar', async (req, res) => {
  * POST /api/relatorio-matricula — PDF do parecer (formato do modelo, 16 seções).
  */
 router.post('/relatorio-matricula', async (req, res) => {
-  const { resultado, solicitante, assina, registro } = req.body || {};
+  const { resultado, solicitante, assina, registro, imagens } = req.body || {};
   if (!resultado) return res.status(400).json({ error: 'Gere o parecer primeiro.' });
   try {
     const { gerarMatriculaPdf } = require('../data/relatorioPdf');
     const pdf = await gerarMatriculaPdf(resultado, {
-      solicitante, assina: assina || resultado.assina, registro: registro || resultado.registro
+      solicitante, assina: assina || resultado.assina, registro: registro || resultado.registro,
+      imagens: imagens || null
     });
     const slug = String((resultado.matricula || {}).numero || 'imovel').replace(/[^0-9a-zA-Z]+/g, '-');
     res.setHeader('Content-Type', 'application/pdf');

@@ -233,6 +233,33 @@ async function lerFotos(fotos = []) {
 // 3. PESQUISA DE MERCADO — o Anexo I que o modelo deixava em branco
 // ─────────────────────────────────────────────────────────────────────
 
+/**
+ * As métricas que todo laudo da Bens carrega: rentabilidade de aluguel,
+ * financiamento, infraestrutura no entorno, tendência do bairro e a FIPE da
+ * região. O parecer por matrícula não pode ser mais pobre que a aba Avaliar
+ * só porque a entrada é documento.
+ */
+async function metricasBens({ cidade, bairro, tipo = 'casa', metragem, valor, precoM2 }) {
+  const out = { enriquecimento: null, fipeVenda: null, fipeAluguel: null, geo: null };
+  try {
+    const ba = require('./baseAnapolis');
+    out.fipeVenda = ba.getAncora(tipo, 'venda', cidade, bairro);
+    out.fipeAluguel = ba.getAncora(tipo, 'aluguel', cidade, bairro);
+  } catch (e) { console.warn('[Matrícula] FIPE:', e.message); }
+  try {
+    const { validarEndereco } = require('./geoValidacao');
+    out.geo = await validarEndereco(cidade, bairro, null);
+  } catch (e) { /* geo é opcional */ }
+  try {
+    const { enriquecer } = require('./enriquecimento');
+    out.enriquecimento = await enriquecer({
+      tipo, cidade, bairro, metragem, valorVenda: valor, precoM2,
+      lat: out.geo?.lat, lng: out.geo?.lng
+    });
+  } catch (e) { console.warn('[Matrícula] enriquecimento:', e.message); }
+  return out;
+}
+
 async function pesquisarMercado({ cidade, bairro, tipo = 'casa', metragem, quartos }) {
   const out = { casas: [], lotes: [], fontes: [], erro: null };
   const [casa, lote] = await Promise.allSettled([
@@ -754,6 +781,21 @@ function formatar(m, fotos, r) {
   });
   t += `• Total estimado: ${brl(r.custoMin)} a ${brl(r.custoMax)} (${Math.round((r.custoMin / r.valor) * 100)}% a ${Math.round((r.custoMax / r.valor) * 100)}% do valor)\n\n`;
 
+  const mb = r.metricas || {};
+  const enr = mb.enriquecimento || {};
+  if (enr.rentabilidade || enr.financiamento || mb.fipeVenda || enr.infraestrutura) {
+    t += `📈 *O QUE ESTE IMÓVEL RENDE E QUANTO CUSTA FINANCIAR*\n`;
+    if (enr.rentabilidade) t += `• Aluguel estimado: ${brl(enr.rentabilidade.aluguelMensal)}/mês · ${enr.rentabilidade.yieldAnual}% ao ano · paga o imóvel em ~${enr.rentabilidade.paybackAnos} anos\n`;
+    if (enr.financiamento) {
+      const f = enr.financiamento;
+      t += `• Financiamento: entrada ${brl(f.entrada)} (${f.entradaPct}%) · parcela ~${brl(f.parcela)}/mês em ${Math.round(f.prazoMeses / 12)} anos · renda necessária ~${brl(f.rendaNecessaria)}/mês\n`;
+    }
+    if (mb.fipeVenda) t += `• FIPE da região (${r.bairro}): venda ${brl(mb.fipeVenda.m2)}/m² · aluguel R$ ${mb.fipeAluguel?.m2}/m²·mês\n`;
+    const infra = (enr.infraestrutura || []).filter((i) => i.qtd > 0);
+    if (infra.length) t += `• Entorno (1,5 km): ${infra.map((i) => `${i.categoria} ${i.qtd}${i.maisProximoM ? ` (${i.maisProximoM}m)` : ''}`).join(' · ')}\n`;
+    if (enr.tendencia) t += `• Tendência do bairro: ${enr.tendencia}\n`;
+    t += `\n`;
+  }
   const mk = r.mercado || {};
   t += `📊 *ANEXO I — PESQUISA DE MERCADO*\n`;
   if (mk.n > 0) {
@@ -792,6 +834,6 @@ function formatar(m, fotos, r) {
 }
 
 module.exports = {
-  lerMatricula, lerFotos, pesquisarMercado, avaliar, diligencias, formatar,
+  lerMatricula, lerFotos, pesquisarMercado, metricasBens, avaliar, diligencias, formatar,
   alertasRegistrais, CUB_PADRAO, FATOR_PADRAO
 };

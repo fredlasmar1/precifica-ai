@@ -1529,6 +1529,55 @@ function gerarMatriculaPdf(r, opts = {}) {
       y += 8;
     }
 
+    // ── 15.1 Métricas do sistema (as mesmas dos outros laudos da Bens) ─
+    const mb = r.metricas || {};
+    const enr = mb.enriquecimento || {};
+    const infra = (enr.infraestrutura || []).filter((i) => i.qtd > 0);
+    if (enr.rentabilidade || enr.financiamento || mb.fipeVenda || infra.length || enr.tendencia) {
+      band('15.1. Rentabilidade, financiamento e região');
+      if (enr.rentabilidade) {
+        kv('Aluguel estimado', `${brl(enr.rentabilidade.aluguelMensal)}/mês — rentabilidade de ${enr.rentabilidade.yieldAnual}% ao ano, paga o imóvel em cerca de ${enr.rentabilidade.paybackAnos} anos`);
+      }
+      if (enr.financiamento) {
+        const f = enr.financiamento;
+        kv('Financiamento', `entrada de ${brl(f.entrada)} (${f.entradaPct}%), parcela de aproximadamente ${brl(f.parcela)} por ${Math.round(f.prazoMeses / 12)} anos a ${f.taxaAnual}% a.a.`);
+        kv('Renda necessária do comprador', `${brl(f.rendaNecessaria)}/mês`);
+      }
+      if (mb.fipeVenda) kv(`Referência da região (${txt(r.bairro)})`, `venda ${brl(mb.fipeVenda.m2)}/m² · aluguel R$ ${mb.fipeAluguel ? mb.fipeAluguel.m2 : '—'}/m² por mês · fonte ${txt(mb.fipeVenda.fonte)}`);
+      if (infra.length) kv('Infraestrutura em 1,5 km', infra.map((i) => `${i.categoria}: ${i.qtd}${i.maisProximoM ? ` (mais próximo a ${i.maisProximoM} m)` : ''}`).join(' · '));
+      if (enr.tendencia) p(`Tendência do bairro: ${enr.tendencia}`);
+    }
+
+    // ── Anexo II — registro fotográfico ───────────────────────────────
+    const fotosImg = (opts.imagens && opts.imagens.fotos) || [];
+    if (fotosImg.length) {
+      doc.addPage(); y = TOP;
+      band('Anexo II — registro fotográfico do imóvel');
+      p('As fotografias abaixo são as que fundamentaram a avaliação de padrão de acabamento e estado de conservação descrita na seção 6.');
+      const cols = 3, gap = 8, cw = (W - gap * (cols - 1)) / cols, ch = cw * 0.75;
+      fotosImg.slice(0, 24).forEach((src, i) => {
+        const col = i % cols;
+        if (col === 0) { ensure(ch + 6); }
+        try { doc.image(src, LX + col * (cw + gap), y, { fit: [cw, ch], align: 'center', valign: 'center' }); } catch {}
+        if (col === cols - 1 || i === Math.min(fotosImg.length, 24) - 1) y += ch + gap;
+      });
+      y += 6;
+    }
+
+    // ── Anexo III — a certidão ────────────────────────────────────────
+    const docImg = (opts.imagens && opts.imagens.matricula) || [];
+    if (docImg.length) {
+      docImg.slice(0, 8).forEach((src, i) => {
+        doc.addPage(); y = TOP;
+        if (i === 0) { band('Anexo III — certidão de inteiro teor da matrícula'); }
+        else { doc.font('Helvetica-Bold').fontSize(8).fillColor(NAVY).text(`Anexo III — certidão, página ${i + 1}`, LX, y); y = doc.y + 6; }
+        try {
+          doc.image(src, LX, y, { fit: [W, PAGE_H - y - BOTTOM - 10], align: 'center', valign: 'top' });
+        } catch {}
+      });
+      doc.addPage(); y = TOP;
+    }
+
     // ── 16. Encerramento ──────────────────────────────────────────────
     band('16. Encerramento');
     p(`O presente parecer foi elaborado com base exclusivamente nos documentos e informações relacionados na seção 3, observadas as limitações da seção 4, e reflete a melhor estimativa possível a partir desses elementos. Sua validade recomendada é de 180 dias contados da data-base, período após o qual se sugere revisão em razão da variação do mercado.`);

@@ -2797,6 +2797,8 @@
           body: JSON.stringify({
             resultado: matriculaAtual,
             solicitante: matriculaAtual.solicitante || '',
+            // as imagens vão só para o PDF, não para o banco
+            imagens: { matricula: mtPaginas, fotos: mtFotosData },
             assina: matriculaAtual.assina || '',
             registro: matriculaAtual.registro || ''
           })
