@@ -11,7 +11,7 @@
  *
  * Três métodos independentes, como no modelo:
  *   1. evolutivo   — terreno + custo de reedição depreciado × fator de comercialização
- *   2. comparativo — área construída × R$/m² da amostra real do bairro
+ *   2. comparativo — preço TOTAL das casas semelhantes do bairro, homogeneizado
  *   3. âncora      — avaliação anterior atualizada por valorização + regularização
  * Convergindo os três, a dispersão vira a medida de confiança.
  */
@@ -28,8 +28,11 @@ function getOpenAI() {
 }
 
 // ── Parâmetros do modelo (todos editáveis pelo usuário na tela) ──────
-// CUB-GO residencial por padrão de acabamento, já com BDI, projetos e taxas.
-const CUB_PADRAO = { popular: 1900, normal: 2400, 'normal-alto': 3100, alto: 3800 };
+// CUB-GO residencial + BDI, projetos e taxas. O modelo do escritório usou
+// R$ 3.100/m² para padrão normal alto — a escala abaixo mantém esse ponto.
+const CUB_PADRAO = { popular: 2100, normal: 2700, 'normal-alto': 3100, alto: 3700 };
+const VIDA_UTIL_CASA = 60;   // casa térrea/sobrado dura mais que apartamento
+const IDADE_REFERENCIA = 8;  // idade típica do estoque anunciado, p/ calibrar o FC
 // A mediana do bairro mistura padrões; o imóvel avaliado desvia dela por acabamento.
 const FATOR_PADRAO = { popular: 0.85, normal: 1.0, 'normal-alto': 1.15, alto: 1.30 };
 const FC_PADRAO = 0.92;          // fator de comercialização (custo de construir → preço de venda)
@@ -47,6 +50,11 @@ const DESC_SEM_TITULO = 0.05;    // vendedor é promitente comprador / cessão d
 const DESC_ONUS = 0.10;          // hipoteca, penhora, indisponibilidade
 const DESC_TETO = 0.20;
 
+// Ajuste de conservação na homogeneização da amostra (o comparável mediano
+// do bairro é um imóvel em estado "bom").
+const CONSERVACAO_FATOR = { novo: 1.10, otimo: 1.05, bom: 1.0, regular: 0.90, ruim: 0.78 };
+
+const cubDoPadraoLocal = (padrao) => CUB_PADRAO[padrao] || CUB_PADRAO.normal;
 const hoje = () => new Date().toLocaleDateString('pt-BR');
 const brl = (v) => (v == null || Number.isNaN(Number(v)) ? '—'
   : Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }));
@@ -365,8 +373,33 @@ function avaliar(p) {
   }
 
   // ── Método 1: evolutivo ────────────────────────────────────────────
-  const dep = rossHeidecke(idade, conservacao);
-  const fc = Number(p.fc) || FC_PADRAO;
+  // Casa não é apartamento: a vida útil de 40 anos calibrada na aba Prédios
+  // (que absorve obsolescência funcional de planta antiga, elevador, lazer)
+  // deprecia casa térrea rápido demais. Com 60 anos, uma casa de 12 anos bem
+  // conservada perde ~13%, não 20% — que era o que puxava o evolutivo para
+  // baixo do mercado.
+  const dep = rossHeidecke(idade, conservacao, VIDA_UTIL_CASA);
+
+  // O fator de comercialização NÃO é constante — esta é a mesma lição que a
+  // aba Prédios já tinha aprendido (FC fixo de 0,90 dava 47% do preço real).
+  // Aqui ele é calibrado no próprio bairro: quanto o mercado paga pelo imóvel
+  // mediano dividido pelo custo de repor esse mesmo imóvel.
+  let fc = Number(p.fc) || 0, fcFonte = 'informado por você';
+  if (!fc) {
+    const precoRef = mediana((mercado.casas || []).map((c) => c.preco));
+    const areaRef = mediana((mercado.casas || []).map((c) => c.area).filter((a) => a > 40 && a < 400)) || areaConstruida;
+    const loteRef = mediana((mercado.lotes || []).map((l) => l.area)) || 250;
+    if (precoRef > 0 && areaRef > 0) {
+      const depRef = rossHeidecke(IDADE_REFERENCIA, 'bom', VIDA_UTIL_CASA);
+      const custoRef = loteRef * terrenoM2 + areaRef * cubDoPadraoLocal(padrao) * (1 - depRef.k);
+      const bruto = precoRef / custoRef;
+      fc = Math.round(Math.max(0.80, Math.min(1.60, bruto)) * 100) / 100;
+      fcFonte = `calibrado no bairro: imóvel mediano anunciado a ${brl(precoRef)} ÷ custo de repor ${brl(Math.round(custoRef))}`;
+    } else {
+      fc = FC_PADRAO;
+      fcFonte = 'padrão do modelo (sem amostra do bairro para calibrar)';
+    }
+  }
   let evolutivo = null;
   if (areaTerreno > 0 && areaEquivalente > 0) {
     const custoNovo = Math.round(areaEquivalente * cub);
@@ -390,34 +423,67 @@ function avaliar(p) {
     premissas.push({
       item: 'Depreciação', adotado: `${Math.round(dep.k * 100)}%`,
       faixa: `${Math.max(0, Math.round(dep.k * 100) - 5)}% a ${Math.round(dep.k * 100) + 5}%`,
-      obs: `Ross-Heidecke, vida útil de referência ${dep.vidaUtil} anos, conservação ${conservacao}`
+      obs: `Ross-Heidecke, vida útil de referência ${dep.vidaUtil} anos (casa), conservação ${conservacao}`
     });
     premissas.push({
-      item: 'Fator de comercialização', adotado: String(fc), faixa: '0,88 a 0,98',
-      obs: 'corrige a diferença entre custo de construir e preço que o mercado paga'
+      item: 'Fator de comercialização', adotado: String(fc), faixa: '0,80 a 1,60',
+      obs: `${fcFonte} — corrige a diferença entre custo de construir e preço que o mercado paga`
     });
   }
 
-  // ── Método 2: comparativo por valor unitário ───────────────────────
+  // ── Método 2: comparativo — o imóvel INTEIRO ───────────────────────
+  // Ninguém vende metro quadrado de construção solto: vende casa, com o
+  // terreno junto. O comparativo parte do preço TOTAL das casas semelhantes
+  // do bairro e homogeneíza pelas diferenças (lote, área construída, padrão,
+  // conservação). Antes eu multiplicava área construída × R$/m² e somava um
+  // excedente de terreno — o que subestimava justamente o imóvel de lote
+  // grande, que é onde está o valor nesse tipo de loteamento.
   let comparativo = null;
-  if (areaConstruida > 0 && vendaM2 > 0) {
-    // O R$/m² de anúncio já embute um terreno padrão do bairro. Lote maior
-    // que o padrão entra como excedente; menor, desconta. O padrão sai da
-    // mediana dos lotes anunciados no próprio bairro quando houver amostra.
-    const lotePadrao = Number(p.lotePadrao) || mediana((mercado.lotes || []).map((l) => l.area)) || 250;
-    const excedente = areaTerreno > 0 ? Math.round((areaTerreno - lotePadrao) * terrenoM2Ajustado * 0.6) : 0;
-    const base = Math.round(areaConstruida * vendaM2);
+  const compsPreco = (mercado.casas || []).map((c) => c.preco).filter((v) => v > 0);
+  const precoMedianoComp = mediana(compsPreco);
+  const areaMedianaComp = mediana((mercado.casas || []).map((c) => c.area).filter((a) => a > 40 && a < 400));
+  const loteMedianoComp = mediana((mercado.lotes || []).map((l) => l.area)) || Number(p.lotePadrao) || 250;
+
+  if (precoMedianoComp > 0) {
+    // Expoentes < 1: dobrar o lote não dobra o preço da casa (retorno
+    // decrescente, conhecido na homogeneização de amostra).
+    const fLote = areaTerreno > 0 ? Math.pow(areaTerreno / loteMedianoComp, 0.35) : 1;
+    const fArea = areaConstruida > 0 && areaMedianaComp > 0 ? Math.pow(areaConstruida / areaMedianaComp, 0.55) : 1;
+    const fPadrao = (FATOR_PADRAO[padrao] || 1) / 1.0;
+    const fConserv = CONSERVACAO_FATOR[conservacao] != null ? CONSERVACAO_FATOR[conservacao] : 1;
+    const valorComp = Math.round(precoMedianoComp * fLote * fArea * fPadrao * fConserv);
     comparativo = {
-      nome: 'Método comparativo por valor unitário',
-      base, excedente, valor: base + excedente,
+      nome: 'Método comparativo (imóvel inteiro)',
+      base: precoMedianoComp, valor: valorComp,
+      fLote: Math.round(fLote * 100) / 100, fArea: Math.round(fArea * 100) / 100,
+      fPadrao, fConserv,
       cenarios: [
-        ['Conservador', `${num(areaConstruida)} m² × ${brl(Math.round(vendaM2 * 0.9))}/m²`, Math.round(areaConstruida * vendaM2 * 0.9) + excedente],
-        ['Provável', `${num(areaConstruida)} m² × ${brl(vendaM2)}/m²`, base + excedente],
-        ['Otimista', `${num(areaConstruida)} m² × ${brl(Math.round(vendaM2 * 1.1))}/m²`, Math.round(areaConstruida * vendaM2 * 1.1) + excedente]
+        ['Conservador', `mediana ${brl(precoMedianoComp)} × ajustes × 0,90`, Math.round(valorComp * 0.9)],
+        ['Provável', `mediana de ${compsPreco.length} casa(s) do bairro ${brl(precoMedianoComp)} × ${Math.round(fLote * 100) / 100} (lote ${num(areaTerreno)} vs ${num(loteMedianoComp)} m²) × ${Math.round(fArea * 100) / 100} (área ${num(areaConstruida)} vs ${num(areaMedianaComp || areaConstruida)} m²) × ${fPadrao} (padrão) × ${fConserv} (conservação)`, valorComp],
+        ['Otimista', `mediana ${brl(precoMedianoComp)} × ajustes × 1,10`, Math.round(valorComp * 1.1)]
       ],
-      notaExcedente: excedente !== 0
-        ? `Inclui ${excedente > 0 ? 'acréscimo' : 'desconto'} de ${brl(Math.abs(excedente))} pela diferença entre o lote de ${num(areaTerreno)} m² e o lote padrão de ${num(lotePadrao)} m² do loteamento.`
-        : null
+      notaExcedente: `Preços de anúncio; o fechamento costuma sair abaixo do pedido. Amostra: ${compsPreco.length} casa(s), de ${brl(Math.min(...compsPreco))} a ${brl(Math.max(...compsPreco))}.`
+    };
+    metodos.push(comparativo);
+    premissas.push({
+      item: 'Preço da casa mediana do bairro', adotado: brl(precoMedianoComp),
+      faixa: `${brl(Math.min(...compsPreco))} a ${brl(Math.max(...compsPreco))}`,
+      obs: `mediana de ${compsPreco.length} casa(s) à venda no bairro — base do método comparativo, homogeneizada por lote, área, padrão e conservação`
+    });
+  } else if (areaConstruida > 0 && vendaM2 > 0) {
+    // Sem amostra de preço total, resta o unitário sobre a base do bairro —
+    // com o terreno somado à parte, e dito com todas as letras no parecer.
+    const base = Math.round(areaConstruida * vendaM2);
+    const valorComp = base + Math.round(areaTerreno * terrenoM2Ajustado * 0.35);
+    comparativo = {
+      nome: 'Método comparativo por valor unitário (sem amostra de preço total)',
+      base, valor: valorComp,
+      cenarios: [
+        ['Conservador', `${num(areaConstruida)} m² × ${brl(Math.round(vendaM2 * 0.9))}/m² + terreno`, Math.round(valorComp * 0.9)],
+        ['Provável', `${num(areaConstruida)} m² × ${brl(vendaM2)}/m² + parcela do terreno`, valorComp],
+        ['Otimista', `${num(areaConstruida)} m² × ${brl(Math.round(vendaM2 * 1.1))}/m² + terreno`, Math.round(valorComp * 1.1)]
+      ],
+      notaExcedente: 'Não havia casa anunciada no bairro nesta consulta para comparar preço total; o valor saiu do indicador por metro quadrado da base de referência, o que é menos preciso.'
     };
     metodos.push(comparativo);
   }
@@ -590,8 +656,13 @@ function formatar(m, fotos, r) {
   t += `Data-base: ${r.dataBase}\n\n`;
 
   if (r.aviso) t += `⚠️ *${r.aviso.titulo}*\n${r.aviso.texto}\n\n`;
-  t += `💰 *VALOR DE MERCADO ESTIMADO*\n*${brl(r.valor)}*\n`;
-  t += `Faixa técnica: ${brl(r.faixaMin)} a ${brl(r.faixaMax)} (±${r.amplitude}%)\n`;
+  if (r.descontos.length) {
+    t += `💰 *VALOR DE MERCADO DO IMÓVEL*\n*${brl(r.valorBruto)}* — é quanto vale a casa em si, regularizada\n`;
+    t += `💰 *NO ESTADO DOCUMENTAL ATUAL*\n*${brl(r.valor)}* (${brl(r.faixaMin)} a ${brl(r.faixaMax)}) — depois do ajuste de −${r.descontoTotal}%\n`;
+  } else {
+    t += `💰 *VALOR DE MERCADO ESTIMADO*\n*${brl(r.valor)}*\n`;
+    t += `Faixa técnica: ${brl(r.faixaMin)} a ${brl(r.faixaMax)} (±${r.amplitude}%)\n`;
+  }
   if (r.valorM2Resultante) t += `Valor unitário resultante: ${brl(r.valorM2Resultante)}/m² de área construída\n`;
   t += `\n`;
 

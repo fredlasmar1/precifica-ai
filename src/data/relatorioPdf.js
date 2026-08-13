@@ -1330,10 +1330,18 @@ function gerarMatriculaPdf(r, opts = {}) {
     }
     ensure(72);
     doc.roundedRect(LX, y, W, 64, 8).fill(ACCENT);
-    doc.font('Helvetica').fontSize(8).fillColor(SOFT).text('VALOR DE MERCADO ESTIMADO', LX + 16, y + 10);
-    doc.font('Helvetica-Bold').fontSize(24).fillColor(WHITE).text(brl(r.valor), LX + 16, y + 22);
-    doc.font('Helvetica').fontSize(7.5).fillColor(SOFT).text(`Faixa técnica: ${brl(r.faixaMin)} a ${brl(r.faixaMax)}`, LX + 16, y + 50);
-    if (r.valorM2Resultante) doc.font('Helvetica').fontSize(7.5).fillColor(SOFT).text(`${brl(r.valorM2Resultante)}/m² de área construída`, RX - 200, y + 50, { width: 190, align: 'right' });
+    const temDesconto = (r.descontos || []).length > 0;
+    doc.font('Helvetica').fontSize(8).fillColor(SOFT).text(temDesconto ? 'VALOR DE MERCADO DO IMÓVEL (REGULARIZADO)' : 'VALOR DE MERCADO ESTIMADO', LX + 16, y + 10);
+    doc.font('Helvetica-Bold').fontSize(24).fillColor(WHITE).text(brl(temDesconto ? r.valorBruto : r.valor), LX + 16, y + 22);
+    if (temDesconto) {
+      doc.font('Helvetica').fontSize(7.5).fillColor(SOFT).text('NO ESTADO DOCUMENTAL ATUAL', RX - 210, y + 10, { width: 200, align: 'right' });
+      doc.font('Helvetica-Bold').fontSize(17).fillColor(WHITE).text(brl(r.valor), RX - 210, y + 24, { width: 200, align: 'right' });
+      doc.font('Helvetica').fontSize(7).fillColor(SOFT).text(`ajuste de -${r.descontoTotal}% · faixa ${brl(r.faixaMin)} a ${brl(r.faixaMax)}`, RX - 210, y + 45, { width: 200, align: 'right' });
+      doc.font('Helvetica').fontSize(7.5).fillColor(SOFT).text('a casa em si, sem a pendência registral', LX + 16, y + 50);
+    } else {
+      doc.font('Helvetica').fontSize(7.5).fillColor(SOFT).text(`Faixa técnica: ${brl(r.faixaMin)} a ${brl(r.faixaMax)}`, LX + 16, y + 50);
+      if (r.valorM2Resultante) doc.font('Helvetica').fontSize(7.5).fillColor(SOFT).text(`${brl(r.valorM2Resultante)}/m² de área construída`, RX - 200, y + 50, { width: 190, align: 'right' });
+    }
     y += 76;
     (m.alertas || []).slice(0, 4).forEach((a) => {
       bullet(`${a.titulo}: ${a.texto}`);
