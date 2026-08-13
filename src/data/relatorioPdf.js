@@ -1437,6 +1437,17 @@ function gerarMatriculaPdf(r, opts = {}) {
     (r.premissas || []).forEach((pr) => linhaTabela([pr.item, pr.adotado, pr.faixa, pr.obs], [W * 0.26, W * 0.16, W * 0.2, W * 0.38]));
     y += 10;
 
+    // ── 9.1 Sensibilidade da metragem ─────────────────────────────────
+    if (r.sensibilidade) {
+      doc.font('Helvetica-Bold').fontSize(8.5).fillColor(NAVY).text('9.1. E se a metragem for outra?', LX, y); y = doc.y + 5;
+      p('A construção não está averbada na matrícula, de modo que a área construída é premissa, e não dado registral. A tabela abaixo mostra o valor apurado em cada metragem plausível, para que o resultado possa ser lido sem depender de uma medição que ainda não existe. Confirmada a área — pelo cadastro do IPTU, pelo habite-se, pelo anúncio ou por medição no local — basta ler a linha correspondente.');
+      linhaTabela(['Área construída', 'Valor de mercado', 'Faixa técnica'], [W * 0.3, W * 0.32, W * 0.38], true);
+      r.sensibilidade.forEach((l) => linhaTabela([
+        `${num(l.area)} m²${l.atual ? '  (premissa adotada)' : ''}`, brl(l.valor), `${brl(l.faixaMin)} a ${brl(l.faixaMax)}`
+      ], [W * 0.3, W * 0.32, W * 0.38], !!l.atual));
+      y += 10;
+    }
+
     // ── 10. Apuração ──────────────────────────────────────────────────
     band('10. Apuração do valor');
     if (r.evolutivo) {

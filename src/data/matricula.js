@@ -515,8 +515,28 @@ function avaliar(p) {
     valor, faixaMin, faixaMax, amplitude: Math.round(amplitude * 100),
     valorM2Resultante: areaConstruida > 0 ? Math.round(valor / areaConstruida) : null,
     negociacao, custos, custoMin, custoMax,
-    premissas, mercado, dataBase: hoje()
+    premissas, mercado, dataBase: hoje(),
+    areaEstimada: !!p.areaEstimada,
+    sensibilidade: p._semSensibilidade ? null : (p.areaEstimada ? sensibilidadeArea(p, mercado) : null)
   };
+}
+
+/**
+ * Quando a construção não está averbada, a metragem é a maior incerteza do
+ * trabalho — e o dono muitas vezes não tem como saber. Em vez de esconder
+ * isso num número único, o parecer abre o valor por faixa de metragem.
+ */
+function sensibilidadeArea(p, mercado) {
+  const base = Number(p.areaConstruida) || 0;
+  if (!(base > 0)) return null;
+  const passo = base >= 200 ? 20 : 10;
+  const areas = [];
+  for (let a = Math.max(passo, base - passo * 2); a <= base + passo * 2; a += passo) areas.push(Math.round(a));
+  const linhas = areas.map((area) => {
+    const r = avaliar({ ...p, areaConstruida: area, mercado, _semSensibilidade: true });
+    return r.erro ? null : { area, valor: r.valor, faixaMin: r.faixaMin, faixaMax: r.faixaMax, atual: area === Math.round(base) };
+  }).filter(Boolean);
+  return linhas.length > 1 ? linhas : null;
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -631,6 +651,13 @@ function formatar(m, fotos, r) {
   }
   t += `\n`;
 
+  if (r.sensibilidade) {
+    t += `📏 *E SE A METRAGEM FOR OUTRA?*\nA construção não está averbada, então a área é premissa. O valor por metragem:\n`;
+    r.sensibilidade.forEach((l) => {
+      t += `${l.atual ? '▶' : ' '} ${num(l.area)} m² → *${brl(l.valor)}*  (${brl(l.faixaMin)} a ${brl(l.faixaMax)})\n`;
+    });
+    t += `Cada 10 m² a mais ou a menos move o valor em torno de ${brl(Math.abs(Math.round(((r.sensibilidade[r.sensibilidade.length - 1].valor - r.sensibilidade[0].valor) / (r.sensibilidade.length - 1)))))}.\n\n`;
+  }
   t += `📋 *PREMISSAS ADOTADAS*\n`;
   r.premissas.forEach((pr) => { t += `• ${pr.item}: *${pr.adotado}* (faixa ${pr.faixa}) — ${pr.obs}\n`; });
   t += `\n`;
