@@ -319,14 +319,24 @@ function avaliar(p) {
   // ── Premissa 2: R$/m² de construção (comparativo) ──────────────────
   let vendaM2 = Number(p.vendaM2) || 0, vendaFonte = 'informado por você';
   if (!vendaM2) {
-    if (mercado.medianaM2 > 0) {
-      vendaM2 = Math.round(mercado.medianaM2 * (FATOR_PADRAO[padrao] || 1));
-      vendaFonte = `mediana de ${mercado.casas.length} anúncio(s) do bairro (${brl(mercado.medianaM2)}/m²) × fator ${FATOR_PADRAO[padrao]} do padrão ${padrao}`;
-    } else {
-      const b = getBaseVenda(cidade, bairro);
-      vendaM2 = Math.round(b.m2 * (FATOR_PADRAO[padrao] || 1));
-      vendaFonte = `${b.fonte} × fator do padrão ${padrao} (sem anúncio no bairro)`;
-    }
+    const b = getBaseVenda(cidade, bairro);
+    const nAmostra = (mercado.casas || []).length;
+    // Amostra pequena não pode mandar sozinha: um único anúncio caro joga o
+    // comparativo para longe do evolutivo e o parecer sai com dois números
+    // que se desmentem. Peso do mercado cresce com o tamanho da amostra —
+    // mesma lógica de blend que o precificador já usa nas outras abas.
+    const wMercado = mercado.medianaM2 > 0
+      ? (nAmostra >= 5 ? 0.85 : nAmostra >= 3 ? 0.65 : 0.35)
+      : 0;
+    const bruto = wMercado > 0
+      ? Math.round(mercado.medianaM2 * wMercado + b.m2 * (1 - wMercado))
+      : b.m2;
+    vendaM2 = Math.round(bruto * (FATOR_PADRAO[padrao] || 1));
+    vendaFonte = wMercado >= 0.85
+      ? `mediana de ${nAmostra} anúncios do bairro (${brl(mercado.medianaM2)}/m²) × fator ${FATOR_PADRAO[padrao]} do padrão ${padrao}`
+      : wMercado > 0
+        ? `${Math.round(wMercado * 100)}% mercado (${nAmostra} anúncio(s), ${brl(mercado.medianaM2)}/m²) + ${Math.round((1 - wMercado) * 100)}% base do bairro (${b.fonte}, ${brl(b.m2)}/m²) × fator ${FATOR_PADRAO[padrao]} do padrão ${padrao}`
+        : `${b.fonte} (${brl(b.m2)}/m²) × fator do padrão ${padrao} — sem anúncio no bairro nesta consulta`;
   }
   premissas.push({
     item: 'Valor por m² de área construída', adotado: `${brl(vendaM2)}/m²`,
