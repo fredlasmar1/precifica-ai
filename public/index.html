@@ -606,8 +606,8 @@
             <div class="field">
               <label>Marca do parecer</label>
               <select id="mt-marca">
-                <option value="balladao" selected>Balladão Advogados (advogado + OAB)</option>
-                <option value="bens">Bens Imóveis (corretor + CRECI)</option>
+                <option value="bens" selected>Bens Imóveis Corporativos (timbre azul)</option>
+                <option value="balladao">Balladão Advogados (timbre do escritório)</option>
               </select>
             </div>
             <div class="field">
@@ -617,12 +617,12 @@
           </div>
           <div class="row">
             <div class="field">
-              <label>Quem assina <span class="opt">(advogado, ou deixe vazio p/ preencher à mão)</span></label>
-              <input id="mt-assina" placeholder="Nome do advogado" />
+              <label>Corretor responsável <span class="opt">(quem assina o parecer)</span></label>
+              <input id="mt-assina" value="Frederico Ivan Lasmar Alves" />
             </div>
             <div class="field">
-              <label>OAB / registro</label>
-              <input id="mt-oab" placeholder="OAB/GO 00.000" />
+              <label>CRECI</label>
+              <input id="mt-oab" value="CRECI-F 41.009" />
             </div>
           </div>
           <div class="field">
@@ -2754,8 +2754,8 @@
         vendaM2: v('mt-vendam2'),
         marca: v('mt-marca'),
         solicitante: v('mt-solicitante').trim(),
-        advogado: v('mt-assina').trim(),
-        oab: v('mt-oab').trim(),
+        assina: v('mt-assina').trim(),
+        registro: v('mt-oab').trim(),
         pesquisarMercado: document.getElementById('mt-pesquisar').checked,
         semAverbacao: !m.construcaoAverbada,
         semTitulo: !!(m.promessa && m.promessa.existe),
@@ -2803,8 +2803,8 @@
             resultado: matriculaAtual,
             solicitante: matriculaAtual.solicitante || '',
             marca: matriculaAtual.marca,
-            advogado: matriculaAtual.advogado || '',
-            oab: matriculaAtual.oab || ''
+            assina: matriculaAtual.assina || '',
+            registro: matriculaAtual.registro || ''
           })
         });
         if (!res.ok) { alert('Não foi possível gerar o PDF. Tente de novo.'); return; }

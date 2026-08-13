@@ -1524,24 +1524,25 @@ function gerarMatriculaPdf(r, opts = {}) {
     ensure(120);
     y += 62;
     const cx = LX + W / 2;
-    if (marca === 'bens') desenharAssinatura(doc, cx, y);
+    // Quem assina avaliação é o CORRETOR (CRECI/CNAI), nas duas marcas — o
+    // timbre do escritório muda o papel, não quem responde tecnicamente pelo
+    // valor. A assinatura digitalizada entra nos dois casos.
+    const assina = clean(opts.assina || CORRETOR);
+    const registro = clean(opts.registro || CRECI_F);
+    desenharAssinatura(doc, cx, y);
     doc.lineWidth(0.7).strokeColor(NAVY).moveTo(cx - 90, y).lineTo(cx + 90, y).stroke();
-    if (marca === 'bens') {
-      doc.font('Helvetica').fontSize(7.5).fillColor(LABEL).text('CORRETOR RESPONSÁVEL', cx - 90, y + 5, { width: 180, align: 'center' });
-      doc.font('Helvetica-Bold').fontSize(9).fillColor(INK).text(CORRETOR, cx - 100, y + 16, { width: 200, align: 'center' });
-      doc.font('Helvetica-Bold').fontSize(8).fillColor(INK).text(`${CRECI_F} · ${RAZAO} (${CRECI_J})`, cx - 100, y + 28, { width: 200, align: 'center' });
-    } else {
-      doc.font('Helvetica').fontSize(7.5).fillColor(LABEL).text('ADVOGADO RESPONSÁVEL', cx - 90, y + 5, { width: 180, align: 'center' });
-      doc.font('Helvetica-Bold').fontSize(9).fillColor(INK).text(clean(opts.advogado || '[INSERIR NOME DO ADVOGADO]'), cx - 100, y + 16, { width: 200, align: 'center' });
-      doc.font('Helvetica-Bold').fontSize(8).fillColor(INK).text(clean(opts.oab || '[INSERIR OAB/GO]') + ' · Balladão Advogados', cx - 100, y + 28, { width: 200, align: 'center' });
-    }
+    doc.font('Helvetica').fontSize(7.5).fillColor(LABEL).text('CORRETOR RESPONSÁVEL', cx - 90, y + 5, { width: 180, align: 'center' });
+    doc.font('Helvetica-Bold').fontSize(9).fillColor(INK).text(assina, cx - 100, y + 16, { width: 200, align: 'center' });
+    doc.font('Helvetica-Bold').fontSize(8).fillColor(INK).text(
+      marca === 'bens' ? `${registro} · ${RAZAO} (${CRECI_J})` : `${registro} · parecer elaborado para Balladão Advogados`,
+      cx - 100, y + 28, { width: 200, align: 'center' });
     y += 52;
 
     ensure(58);
     doc.roundedRect(LX, y, W, 50, 6).lineWidth(0.6).strokeColor(LINE).stroke();
     doc.font('Helvetica-Bold').fontSize(7.5).fillColor(NAVY).text('Aviso importante ao destinatário', LX + 10, y + 7);
     doc.font('Helvetica').fontSize(7).fillColor(MUTED).text(
-      'Este documento é um parecer técnico de valor por amostragem, elaborado sem vistoria presencial. Não constitui laudo de avaliação nos moldes da NBR 14.653 da ABNT e não substitui trabalho firmado por engenheiro, arquiteto ou corretor habilitado, exigível para fins bancários, judiciais e tributários. Os valores apresentados são estimativas de referência para orientação negocial.',
+      'Este documento é um parecer técnico de valor por amostragem, emitido por corretor de imóveis inscrito no CRECI, elaborado sem vistoria presencial. Não constitui laudo de avaliação nos moldes da NBR 14.653 da ABNT e não substitui laudo firmado por engenheiro ou arquiteto com ART/RRT, nem avaliação com CNAI, exigíveis para fins bancários, judiciais e tributários. Os valores apresentados são estimativas de referência para orientação negocial.',
       LX + 10, y + 19, { width: W - 20, align: 'justify' });
 
     const range = doc.bufferedPageRange();

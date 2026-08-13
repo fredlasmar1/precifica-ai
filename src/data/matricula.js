@@ -639,7 +639,7 @@ function formatar(m, fotos, r) {
   t += `• Não houve vistoria presencial — padrão e conservação foram avaliados pelas fotografias fornecidas.\n`;
   t += `• Não houve medição no local; as áreas são as ${m.construcaoAverbada ? 'constantes da matrícula' : 'informadas, já que a matrícula não traz área construída'}.\n`;
   t += `• Não foram examinadas instalações hidráulicas, elétricas, estruturais nem vícios ocultos.\n`;
-  t += `• Parecer técnico de valor por amostragem. Não é laudo nos moldes da NBR 14.653 e não substitui trabalho de engenheiro, arquiteto ou corretor com CNAI, exigível para fins bancários, judiciais e tributários.\n`;
+  t += `• Parecer técnico de valor por amostragem, emitido por corretor inscrito no CRECI. Não é laudo nos moldes da NBR 14.653 e não substitui laudo de engenheiro/arquiteto com ART/RRT nem avaliação com CNAI, exigíveis para fins bancários, judiciais e tributários.\n`;
   t += `\nValidade recomendada: 180 dias da data-base.\n`;
   return t;
 }
