@@ -615,6 +615,16 @@
               <input id="mt-solicitante" placeholder="Nome do cliente" />
             </div>
           </div>
+          <div class="row">
+            <div class="field">
+              <label>Quem assina <span class="opt">(advogado, ou deixe vazio p/ preencher à mão)</span></label>
+              <input id="mt-assina" placeholder="Nome do advogado" />
+            </div>
+            <div class="field">
+              <label>OAB / registro</label>
+              <input id="mt-oab" placeholder="OAB/GO 00.000" />
+            </div>
+          </div>
           <div class="field">
             <label><input type="checkbox" id="mt-pesquisar" checked /> Pesquisar o mercado agora (preenche o Anexo I com anúncios reais)</label>
           </div>
@@ -2744,6 +2754,8 @@
         vendaM2: v('mt-vendam2'),
         marca: v('mt-marca'),
         solicitante: v('mt-solicitante').trim(),
+        advogado: v('mt-assina').trim(),
+        oab: v('mt-oab').trim(),
         pesquisarMercado: document.getElementById('mt-pesquisar').checked,
         semAverbacao: !m.construcaoAverbada,
         semTitulo: !!(m.promessa && m.promessa.existe),
@@ -2790,7 +2802,9 @@
           body: JSON.stringify({
             resultado: matriculaAtual,
             solicitante: matriculaAtual.solicitante || '',
-            marca: matriculaAtual.marca
+            marca: matriculaAtual.marca,
+            advogado: matriculaAtual.advogado || '',
+            oab: matriculaAtual.oab || ''
           })
         });
         if (!res.ok) { alert('Não foi possível gerar o PDF. Tente de novo.'); return; }
