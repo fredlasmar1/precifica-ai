@@ -193,6 +193,66 @@ router.post('/avaliar', async (req, res) => {
  * Buscador inteligente comercial: dado endereço + ramo do cliente, avalia
  * concorrência, geradores de movimento e demanda → veredito de ponto comercial.
  */
+/**
+ * VIABILIDADE DO ALUGUEL — "esse ponto te quebra?"
+ *
+ * Nao depende de Google, de mapa nem de estimativa de faturamento: sai do
+ * aluguel pedido, da regua do ramo e do aluguel de mercado do bairro (que o
+ * motor ja calcula). E a pergunta que a empresa devia fazer ANTES de assinar.
+ */
+router.post('/viabilidade-aluguel', async (req, res) => {
+  const b = req.body || {};
+  const ramo = String(b.ramo || '').trim();
+  const cidade = String(b.cidade || 'Anápolis').trim();
+  const bairro = String(b.bairro || '').trim();
+  const metragem = Number(b.metragem) || 0;
+  const aluguelPedido = Number(b.aluguelPedido) || 0;
+
+  if (!ramo || !aluguelPedido) {
+    return res.status(400).json({ error: 'Informe o ramo e o aluguel que estão pedindo pelo ponto.' });
+  }
+
+  try {
+    const { analisarAluguel, formatarAluguel } = require('../data/viabilidadeAluguel');
+
+    // Aluguel comercial de MERCADO do bairro — dado apurado, nao estimativa.
+    // So faz sentido comparar se temos bairro e metragem.
+    let aluguelMercadoM2 = 0;
+    let fonteMercado = null;
+    if (bairro && metragem > 0) {
+      try {
+        const r = await calcularPreco({
+          tipo: 'comercial', finalidade: 'aluguel', cidade, bairro, metragem,
+          conservacao: String(b.conservacao || 'bom').trim().toLowerCase(),
+        });
+        if (r && !r.erro && r.precoM2Imovel > 0) {
+          aluguelMercadoM2 = r.precoM2Imovel;
+          fonteMercado = { confianca: r.analiseIA?.confianca || null, amostra: r.analiseIA?.anunciosAnalisados || 0 };
+        }
+      } catch (e) { console.warn('[Viabilidade] aluguel de mercado:', e.message); }
+    }
+
+    const conta = analisarAluguel({
+      ramo, metragem, aluguelPedido,
+      ticketMedio: Number(b.ticketMedio) || 0,
+      faturamentoAtual: Number(b.faturamentoAtual) || 0,
+      diasUteis: Number(b.diasUteis) || 0,
+      aluguelMercadoM2,
+    });
+    if (conta.erro) return res.status(422).json({ error: conta.erro });
+
+    res.json({
+      type: 'viabilidade-aluguel',
+      response: formatarAluguel(conta),
+      dados: { ramo, cidade, bairro, metragem },
+      resultado: { ...conta, fonteMercado },
+    });
+  } catch (err) {
+    console.error('[Viabilidade] erro:', err.message);
+    res.status(500).json({ error: 'Não consegui montar a conta do aluguel agora. Tente de novo.' });
+  }
+});
+
 router.post('/ponto-comercial', async (req, res) => {
   const b = req.body || {};
   const cidade = String(b.cidade || 'Anápolis').trim();
@@ -222,6 +282,54 @@ router.post('/ponto-comercial', async (req, res) => {
     try { perfilGuru = await perfilarLocal(cidade, bairro, lat, lng); } catch {}
 
     const analise = await analisarPontoComercial(lat, lng, ramo, { cidade, bairro, perfilGuru });
+
+    // Mapa fora do ar nao pode zerar a aba inteira. Concorrencia e fluxo sao o
+    // que falta — mas a conta que mais importa para nao quebrar (o aluguel cabe
+    // no faturamento?) nao depende de mapa nenhum, e as ruas principais o
+    // OpenStreetMap entrega de graca. Devolve o que da para sustentar, dizendo
+    // com todas as letras o que NAO foi medido.
+    if (analise.erro && analise.fonteIndisponivel) {
+      const partes = [];
+      let conta = null;
+      const aluguelPedido = Number(b.aluguelPedido) || 0;
+      if (aluguelPedido > 0) {
+        try {
+          const { analisarAluguel, formatarAluguel } = require('../data/viabilidadeAluguel');
+          let aluguelMercadoM2 = 0;
+          if (Number(b.metragem) > 0) {
+            const r = await calcularPreco({ tipo: 'comercial', finalidade: 'aluguel', cidade, bairro, metragem: Number(b.metragem) });
+            if (r && !r.erro && r.precoM2Imovel > 0) aluguelMercadoM2 = r.precoM2Imovel;
+          }
+          conta = analisarAluguel({
+            ramo, metragem: Number(b.metragem) || 0, aluguelPedido,
+            ticketMedio: Number(b.ticketMedio) || 0,
+            faturamentoAtual: Number(b.faturamentoAtual) || 0,
+            aluguelMercadoM2,
+          });
+          if (!conta.erro) partes.push(formatarAluguel(conta));
+        } catch (e) { console.warn('[PontoComercial] viabilidade sem mapa:', e.message); }
+      }
+
+      try {
+        const { buscarRuasPrincipais } = require('../data/osmApi');
+        const ruas = await buscarRuasPrincipais(lat, lng, 1500);
+        if (Array.isArray(ruas) && ruas.length) {
+          const nomes = ruas.map(r => r.nome || r.name).filter(Boolean).slice(0, 8);
+          if (nomes.length) partes.push(`🛣️ *Vias principais no entorno:*\n${nomes.map(n => `• ${n}`).join('\n')}\n_Fonte: OpenStreetMap._`);
+        }
+      } catch {}
+
+      const aviso = `⚠️ *Concorrência e fluxo NÃO foram medidos* — o mapa recusou a consulta. Sem isso não dou nota ao ponto: qualquer número aqui seria um zero de falha com cara de dado.` +
+        (partes.length ? `\n\nO que dá para responder mesmo assim:` : '');
+
+      if (!partes.length) return res.status(422).json({ error: analise.erro });
+      return res.json({
+        type: 'comercial',
+        parcial: true,
+        response: [aviso, ...partes].join('\n\n'),
+        analise: { semMapa: true, ramo, cidade, bairro, viabilidadeAluguel: conta },
+      });
+    }
     if (analise.erro) return res.status(422).json({ error: analise.erro });
 
     const texto = formatarRelatorioComercial(analise);
