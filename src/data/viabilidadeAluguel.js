@@ -166,6 +166,11 @@ function analisarAluguel(p = {}) {
   // ── Segundo eixo, este SEM estimativa: o aluguel está caro para o bairro? ──
   const mercadoM2 = Number(p.aluguelMercadoM2) || 0;
   if (mercadoM2 > 0 && metragem > 0) {
+    // A comparacao herda a qualidade da amostra que produziu o R$/m² do bairro.
+    // Cravar "216% acima" com 4 anuncios de confianca baixa e o mesmo vicio de
+    // afirmar sem base — o numero entra, mas declarando o que o sustenta.
+    const conf = p.confiancaMercado || null;
+    const amostra = Number(p.amostraMercado) || 0;
     const aluguelMercado = Math.round(mercadoM2 * metragem);
     const desvio = (aluguelPedido - aluguelMercado) / aluguelMercado;
     conta.mercado = {
@@ -174,6 +179,11 @@ function analisarAluguel(p = {}) {
       m2Mercado: Math.round(mercadoM2),
       desvioPct: Math.round(desvio * 100),
       veredito: desvio > 0.20 ? 'acima' : desvio < -0.20 ? 'abaixo' : 'na faixa',
+      confianca: conf,
+      amostra,
+      // Amostra fina nao invalida a comparacao, mas muda o que se pode dizer
+      // dela: vira indicio para conferir, nao veredito de preco.
+      firme: conf === 'alta' || amostra >= 8,
     };
   }
 
@@ -217,6 +227,9 @@ function formatarAluguel(c) {
     const m = c.mercado;
     const emoji = m.veredito === 'acima' ? '🔴' : m.veredito === 'abaixo' ? '🟢' : '🟡';
     t += `${emoji} *O preço do ponto:* pedem ${brl(m.m2Pedido)}/m², e o aluguel comercial do bairro está em ${brl(m.m2Mercado)}/m².\n`;
+    if (!m.firme) {
+      t += `_Atenção: esse R$/m² do bairro saiu de ${m.amostra || 'poucos'} anúncio(s) (confiança ${m.confianca || 'baixa'}) — use como indício para conferir, não como preço fechado._\n`;
+    }
     if (m.veredito === 'acima')  t += `Está *${m.desvioPct}% acima* do bairro — há espaço real para negociar (o mercado diz ${brl(m.aluguelMercado)}).\n`;
     if (m.veredito === 'abaixo') t += `Está *${Math.abs(m.desvioPct)}% abaixo* do bairro — preço bom; entenda por quê antes de fechar (localização, estado, restrição de uso).\n`;
     if (m.veredito === 'na faixa') t += `Está na faixa do bairro — o preço é justo; a decisão é se o faturamento acima é alcançável.\n`;

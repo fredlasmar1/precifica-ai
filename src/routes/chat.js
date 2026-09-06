@@ -238,6 +238,8 @@ router.post('/viabilidade-aluguel', async (req, res) => {
       faturamentoAtual: Number(b.faturamentoAtual) || 0,
       diasUteis: Number(b.diasUteis) || 0,
       aluguelMercadoM2,
+      confiancaMercado: fonteMercado?.confianca,
+      amostraMercado: fonteMercado?.amostra,
     });
     if (conta.erro) return res.status(422).json({ error: conta.erro });
 
@@ -295,16 +297,20 @@ router.post('/ponto-comercial', async (req, res) => {
       if (aluguelPedido > 0) {
         try {
           const { analisarAluguel, formatarAluguel } = require('../data/viabilidadeAluguel');
-          let aluguelMercadoM2 = 0;
+          let aluguelMercadoM2 = 0, confMercado = null, amoMercado = 0;
           if (Number(b.metragem) > 0) {
             const r = await calcularPreco({ tipo: 'comercial', finalidade: 'aluguel', cidade, bairro, metragem: Number(b.metragem) });
-            if (r && !r.erro && r.precoM2Imovel > 0) aluguelMercadoM2 = r.precoM2Imovel;
+            if (r && !r.erro && r.precoM2Imovel > 0) {
+              aluguelMercadoM2 = r.precoM2Imovel;
+              confMercado = r.analiseIA?.confianca || null;
+              amoMercado = r.analiseIA?.anunciosAnalisados || 0;
+            }
           }
           conta = analisarAluguel({
             ramo, metragem: Number(b.metragem) || 0, aluguelPedido,
             ticketMedio: Number(b.ticketMedio) || 0,
             faturamentoAtual: Number(b.faturamentoAtual) || 0,
-            aluguelMercadoM2,
+            aluguelMercadoM2, confiancaMercado: confMercado, amostraMercado: amoMercado,
           });
           if (!conta.erro) partes.push(formatarAluguel(conta));
         } catch (e) { console.warn('[PontoComercial] viabilidade sem mapa:', e.message); }
