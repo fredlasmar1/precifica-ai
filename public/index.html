@@ -659,11 +659,34 @@
             <label>Endereço / rua <span class="opt">(opcional, deixa a análise mais precisa)</span></label>
             <input id="p-endereco" placeholder="Ex: Av. Brasil, 1000" />
           </div>
+
+          <div class="field full">
+            <label>💸 O aluguel cabe no negócio? <span class="opt">— responde mesmo sem o mapa</span></label>
+          </div>
+          <div class="row">
+            <div class="field">
+              <label>Aluguel pedido (R$/mês)</label>
+              <input id="p-aluguel" type="number" min="0" placeholder="Ex: 8000" />
+            </div>
+            <div class="field">
+              <label>Metragem (m²)</label>
+              <input id="p-metragem" type="number" min="0" placeholder="Ex: 120" />
+            </div>
+            <div class="field">
+              <label>Ticket médio (R$)</label>
+              <input id="p-ticket" type="number" min="0" placeholder="Ex: 60" />
+            </div>
+          </div>
+          <div class="field full">
+            <label>Faturamento atual (R$/mês) <span class="opt">(opcional — se já tem o negócio e está trocando de ponto)</span></label>
+            <input id="p-faturamento" type="number" min="0" placeholder="Ex: 70000" />
+          </div>
+
           <button class="btn-primary" id="btn-ponto" type="submit">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 21l-4.35-4.35"/><circle cx="11" cy="11" r="7"/></svg>
             Analisar ponto comercial
           </button>
-          <div class="hint">Mostra concorrentes reais, fluxo de pessoas e veredito do ponto.</div>
+          <div class="hint">Concorrentes, fluxo e veredito do ponto — e, com o aluguel preenchido, quanto você precisa faturar para esse contrato caber.</div>
         </form>
       </div>
 
@@ -1669,7 +1692,13 @@
         ramo: document.getElementById('p-ramo').value.trim(),
         cidade: document.getElementById('p-cidade').value.trim(),
         bairro: document.getElementById('p-bairro').value.trim(),
-        endereco: document.getElementById('p-endereco').value.trim()
+        endereco: document.getElementById('p-endereco').value.trim(),
+        // A conta do aluguel nao depende de mapa: vai junto e responde mesmo
+        // quando o Google recusa a consulta de concorrencia.
+        aluguelPedido: Number(document.getElementById('p-aluguel').value) || 0,
+        metragem: Number(document.getElementById('p-metragem').value) || 0,
+        ticketMedio: Number(document.getElementById('p-ticket').value) || 0,
+        faturamentoAtual: Number(document.getElementById('p-faturamento').value) || 0
       };
       if (!payload.ramo || !payload.bairro) {
         showError('Preencha o *ramo do cliente* e o *bairro*.');
