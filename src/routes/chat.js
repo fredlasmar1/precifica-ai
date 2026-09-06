@@ -194,6 +194,72 @@ router.post('/avaliar', async (req, res) => {
  * concorrência, geradores de movimento e demanda → veredito de ponto comercial.
  */
 /**
+ * PONTOS VAGOS — o negocio que morreu deixou um imovel disponivel.
+ *
+ * Alimentado de graca por toda varredura de ponto comercial: o Google devolve
+ * business_status CLOSED_PERMANENTLY e o codigo jogava fora. Chegar no
+ * proprietario antes de ele anunciar e o jogo inteiro.
+ */
+router.get('/pontos-vagos', async (req, res) => {
+  try {
+    const db = require('../data/database');
+    const linhas = await db.buscarPontosVagos({
+      cidade: req.query.cidade || null,
+      bairro: req.query.bairro || null,
+      dias: Number(req.query.dias) || 180,
+      incluirContatados: req.query.todos === '1',
+    });
+    const texto = linhas.length
+      ? `📍 *${linhas.length} PONTO(S) QUE VAGARAM*\n\n` + linhas.map((p) => {
+          const d = new Date(p.visto_fechado_em).toLocaleDateString('pt-BR');
+          return `• *${p.nome || 'sem nome'}* — ${(p.ramo || '').split(',')[0] || 'ramo n/d'}\n  ${p.endereco || 'endereço n/d'}${p.bairro ? ' · ' + p.bairro : ''}\n  visto fechado em ${d}`;
+        }).join('\n')
+      : 'Nenhum ponto vago registrado ainda. A lista se enche sozinha a cada análise de ponto comercial — cada varredura do bairro devolve quem fechou por perto.';
+    res.json({ type: 'pontos-vagos', response: texto, total: linhas.length, pontos: linhas });
+  } catch (err) {
+    console.error('[PontosVagos] erro:', err.message);
+    res.status(500).json({ error: 'Não consegui listar os pontos vagos agora.' });
+  }
+});
+
+/** Bateu na porta: some da fila. */
+router.post('/pontos-vagos/contatado', async (req, res) => {
+  const placeId = String(req.body?.placeId || '').trim();
+  if (!placeId) return res.status(400).json({ error: 'informe o placeId' });
+  try {
+    const db = require('../data/database');
+    const r = await db.marcarPontoContatado(placeId, req.body?.observacao);
+    if (!r) return res.status(404).json({ error: 'ponto não encontrado' });
+    res.json({ ok: true, ponto: r });
+  } catch (err) {
+    res.status(500).json({ error: 'não consegui marcar' });
+  }
+});
+
+/**
+ * ROTATIVIDADE DO ENDERECO — quantos negocios ja morreram nesse ponto.
+ * O argumento que fecha contrato de administracao com o proprietario.
+ */
+router.post('/rotatividade', async (req, res) => {
+  const b = req.body || {};
+  const logradouro = String(b.logradouro || b.endereco || '').trim();
+  if (!logradouro) return res.status(400).json({ error: 'Informe a rua/avenida do ponto.' });
+  try {
+    const { rotatividadeEndereco, formatarRotatividade } = require('../data/rotatividade');
+    const r = await rotatividadeEndereco({
+      logradouro,
+      numero: String(b.numero || '').trim(),
+      cidade: String(b.cidade || 'Anápolis').trim(),
+    });
+    if (r.erro) return res.status(422).json({ error: r.erro });
+    res.json({ type: 'rotatividade', response: formatarRotatividade(r), resultado: r });
+  } catch (err) {
+    console.error('[Rotatividade] erro:', err.message);
+    res.status(500).json({ error: 'Não consegui levantar a rotatividade agora.' });
+  }
+});
+
+/**
  * POR QUANTO FECHOU — o laco que faz o sistema aprender.
  *
  * Toda fonte do motor e preco PEDIDO. Esta e a unica que registra o preco PAGO,

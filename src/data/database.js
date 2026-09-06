@@ -176,6 +176,32 @@ async function inicializar() {
     `);
     await pool.query(`CREATE INDEX IF NOT EXISTS fechamentos_busca ON fechamentos (cidade, bairro, tipo, finalidade, criado_em DESC)`);
 
+    // ─── pontos_fechados: o negócio que morreu = o ponto que vagou ────────────
+    // O Google devolve business_status CLOSED_PERMANENTLY em toda varredura, e o
+    // código jogava fora nas duas linhas que contam concorrente (para não sujar
+    // a contagem). Só que negócio fechado é PONTO VAGO — e ponto vago é um
+    // proprietário que ainda não procurou corretor. Chegar antes do anúncio é o
+    // jogo inteiro.
+    //
+    // O dado é subproduto gratuito de consultas que já são pagas: toda análise
+    // de ponto comercial varre o entorno de qualquer jeito.
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS pontos_fechados (
+        place_id VARCHAR(200) PRIMARY KEY,
+        nome TEXT,
+        ramo TEXT,                            -- tipos do Google, separados por ,
+        endereco TEXT,
+        lat NUMERIC, lng NUMERIC,
+        cidade VARCHAR(100),
+        bairro VARCHAR(100),
+        visto_fechado_em TIMESTAMP DEFAULT NOW(),   -- 1ª vez que vimos fechado
+        ultima_verificacao TIMESTAMP DEFAULT NOW(),
+        contatado BOOLEAN DEFAULT FALSE,            -- o corretor já bateu na porta
+        observacao TEXT
+      );
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS pontos_fechados_busca ON pontos_fechados (cidade, bairro, visto_fechado_em DESC)`);
+
     // ─── precos_mercado: coluna `condominio` (correção de schema) ─────────────
     // A coluna foi adicionada ao CREATE TABLE acima DEPOIS que a tabela já
     // existia em produção — e CREATE TABLE IF NOT EXISTS não altera tabela
@@ -405,6 +431,55 @@ async function salvarFeedback(dados) {
   return result.rows[0];
 }
 
+// ─── Pontos que vagaram (negócio fechado = imóvel disponível) ────
+
+/**
+ * Registra os pontos vistos FECHADOS numa varredura. Upsert por place_id:
+ * a primeira data em que vimos fechado é a que vale (aproxima a data em que
+ * vagou); as visitas seguintes só atualizam a verificação.
+ */
+async function registrarPontosFechados(lista = [], ctx = {}) {
+  if (!Array.isArray(lista) || !lista.length) return 0;
+  let n = 0;
+  for (const p of lista) {
+    if (!p || !p.place_id) continue;
+    try {
+      await pool.query(`
+        INSERT INTO pontos_fechados (place_id, nome, ramo, endereco, lat, lng, cidade, bairro)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+        ON CONFLICT (place_id) DO UPDATE SET ultima_verificacao = NOW()
+      `, [p.place_id, p.name || null, Array.isArray(p.types) ? p.types.slice(0, 6).join(',') : null,
+          p.vicinity || p.formatted_address || null,
+          p.geometry?.location?.lat ?? null, p.geometry?.location?.lng ?? null,
+          ctx.cidade || null, ctx.bairro || null]);
+      n++;
+    } catch (e) { /* um ponto não pode derrubar a varredura */ }
+  }
+  return n;
+}
+
+/** Pontos vagos: o que vimos fechar, mais recente primeiro. */
+async function buscarPontosVagos({ cidade = null, bairro = null, dias = 180, incluirContatados = false } = {}) {
+  const r = await pool.query(`
+    SELECT * FROM pontos_fechados
+     WHERE ($1::text IS NULL OR LOWER(cidade) = LOWER($1))
+       AND ($2::text IS NULL OR LOWER(bairro) = LOWER($2))
+       AND visto_fechado_em > NOW() - ($3 || ' days')::INTERVAL
+       AND ($4::boolean OR contatado = FALSE)
+     ORDER BY visto_fechado_em DESC
+     LIMIT 200
+  `, [cidade, bairro, String(dias), incluirContatados]);
+  return r.rows;
+}
+
+/** Marca que o corretor já bateu na porta (some da fila). */
+async function marcarPontoContatado(placeId, observacao = null) {
+  const r = await pool.query(
+    `UPDATE pontos_fechados SET contatado = TRUE, observacao = COALESCE($2, observacao) WHERE place_id = $1 RETURNING *`,
+    [placeId, observacao]);
+  return r.rows[0] || null;
+}
+
 // ─── Operações de Fechamento (o que REALMENTE foi pago) ──────────
 
 async function salvarFechamento(d) {
@@ -549,6 +624,7 @@ async function apagarLaudo(id) {
 
 module.exports = {
   salvarFechamento, buscarFechamentos, placarFechamentos, apagarFechamento,
+  registrarPontosFechados, buscarPontosVagos, marcarPontoContatado,
   pool, inicializar,
   salvarBairro, buscarBairro, listarBairros,
   salvarPreco, buscarPreco, invalidarPreco, salvarHistorico, buscarHistorico,

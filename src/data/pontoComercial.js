@@ -50,7 +50,13 @@ async function placesNearby({ lat, lng, keyword, radius }) {
       console.warn(`[Places] status ${data.status} p/ "${keyword}" — fonte INDISPONIVEL`);
       return { erro: data.status, indisponivel: true, results: [] };
     }
-    return { results: data.results || [], capado: (data.results || []).length >= 20 };
+    // Separa em vez de descartar: `results` continua sendo só quem está ABERTO
+    // (a contagem de concorrente não pode inflar), mas o que fechou vira sinal
+    // de PONTO VAGO em vez de ir para o lixo.
+    const todos = data.results || [];
+    const fechados = todos.filter((x) => x.business_status === 'CLOSED_PERMANENTLY');
+    const abertos = todos.filter((x) => x.business_status !== 'CLOSED_PERMANENTLY');
+    return { results: abertos, fechados, capado: abertos.length >= 20 };
   } catch (err) {
     console.warn('[Places] erro:', err.message);
     return { erro: err.message, indisponivel: true, results: [] };
@@ -65,6 +71,7 @@ async function placesCountExato({ lat, lng, keyword, radius, maxPages = 3 }) {
   const apiKey = process.env.GOOGLE_PLACES_API_KEY;
   if (!apiKey) return { total: 0, results: [], capou: false, indisponivel: true };
   let results = [];
+  let fechados = [];        // negócios mortos = pontos que vagaram
   let pageToken = null;
   let pages = 0;
   try {
@@ -78,17 +85,19 @@ async function placesCountExato({ lat, lng, keyword, radius, maxPages = 3 }) {
         console.warn(`[PlacesCount] status ${data.status} p/ "${keyword}" — fonte INDISPONIVEL`);
         return { total: 0, results: [], capou: false, indisponivel: true };
       }
-      const r = (data.results || []).filter((x) => x.business_status !== 'CLOSED_PERMANENTLY');
+      const pagina = data.results || [];
+      fechados = fechados.concat(pagina.filter((x) => x.business_status === 'CLOSED_PERMANENTLY'));
+      const r = pagina.filter((x) => x.business_status !== 'CLOSED_PERMANENTLY');
       results = results.concat(r);
       pageToken = data.next_page_token || null;
       pages++;
       if (!pageToken || pages >= maxPages) break;
       await new Promise((res) => setTimeout(res, 2100)); // token leva ~2s p/ ativar
     }
-    return { total: results.length, results, capou: !!pageToken };
+    return { total: results.length, results, fechados, capou: !!pageToken };
   } catch (e) {
     console.warn('[PlacesCount] erro:', e.message);
-    return { total: results.length, results, capou: false, indisponivel: results.length === 0 };
+    return { total: results.length, results, fechados, capou: false, indisponivel: results.length === 0 };
   }
 }
 
@@ -228,7 +237,7 @@ async function analisarPontoComercial(lat, lng, ramo, ctx = {}) {
   // 2) Geradores de movimento (500m)
   const geradoresRes = await Promise.all(
     GERADORES.map(g => placesNearby({ lat, lng, keyword: g.keyword, radius: 500 })
-      .then(r => ({ ...g, qtd: r.indisponivel ? null : resumirConcorrentes(r.results).total, capado: r.capado, indisponivel: !!r.indisponivel })))
+      .then(r => ({ ...g, qtd: r.indisponivel ? null : resumirConcorrentes(r.results).total, capado: r.capado, indisponivel: !!r.indisponivel, fechados: r.fechados || [] })))
   );
   const movimentoScore = geradoresRes.reduce((acc, g) => acc + Math.min(g.qtd || 0, 8) * g.peso, 0);
 
@@ -246,6 +255,21 @@ async function analisarPontoComercial(lat, lng, ramo, ctx = {}) {
       bairro: ctx.bairro || null,
     };
   }
+
+  // ─── SUBPRODUTO: o que morreu aqui virou ponto vago ──────────────
+  // Não custa consulta nova: a varredura de concorrência e de geradores já
+  // trouxe esses registros. Antes iam para o lixo.
+  try {
+    const mortos = [
+      ...(c500.fechados || []),
+      ...(c1k.fechados || []),
+      ...geradoresRes.flatMap(g => g.fechados || []),
+    ];
+    if (mortos.length) {
+      const n = await require('./database').registrarPontosFechados(mortos, { cidade: ctx.cidade, bairro: ctx.bairro });
+      if (n) console.log(`[PontosVagos] ${ctx.bairro || ''}: ${n} ponto(s) fechado(s) registrado(s) na varredura`);
+    }
+  } catch (e) { console.warn('[PontosVagos] erro ao registrar:', e.message); }
 
   // 3) Demanda (IBGE via perfilGuru, se veio)
   const mun = ctx.perfilGuru?.municipio || null;
