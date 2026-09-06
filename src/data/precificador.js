@@ -133,16 +133,29 @@ async function calcularPreco(dadosImovel) {
       // pulava a limpeza — o conserto ficava invisivel ate o cache vencer.
       if (analiseIA && Array.isArray(analiseIA.comparativos) && analiseIA.comparativos.length >= 2) {
         try {
-          const { filtrarComparativosPorBairro } = require('./analistaIA');
+          const { filtrarComparativosPorBairro, confiancaPorAmostra, maisConservadora } = require('./analistaIA');
           const limpo = filtrarComparativosPorBairro(analiseIA, bairro, cidade);
-          if (limpo && limpo.precoMedioM2 > 0 && limpo.precoMedioM2 !== analiseIA.precoMedioM2) {
-            console.log(`[Precificador] Cache re-filtrado: R$ ${analiseIA.precoMedioM2}/m² → R$ ${limpo.precoMedioM2}/m² (${analiseIA.anunciosAnalisados} → ${limpo.anunciosAnalisados} anúncios)`);
+          if (limpo && limpo.precoMedioM2 > 0) {
+            if (limpo.precoMedioM2 !== analiseIA.precoMedioM2) {
+              console.log(`[Precificador] Cache re-filtrado: R$ ${analiseIA.precoMedioM2}/m² -> R$ ${limpo.precoMedioM2}/m² (${analiseIA.anunciosAnalisados} -> ${limpo.anunciosAnalisados} anuncios)`);
+              precoM2Base = limpo.precoMedioM2;
+              // A linha do banco esta suja: apaga para a proxima consulta
+              // refazer a busca ja com o filtro em pe.
+              try { await db.invalidarPreco(cidade, bairro, tipo, finalidade, condominio); } catch {}
+            }
             analiseIA = limpo;
-            precoM2Base = limpo.precoMedioM2;
-            confiancaFonte = limpo.confianca || confiancaFonte;
-            // A linha do banco esta suja: apaga para a proxima consulta refazer
-            // a busca ja com o filtro em pe.
-            try { await db.invalidarPreco(cidade, bairro, tipo, finalidade, condominio); } catch {}
+          }
+          // A regra de confianca vale SEMPRE neste caminho, mude o preco ou
+          // nao: a linha gravada no banco carrega a confianca da versao ANTIGA
+          // do motor (5 anuncios ja era "alta") e entrava crua no laudo.
+          const antesConf = confiancaFonte;
+          confiancaFonte = maisConservadora(
+            confiancaPorAmostra(analiseIA.anunciosAnalisados || 0),
+            maisConservadora(analiseIA.confianca, confiancaFonte)
+          );
+          analiseIA.confianca = confiancaFonte;
+          if (antesConf !== confiancaFonte) {
+            console.log(`[Precificador] Cache: confianca "${antesConf}" -> "${confiancaFonte}" (${analiseIA.anunciosAnalisados} anuncios)`);
           }
         } catch (e) { console.warn('[Precificador] re-filtro do cache:', e.message); }
       }
