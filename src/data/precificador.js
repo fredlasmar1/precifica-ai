@@ -313,51 +313,54 @@ async function calcularPreco(dadosImovel) {
     } catch (e) { console.warn('[Predio] integração:', e.message); }
   }
 
-  // ─── ÂNCORA DE CALIBRAÇÃO (EBM/Aderni-GO) ───────────────────────
-  // Mantém o preço dentro da realidade do bairro. A amostra de mercado manda
-  // quando é robusta; quando é fraca, fabricada ou destoa, puxa para a âncora.
+  // ─── GRADE DE SANIDADE (EBM/Aderni-GO) ──────────────────────────
+  // A AMOSTRA DE MERCADO MANDA. A base do bairro nunca define o preço — ela só
+  // barra o absurdo, numa banda larga de ±50%.
+  //
+  // Decisão do dono em 06/09/2026, depois da medição: a base dizia R$ 8.500/m²
+  // para apto no Jundiaí enquanto os anúncios reais do bairro diziam R$ 3.438,
+  // R$ 5.833 e R$ 6.802/m². O blend antigo entregava o volante para a tabela
+  // justamente quando a amostra era pequena — e uma tabela de referência não
+  // pode sobrepor o que o mercado está pedindo hoje. Amostra fina agora se
+  // resolve dizendo que é fina, não trocando o número por um de tabela.
   let notaCalibracao = null;
   let ancoraInfo = null;
   try {
-    // A âncora EBM/PGV é de imóvel URBANO (R$/m² construído/terreno). NÃO pode
-    // calibrar RURAL (R$/m² de terra, ~R$8-12) — senão o valor estoura (blend
-    // com base urbana de ~R$4.000/m²). Rural usa só mercado + base rural própria.
+    // A base EBM/PGV é de imóvel URBANO (R$/m² construído/terreno). NÃO serve
+    // para RURAL (R$/m² de terra, ~R$8-12) — a banda urbana estouraria o valor.
     const ancora = tipo === 'rural' ? null : getAncora(tipo, finalidade, cidade, bairro);
     if (ancora && ancora.m2 > 0) {
       ancoraInfo = ancora;
       const amostras = analiseIA?.anunciosAnalisados || comparativos?.totalEncontrados || 0;
       const mercadoBruto = precoM2Base;
-      const dadosReaisFortes = confiancaFonte === 'alta' && amostras >= 10;
 
-      let ancorado, wMercado = null;
-      if (dadosReaisFortes) {
-        // Muitos anúncios REAIS verificados → confia no mercado; a âncora só
-        // evita absurdo (banda larga ±50/60%), não puxa o valor.
-        const piso = Math.round(ancora.m2 * 0.5);
-        const teto = Math.round(ancora.m2 * 1.6);
-        ancorado = Math.max(piso, Math.min(teto, mercadoBruto));
+      if (amostras === 0) {
+        // Sem NENHUM anúncio no período não existe mercado para mandar: aí a
+        // base do bairro é o melhor palpite que temos — e o laudo diz isso.
+        precoM2Base = ancora.m2;
+        notaCalibracao = `Nenhum anúncio encontrado em ${bairro} no período — valor pela base do bairro (${ancora.fonte}). Trate como referência, não como avaliação de mercado.`;
+        console.log(`[Grade] ${tipo}/${finalidade} ${bairro}: 0 amostras → base R$${ancora.m2}/m²`);
       } else {
-        // Dado fraco/fabricado → blend ponderado, banda estreita ±40%.
-        if (confiancaFonte === 'baixa')  wMercado = 0.25;
-        else if (amostras >= 5)          wMercado = 0.70;
-        else if (amostras >= 3)          wMercado = 0.55;
-        else                             wMercado = 0.40;
-        const combinado = Math.round(wMercado * mercadoBruto + (1 - wMercado) * ancora.m2);
-        const piso = Math.round(ancora.m2 * 0.6);
-        const teto = Math.round(ancora.m2 * 1.4);
-        ancorado = Math.max(piso, Math.min(teto, combinado));
-      }
-      const desvio = Math.abs(mercadoBruto - ancora.m2) / ancora.m2;
-
-      if (ancorado !== mercadoBruto) {
-        console.log(`[Ancora] ${tipo}/${finalidade} ${bairro}: mercado R$${mercadoBruto} × base R$${ancora.m2} (${ancora.fonte}, w=${wMercado}, ${amostras} amostras) → R$${ancorado}`);
-        precoM2Base = ancorado;
-        notaCalibracao = desvio > 0.30
-          ? `Calibrado pela base do bairro (R$ ${ancora.m2.toLocaleString('pt-BR')}/m² · ${ancora.fonte}) — amostra de mercado indicava R$ ${mercadoBruto.toLocaleString('pt-BR')}/m²`
-          : `Ajustado com a base do bairro (${ancora.fonte})`;
+        const piso = Math.round(ancora.m2 * 0.5);
+        const teto = Math.round(ancora.m2 * 1.5);
+        const limitado = Math.max(piso, Math.min(teto, mercadoBruto));
+        if (limitado !== mercadoBruto) {
+          // Só chega aqui quem passou de 50% de distância da base: é sinal de
+          // amostra contaminada, não de bairro caro.
+          precoM2Base = limitado;
+          notaCalibracao = `Amostra de mercado indicava R$ ${mercadoBruto.toLocaleString('pt-BR')}/m², fora da grade de sanidade do bairro (R$ ${piso.toLocaleString('pt-BR')} a R$ ${teto.toLocaleString('pt-BR')}/m² · ${ancora.fonte}) — limitado a R$ ${limitado.toLocaleString('pt-BR')}/m².`;
+          console.warn(`[Grade] ${tipo}/${finalidade} ${bairro}: mercado R$${mercadoBruto} fora da banda [${piso}, ${teto}] (base R$${ancora.m2}, ${amostras} amostras) → R$${limitado}`);
+        } else {
+          console.log(`[Grade] ${tipo}/${finalidade} ${bairro}: mercado R$${mercadoBruto}/m² dentro da banda [${piso}, ${teto}] — mantido (${amostras} amostras)`);
+        }
       }
     }
-  } catch (e) { console.warn('[Ancora] erro:', e.message); }
+  } catch (e) { console.warn('[Grade] erro:', e.message); }
+
+  // A honestidade sobre o tamanho da amostra vem do filtro de bairro e vai
+  // INTEIRA para o laudo — antes uma amostra de 3 anúncios era disfarçada pelo
+  // blend com a tabela e o corretor não tinha como saber.
+  const notaAmostra = analiseIA?.notaAmostra || null;
 
   const precoM2Mercado = precoM2Base;
 
@@ -366,6 +369,7 @@ async function calcularPreco(dadosImovel) {
   let precoM2Final = precoM2Base;
   let ajustesDescricao = ['Preço baseado em amostragem de mercado'];
   if (notaPredio) ajustesDescricao.unshift(notaPredio);
+  if (notaAmostra) ajustesDescricao.push(notaAmostra);
   if (notaCalibracao) ajustesDescricao.push(notaCalibracao);
 
 
