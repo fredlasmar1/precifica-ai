@@ -1250,9 +1250,23 @@ router.get('/uso', async (req, res) => {
   } catch (e) { out.scraperapi = { erro: e.message }; }
   try {
     const usados = await require('../data/database').obterUso('google_places');
-    const cotaGratis = 6250; // US$200 / US$0,032 por busca
-    out.google = { usados, cotaGratis, pct: Math.round((usados / cotaGratis) * 100) };
-    if (usados >= cotaGratis * 0.85) out.alertas.push(`Google Maps: ${usados} buscas (${out.google.pct}% da cota grátis)`);
+    // ⚠️ O credito de US$200/mes do Maps Platform ACABOU (Google encerrou em
+    // mar/2025 e trocou por cota gratuita por SKU). O painel dizia "3% da cota
+    // mensal" com base nesses US$200 que nao existem mais — falsa seguranca
+    // exatamente onde o custo mora: a fatura de ago/2026 foi R$ 1.411.
+    //
+    // Nao da para afirmar a cota atual sem ler o console, entao o painel para
+    // de prometer cota e passa a mostrar o que ele SABE: quantas chamadas ESTE
+    // app fez e o custo estimado delas.
+    const USD_POR_BUSCA = 0.032;   // Nearby Search (legado), ordem de grandeza
+    const USD_BRL = 5.4;
+    const custoEstimadoBRL = Math.round(usados * USD_POR_BUSCA * USD_BRL * 100) / 100;
+    out.google = {
+      usados,
+      custoEstimadoBRL,
+      nota: 'Chamadas feitas por ESTE app. O crédito de US$200/mês do Maps acabou em 2025 — confira a cota e a fatura reais no console do Google Cloud.',
+    };
+    if (usados >= 3000) out.alertas.push(`Google Maps: ${usados} buscas deste app (~R$ ${custoEstimadoBRL}). Confira a fatura no console.`);
   } catch (e) { out.google = { erro: e.message }; }
   res.json(out);
 });
