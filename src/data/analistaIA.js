@@ -182,12 +182,6 @@ function filtrarRelevanciaApartamento(resultado, metragemRef, quartosRef, tipo =
 }
 
 /**
- * Filtra comparativos cujo bairro informado tem padrão de preço incompatível
- * com o bairro avaliado. Usa BAIRROS (bairros.js) para verificar multiplicador.
- * Remove bairros cujo mult difere mais de 0.25 do bairro avaliado.
- * Nunca deixa o resultado vazio — se todos forem filtrados, mantm original.
- */
-/**
  * Filtra comparativos comerciais por relevância:
  * - Metragem dentro de ±50% do imóvel avaliado (mais restritivo que apto pq sub-tipos
  *   misturados destroem o preço/m²)
@@ -252,45 +246,133 @@ function filtrarRelevanciaComercial(resultado, metragemRef) {
   }
 }
 
-function filtrarComparativosPorBairro(resultado, bairroRef) {
+/**
+ * FILTRO DE BAIRRO — impede que a amostra de um bairro contamine a de outro.
+ *
+ * O precificador manda de propósito os bairros vizinhos para a Perplexity, para
+ * garantir amostra. O erro estava em somar tudo com peso igual: 6 anúncios do
+ * Eldorado (mult 0.98) puxavam um apartamento do Jundiaí (mult 1.65) de
+ * R$ 5.358/m² para R$ 4.781/m².
+ *
+ * ⚠️ Esta função existia e NUNCA rodou: lia `BAIRROS[bairro]`, mas BAIRROS é
+ * indexado por CIDADE primeiro (BAIRROS.anapolis.jundiaí). `multRef` saía
+ * undefined e o `return` de saída devolvia a amostra intacta em toda avaliação
+ * desde que foi escrita — não há uma linha de [FiltroBairro] no log histórico.
+ * Agora usa getMultiplicadorBairro(cidade, bairro), que resolve acento, match
+ * parcial ("Conjunto Eldorado" → eldorado) e a trava de homônimo.
+ *
+ * Política:
+ *  1. Anúncio de ÁGIO nunca entra — ágio é a parte já paga do financiamento,
+ *     não o valor do imóvel (um 50m² por R$ 111 mil virava piso da faixa).
+ *  2. Patamar distante demais (diff > 0.55) é descartado: nenhuma correção
+ *     honesta liga Vila Góis (0.82) a Alphaville (1.80).
+ *  3. Com 4+ anúncios do próprio patamar, usa SÓ eles — amostra pura.
+ *  4. Com menos, os vizinhos entram NORMALIZADOS pelo multiplicador, com teto
+ *     de ±30% (a tabela de mult é referência, não verdade), a confiança cai um
+ *     degrau e a nota vai para o laudo.
+ *  5. Nunca esvazia: sobrando menos de 2, devolve a amostra original marcada
+ *     com confiança 'baixa'.
+ */
+function filtrarComparativosPorBairro(resultado, bairroRef, cidadeRef = 'Anápolis') {
   if (!resultado?.comparativos || resultado.comparativos.length < 2) return resultado;
-  const { BAIRROS } = require('./bairros');
-  const bairroKey = (bairroRef || '').toLowerCase().trim();
-  const multRef = BAIRROS[bairroKey]?.mult;
-  if (!multRef) return resultado; // bairro desconhecido, não filtra
+  const { getMultiplicadorBairro } = require('./bairros');
+
+  const ref = getMultiplicadorBairro(cidadeRef, bairroRef || '');
+  const multRef = ref.conhecido ? ref.mult : null;
+
+  // \b nao casa antes de "A" acentuado: normaliza o texto antes de testar.
+  const AGIO = /\bagio\b|saldo devedor|assumir (o )?financiamento|transferencia de financiamento/i;
+  const semAcento = (t) => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const TETO_CORRECAO = 0.30;
 
   const descartados = [];
-  const filtrados = resultado.comparativos.filter(c => {
-    // Se o comparativo não tem campo bairro, mantém
-    const bComp = (c.bairro || '').toLowerCase().trim();
-    if (!bComp) return true;
-    const multComp = BAIRROS[bComp]?.mult;
-    if (!multComp) return true; // bairro desconhecido, não descarta
-    const diff = Math.abs(multComp - multRef);
-    if (diff > 0.25) {
-      descartados.push(`${bComp} (mult=${multComp} vs ref=${multRef}, diff=${diff.toFixed(2)})`);
-      return false;
-    }
-    return true;
-  });
+  const proprios = [];   // mesmo patamar de preço do bairro avaliado
+  const vizinhos = [];   // patamar diferente, mas corrigível
 
-  if (descartados.length > 0) {
-    console.log(`[FiltroBairro] Descartados por padrão diferente: ${descartados.join('; ')}`);
+  for (const c of resultado.comparativos) {
+    if (AGIO.test(semAcento(`${c.detalhe || ''} ${c.fonte || ''} ${c.titulo || ''}`))) {
+      descartados.push(`ÁGIO: ${c.bairro || '?'} R$${Math.round(c.precoM2 || 0)}/m²`);
+      continue;
+    }
+    const bComp = (c.bairro || '').trim();
+    // Sem bairro no anúncio, ou bairro-alvo fora do mapa: não há como julgar.
+    if (!bComp || !multRef) { proprios.push(c); continue; }
+    const m = getMultiplicadorBairro(cidadeRef, bComp);
+    if (!m.conhecido) { proprios.push(c); continue; }
+
+    const diff = Math.abs(m.mult - multRef);
+    if (diff <= 0.10) { proprios.push(c); continue; }
+    if (diff > 0.55) {
+      descartados.push(`${bComp} (patamar ${m.mult} vs ${multRef})`);
+      continue;
+    }
+    vizinhos.push({ ...c, _mult: m.mult });
   }
 
-  // Só aplica se sobrar pelo menos 2 (evita esvaziar resultado)
-  if (filtrados.length < 2) return resultado;
+  let usados;
+  let notaAmostra = null;
+  let confianca = resultado.confianca;
 
-  const precosValidos = filtrados.map(c => c.precoM2).filter(p => p > 0);
-  if (precosValidos.length === 0) return resultado;
-  const soma = precosValidos.reduce((a, b) => a + b, 0);
+  if (proprios.length >= 4) {
+    usados = proprios;
+    if (vizinhos.length || descartados.length) {
+      notaAmostra = `${proprios.length} anúncios do próprio padrão de ${bairroRef}; ${vizinhos.length + descartados.length} de outro patamar ficaram de fora.`;
+    }
+  } else if (proprios.length + vizinhos.length >= 2) {
+    const corrigidos = vizinhos.map(c => {
+      const fator = Math.max(1 - TETO_CORRECAO, Math.min(1 + TETO_CORRECAO, multRef / c._mult));
+      const bruto = Number(c.precoM2) || 0;
+      const pct = Math.round((fator - 1) * 100);
+      return {
+        ...c,
+        precoM2: Math.round(bruto * fator),
+        precoM2Bruto: bruto,
+        ajusteBairro: `${c.bairro} → ${bairroRef} (${pct >= 0 ? '+' : ''}${pct}%)`,
+      };
+    });
+    usados = [...proprios, ...corrigidos];
+    if (corrigidos.length) {
+      confianca = confianca === 'alta' ? 'media' : 'baixa';
+      notaAmostra = `Só ${proprios.length} anúncio(s) do próprio padrão de ${bairroRef} — ${corrigidos.length} de bairro vizinho entraram corrigidos pelo padrão de preço (teto ±30%).`;
+    }
+  } else {
+    // Sobrou menos de 2: devolve o original, mas assumindo que a amostra é fraca.
+    console.warn(`[FiltroBairro] ${bairroRef}: amostra ficaria com ${proprios.length + vizinhos.length} anúncio(s) — mantendo original com confiança baixa.`);
+    return {
+      ...resultado,
+      confianca: 'baixa',
+      notaAmostra: `Amostra mistura bairros de padrões diferentes e não há anúncios suficientes em ${bairroRef} — trate o valor como indicativo.`,
+    };
+  }
+
+  if (descartados.length) {
+    console.log(`[FiltroBairro] ${bairroRef}: descartados ${descartados.join('; ')}`);
+  }
+
+  const precos = usados.map(c => Number(c.precoM2)).filter(p => p > 0);
+  if (precos.length === 0) return resultado;
+  const media = Math.round(precos.reduce((a, b) => a + b, 0) / precos.length);
+
+  // A confianca passa a refletir a amostra QUE SOBROU. Antes o filtro podia
+  // cortar 9 anuncios para 3 e manter "alta" — o laudo prometia firmeza que a
+  // amostra nao tinha.
+  const teto = precos.length >= 8 ? 'alta' : precos.length >= 5 ? 'media' : 'baixa';
+  const ordem = { baixa: 0, media: 1, alta: 2 };
+  if (ordem[teto] < ordem[confianca ?? 'baixa']) {
+    if (!notaAmostra) notaAmostra = `Amostra final de ${precos.length} anuncio(s) em ${bairroRef} — faixa indicativa.`;
+    confianca = teto;
+  }
+  console.log(`[FiltroBairro] ${bairroRef}: ${resultado.comparativos.length} → ${usados.length} anúncios (${proprios.length} do padrão), R$${resultado.precoMedioM2}/m² → R$${media}/m², confiança ${resultado.confianca} → ${confianca}`);
+
   return {
     ...resultado,
-    comparativos: filtrados,
-    precoMedioM2: Math.round(soma / precosValidos.length),
-    faixaMinM2: Math.min(...precosValidos),
-    faixaMaxM2: Math.max(...precosValidos),
-    anunciosAnalisados: filtrados.length
+    comparativos: usados,
+    precoMedioM2: media,
+    faixaMinM2: Math.min(...precos),
+    faixaMaxM2: Math.max(...precos),
+    anunciosAnalisados: usados.length,
+    confianca,
+    notaAmostra,
   };
 }
 
@@ -855,7 +937,7 @@ IMPORTANTE: o campo "bairro" em cada comparativo deve conter o nome exato do bai
     // Filtro de bairro: remove comparativos de bairros com padrão muito diferente do avaliado
     // Evita que Perplexity misture bairros premium com bairros antigos/populares
     // Exemplo: casa do Centro não deve comparar com Residencial Verona ou Anápolis City
-    resultado = filtrarComparativosPorBairro(resultado, bairro);
+    resultado = filtrarComparativosPorBairro(resultado, bairro, cidade);
 
     // Filtro de relevância: remove imóveis de tamanho muito diferente (apartamentos e casas)
     // Exemplo: casa de 60m² não deve influenciar o preço/m² de uma casa de 390m²
