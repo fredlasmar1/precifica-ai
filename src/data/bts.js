@@ -172,7 +172,7 @@ async function melhorRamo(lat, lng, area, rendaM2) {
   const fluxo = sup + esc + ban;
 
   const scored = await Promise.all(candidatos.map(async (c) => {
-    const conc = await placesCountExato({ lat, lng, keyword: c.keyword, radius: 1000, maxPages: 2 })
+    const conc = await placesCountExato({ lat, lng, keyword: c.keyword, radius: 1000, maxPages: 1 })
       .then(r => r.total || 0).catch(() => 0);
     let score = 50;
     // Concorrência: 1-4 = faixa ideal (mercado existe, não saturado)

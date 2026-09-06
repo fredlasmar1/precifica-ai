@@ -34,9 +34,31 @@ const GERADORES = [
   { chave: 'shopping',     label: 'Shopping/galeria',   keyword: 'shopping galeria',  peso: 1.2 },
 ];
 
+/**
+ * Chave de cache de uma consulta ao Places.
+ * Arredonda a coordenada para 3 casas (~110m): duas perguntas no mesmo
+ * quarteirão sobre o mesmo ramo são a MESMA pergunta, e não precisam ser pagas
+ * duas vezes.
+ */
+function chavePlaces(tipo, { lat, lng, keyword, radius, maxPages }) {
+  const r = (v) => Number(v).toFixed(3);
+  const kw = String(keyword || '').toLowerCase().trim();
+  return `${tipo}|${r(lat)},${r(lng)}|${kw}|${radius}${maxPages ? '|p' + maxPages : ''}`;
+}
+
+/** Dias de validade: o entorno urbano muda devagar. */
+const CACHE_DIAS = 30;
+
 async function placesNearby({ lat, lng, keyword, radius }) {
   const apiKey = process.env.GOOGLE_PLACES_API_KEY;
   if (!apiKey) return { erro: 'GOOGLE_PLACES_API_KEY não configurada', indisponivel: true, results: [] };
+
+  const chave = chavePlaces('nearby', { lat, lng, keyword, radius });
+  try {
+    const guardado = await require('./database').lerPlacesCache(chave, CACHE_DIAS);
+    if (guardado) return { ...guardado, doCache: true };
+  } catch {}
+
   try {
     try { require('./database').registrarUso('google_places', 1); } catch {} // contador de custo (best-effort)
     const { data } = await axios.get(PLACES_URL, {
@@ -59,7 +81,9 @@ async function placesNearby({ lat, lng, keyword, radius }) {
     const todos = data.results || [];
     const fechados = todos.filter((x) => x.business_status === 'CLOSED_PERMANENTLY');
     const abertos = todos.filter((x) => x.business_status !== 'CLOSED_PERMANENTLY');
-    return { results: abertos, fechados, capado: abertos.length >= 20 };
+    const saida = { results: abertos, fechados, capado: abertos.length >= 20 };
+    try { await require('./database').gravarPlacesCache(chave, saida); } catch {}
+    return saida;
   } catch (err) {
     console.warn('[Places] erro:', err.message);
     return { erro: err.message, indisponivel: true, results: [] };
@@ -73,6 +97,13 @@ async function placesNearby({ lat, lng, keyword, radius }) {
 async function placesCountExato({ lat, lng, keyword, radius, maxPages = 3 }) {
   const apiKey = process.env.GOOGLE_PLACES_API_KEY;
   if (!apiKey) return { total: 0, results: [], capou: false, indisponivel: true };
+
+  const chaveC = chavePlaces('count', { lat, lng, keyword, radius, maxPages });
+  try {
+    const guardado = await require('./database').lerPlacesCache(chaveC, CACHE_DIAS);
+    if (guardado) return { ...guardado, doCache: true };
+  } catch {}
+
   let results = [];
   let fechados = [];        // negócios mortos = pontos que vagaram
   let pageToken = null;
@@ -97,7 +128,9 @@ async function placesCountExato({ lat, lng, keyword, radius, maxPages = 3 }) {
       if (!pageToken || pages >= maxPages) break;
       await new Promise((res) => setTimeout(res, 2100)); // token leva ~2s p/ ativar
     }
-    return { total: results.length, results, fechados, capou: !!pageToken };
+    const saidaC = { total: results.length, results, fechados, capou: !!pageToken };
+    try { await require('./database').gravarPlacesCache(chaveC, saidaC); } catch {}
+    return saidaC;
   } catch (e) {
     console.warn('[PlacesCount] erro:', e.message);
     return { total: results.length, results, fechados, capou: false, indisponivel: results.length === 0 };
@@ -231,7 +264,10 @@ async function analisarPontoComercial(lat, lng, ramo, ctx = {}) {
 
   // 1) Concorrência direta — 500m e 1km
   const [c500, c1k] = await Promise.all([
-    placesCountExato({ lat, lng, keyword: ramoLimpo, radius: 500, maxPages: 3 }), // 500m exato
+    // 1 pagina (20 resultados) basta: o score so distingue 0, 1-4, 5-9 e 10+.
+    // Contar exatamente 47 concorrentes em vez de "20+" nao muda o veredito e
+    // custava 2 chamadas a mais por analise.
+    placesCountExato({ lat, lng, keyword: ramoLimpo, radius: 500, maxPages: 1 }),
     placesNearby({ lat, lng, keyword: ramoLimpo, radius: 1000 }),
   ]);
   const conc500 = resumirConcorrentes(c500.results);

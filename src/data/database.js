@@ -202,6 +202,26 @@ async function inicializar() {
     `);
     await pool.query(`CREATE INDEX IF NOT EXISTS pontos_fechados_busca ON pontos_fechados (cidade, bairro, visto_fechado_em DESC)`);
 
+    // ─── places_cache: a farmácia da esquina não muda toda semana ─────────────
+    // NÃO havia cache de Google Places. Cada análise de ponto comercial custava
+    // 10 chamadas, cada laudo de avaliação 5, cada estudo BTS 25 — e a mesma
+    // pergunta sobre o MESMO bairro pagava tudo de novo, toda vez.
+    //
+    // O cacheFile.js existente grava em disco do container: na Railway isso some
+    // a cada deploy, então nunca funcionou como cache de verdade. Aqui é
+    // Postgres, que sobrevive.
+    //
+    // A chave arredonda a coordenada para 3 casas (~110m): duas consultas no
+    // mesmo quarteirão são a mesma pergunta.
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS places_cache (
+        chave VARCHAR(300) PRIMARY KEY,
+        payload JSONB NOT NULL,
+        criado_em TIMESTAMP DEFAULT NOW()
+      );
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS places_cache_idade ON places_cache (criado_em)`);
+
     // ─── precos_mercado: coluna `condominio` (correção de schema) ─────────────
     // A coluna foi adicionada ao CREATE TABLE acima DEPOIS que a tabela já
     // existia em produção — e CREATE TABLE IF NOT EXISTS não altera tabela
@@ -431,6 +451,28 @@ async function salvarFeedback(dados) {
   return result.rows[0];
 }
 
+// ─── Cache do Google Places (o entorno não muda toda semana) ─────
+
+/** Lê do cache se ainda estiver dentro do prazo. */
+async function lerPlacesCache(chave, dias = 30) {
+  try {
+    const r = await pool.query(
+      `SELECT payload FROM places_cache WHERE chave = $1 AND criado_em > NOW() - ($2 || ' days')::INTERVAL`,
+      [chave, String(dias)]);
+    return r.rows[0]?.payload || null;
+  } catch { return null; }
+}
+
+/** Grava (ou renova) uma resposta do Places. */
+async function gravarPlacesCache(chave, payload) {
+  try {
+    await pool.query(
+      `INSERT INTO places_cache (chave, payload, criado_em) VALUES ($1,$2,NOW())
+       ON CONFLICT (chave) DO UPDATE SET payload = $2, criado_em = NOW()`,
+      [chave, JSON.stringify(payload)]);
+  } catch (e) { /* cache nunca pode derrubar a consulta */ }
+}
+
 // ─── Pontos que vagaram (negócio fechado = imóvel disponível) ────
 
 /**
@@ -625,6 +667,7 @@ async function apagarLaudo(id) {
 module.exports = {
   salvarFechamento, buscarFechamentos, placarFechamentos, apagarFechamento,
   registrarPontosFechados, buscarPontosVagos, marcarPontoContatado,
+  lerPlacesCache, gravarPlacesCache,
   pool, inicializar,
   salvarBairro, buscarBairro, listarBairros,
   salvarPreco, buscarPreco, invalidarPreco, salvarHistorico, buscarHistorico,
