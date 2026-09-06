@@ -47,7 +47,10 @@ async function placesNearby({ lat, lng, keyword, radius }) {
       // REQUEST_DENIED / OVER_QUERY_LIMIT nao sao "nao ha nada aqui": sao "nao
       // consegui perguntar". Devolver lista vazia calada fazia o analisador
       // dizer "0 concorrentes, mercado inexplorado" para o cliente.
-      console.warn(`[Places] status ${data.status} p/ "${keyword}" — fonte INDISPONIVEL`);
+      // O Google manda o MOTIVO em error_message ("You must enable Billing",
+      // "This API project is not authorized...", "API key not valid"). Logar so
+      // o status joga fora a unica informacao que diz qual das tres causas e.
+      console.warn(`[Places] status ${data.status} p/ "${keyword}" — fonte INDISPONIVEL — motivo: ${data.error_message || '(o Google nao detalhou)'}`);
       return { erro: data.status, indisponivel: true, results: [] };
     }
     // Separa em vez de descartar: `results` continua sendo só quem está ABERTO
@@ -82,7 +85,7 @@ async function placesCountExato({ lat, lng, keyword, radius, maxPages = 3 }) {
         : { location: `${lat},${lng}`, radius, keyword, key: apiKey };
       const { data } = await axios.get(PLACES_URL, { params, timeout: 15000 });
       if (data.status !== 'OK' && data.status !== 'ZERO_RESULTS') {
-        console.warn(`[PlacesCount] status ${data.status} p/ "${keyword}" — fonte INDISPONIVEL`);
+        console.warn(`[PlacesCount] status ${data.status} p/ "${keyword}" — fonte INDISPONIVEL — motivo: ${data.error_message || '(o Google nao detalhou)'}`);
         return { total: 0, results: [], capou: false, indisponivel: true };
       }
       const pagina = data.results || [];
