@@ -1192,6 +1192,12 @@ function gerarLaudo(dados, resultado) {
       enr.infraestrutura.forEach(i => {
         if (i.qtd > 0) laudo += `• ${i.categoria}: ${i.qtd}${i.maisProximoM ? ` (mais perto ~${i.maisProximoM} m)` : ''}\n`;
       });
+      // De onde veio a contagem. O OpenStreetMap e colaborativo e tem cobertura
+      // menor que o Google em Anapolis: o corretor precisa saber que o numero e
+      // um piso, nao um censo.
+      if (enr.infraestrutura.some(i => i.fonte === 'OpenStreetMap')) {
+        laudo += `_Fonte: OpenStreetMap (mapa colaborativo, cobertura parcial) — a contagem real tende a ser maior._\n`;
+      }
       laudo += '\n';
     }
     if (enr.tendencia) laudo += `📈 *Tendência do bairro:*\n• ${enr.tendencia}\n\n`;

@@ -91,9 +91,31 @@ async function infraestruturaProxima(lat, lng) {
       out.push({ categoria: c.categoria, qtd: results.length, maisProximoM });
     } catch { out.push({ categoria: c.categoria, qtd: null, maisProximoM: null, indisponivel: true }); }
   }
-  // Nenhuma categoria respondeu: nao devolve bloco nenhum em vez de uma tabela
-  // de zeros que o corretor leria como "a regiao nao tem nada".
-  if (out.every(o => o.indisponivel)) return null;
+  // Nenhuma categoria respondeu (Google fora do ar): tenta o OpenStreetMap, que
+  // e gratuito e nao depende de chave. A cobertura em Anapolis e MENOR que a do
+  // Google — por isso cada linha sai marcada com a fonte, e o laudo diz de onde
+  // veio. Fonte declarada e melhor que bloco vazio; fonte disfarcada, nunca.
+  if (out.every(o => o.indisponivel)) {
+    try {
+      const { mapearInfraestrutura } = require('./osmApi');
+      const osm = await mapearInfraestrutura(lat, lng, 1500);
+      const c = osm && osm.categorias;
+      if (c) {
+        const linhas = [
+          { categoria: 'Escolas',   qtd: c.educacao?.total || 0 },
+          { categoria: 'Saúde',     qtd: c.saude?.total || 0 },
+          { categoria: 'Mercados',  qtd: (c.comercio?.tipos?.supermarket || 0) + (c.comercio?.tipos?.convenience || 0) },
+          { categoria: 'Farmácias', qtd: c.saude?.tipos?.pharmacy || 0 },
+          { categoria: 'Bancos',    qtd: c.financeiro?.total || 0 },
+        ].map(l => ({ ...l, maisProximoM: null, fonte: 'OpenStreetMap' }));
+        if (linhas.some(l => l.qtd > 0)) {
+          console.log(`[Infra] Google indisponivel — OpenStreetMap respondeu (${osm.totalEstabelecimentos} estabelecimentos em 1,5km)`);
+          return linhas;
+        }
+      }
+    } catch (e) { console.warn('[Infra] OSM de reserva falhou:', e.message); }
+    return null;
+  }
   return out;
 }
 

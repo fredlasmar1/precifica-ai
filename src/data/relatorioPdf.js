@@ -271,7 +271,9 @@ function gerarRelatorioPdf(dados, resultado, opts = {}) {
         band('LOCALIZAÇÃO E REGIÃO');
         if (fipeV) linha(`FIPE da região (${txt(dados.bairro)})`, `venda ${brlF(fipeV.m2)}/m² · aluguel R$ ${fipeA.m2.toLocaleString('pt-BR')}/m²·mês`);
         if (temInfra) {
+          const viaOsm = enr.infraestrutura.some((i) => i.fonte === 'OpenStreetMap');
           const partes = enr.infraestrutura.filter((i) => i.qtd > 0).map((i) => `${i.categoria} ${i.qtd}${i.maisProximoM ? ` (${i.maisProximoM}m)` : ''}`);
+          if (viaOsm) partes.push('[fonte: OpenStreetMap — mapa colaborativo, cobertura parcial]');
           linha('Infraestrutura (1,5 km)', partes.join(' · '));
         }
         if (enr.tendencia) { ensure(20); doc.font('Helvetica-Bold').fontSize(8).fillColor(INK).text('Tendência: ', LX + 4, y, { continued: true, width: W - 8 }); doc.font('Helvetica').fontSize(8).fillColor(INK).text(clean(enr.tendencia)); y = doc.y + 4; }

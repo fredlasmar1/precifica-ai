@@ -2,6 +2,16 @@ const axios = require('axios');
 
 const OVERPASS_URL = 'https://overpass-api.de/api/interpreter';
 
+// O Overpass RECUSA cliente sem identificacao: com o User-Agent padrao do axios
+// ("axios/1.x") ou sem User-Agent nenhum ele responde 406 Not Acceptable, e a
+// funcao caia no catch devolvendo null. Medido em 06/09/2026: mesma consulta,
+// UA do axios = 406, UA descritivo = 200. A fonte gratuita de infraestrutura
+// estava fora do ar so por causa deste cabecalho.
+const OSM_HEADERS = {
+  'Content-Type': 'application/x-www-form-urlencoded',
+  'User-Agent': 'PrecificaAI/1.0 (avaliacao imobiliaria; contato: fredlasmar@gmail.com)',
+};
+
 /**
  * OpenStreetMap (Overpass API) — Mapeamento detalhado de infraestrutura.
  * Gratuita, sem chave. Muito mais detalhado que Google Places para
@@ -16,58 +26,45 @@ const OVERPASS_URL = 'https://overpass-api.de/api/interpreter';
  * Retorna contagem e exemplos por categoria.
  */
 async function mapearInfraestrutura(lat, lng, raioMetros = 1000) {
-  const query = `
-    [out:json][timeout:30];
+  // Consulta ENXUTA. A versao antiga listava 24 clausulas, uma por tipo de
+  // amenity, mais way["shop"] duas vezes — o Overpass respondia 504 (Gateway
+  // Timeout) porque a consulta era pesada demais para a instancia publica.
+  // Puxar "amenity", "shop" e "leisure" inteiros de uma vez e classificar aqui
+  // e mais rapido E mais completo: 2,3s contra timeout, e nao perde nenhum tipo
+  // que nao estivesse na lista. `out tags center` dispensa a geometria.
+  const q = (raio, comWays) => `
+    [out:json][timeout:25];
     (
-      // Comércio
-      node["shop"](around:${raioMetros},${lat},${lng});
-      way["shop"](around:${raioMetros},${lat},${lng});
-      // Alimentação
-      node["amenity"="restaurant"](around:${raioMetros},${lat},${lng});
-      node["amenity"="cafe"](around:${raioMetros},${lat},${lng});
-      node["amenity"="fast_food"](around:${raioMetros},${lat},${lng});
-      node["amenity"="bar"](around:${raioMetros},${lat},${lng});
-      // Saúde
-      node["amenity"="hospital"](around:${raioMetros},${lat},${lng});
-      node["amenity"="clinic"](around:${raioMetros},${lat},${lng});
-      node["amenity"="pharmacy"](around:${raioMetros},${lat},${lng});
-      node["amenity"="dentist"](around:${raioMetros},${lat},${lng});
-      // Educação
-      node["amenity"="school"](around:${raioMetros},${lat},${lng});
-      node["amenity"="university"](around:${raioMetros},${lat},${lng});
-      node["amenity"="kindergarten"](around:${raioMetros},${lat},${lng});
-      // Financeiro
-      node["amenity"="bank"](around:${raioMetros},${lat},${lng});
-      node["amenity"="atm"](around:${raioMetros},${lat},${lng});
-      // Transporte
-      node["highway"="bus_stop"](around:${raioMetros},${lat},${lng});
-      node["amenity"="fuel"](around:${raioMetros},${lat},${lng});
-      node["amenity"="parking"](around:${raioMetros},${lat},${lng});
-      // Lazer
-      node["leisure"="park"](around:${raioMetros},${lat},${lng});
-      node["leisure"="playground"](around:${raioMetros},${lat},${lng});
-      node["leisure"="fitness_centre"](around:${raioMetros},${lat},${lng});
-      // Público
-      node["amenity"="place_of_worship"](around:${raioMetros},${lat},${lng});
-      node["amenity"="post_office"](around:${raioMetros},${lat},${lng});
-      node["amenity"="police"](around:${raioMetros},${lat},${lng});
-      node["amenity"="fire_station"](around:${raioMetros},${lat},${lng});
+      node["amenity"](around:${raio},${lat},${lng});
+      node["shop"](around:${raio},${lat},${lng});
+      node["leisure"](around:${raio},${lat},${lng});
+      node["highway"="bus_stop"](around:${raio},${lat},${lng});
+      ${comWays ? `way["shop"](around:${raio},${lat},${lng});` : ''}
     );
-    out body;
+    out tags center;
   `;
 
-  try {
-    const response = await axios.post(OVERPASS_URL, `data=${encodeURIComponent(query)}`, {
-      timeout: 35000,
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
-    });
+  // Uma retentativa mais leve: instancia publica sobrecarregada devolve 504/429
+  // e o certo e insistir menor, nao desistir da fonte.
+  const tentativas = [
+    { query: q(raioMetros, true), timeout: 30000, nota: 'completa' },
+    { query: q(Math.min(raioMetros, 800), false), timeout: 20000, nota: 'reduzida' },
+  ];
 
-    const elements = response.data?.elements || [];
-    return classificarElementos(elements);
-  } catch (err) {
-    console.error('[OSM] Erro:', err.message);
-    return null;
+  for (const t of tentativas) {
+    try {
+      const response = await axios.post(OVERPASS_URL, `data=${encodeURIComponent(t.query)}`, {
+        timeout: t.timeout,
+        headers: OSM_HEADERS
+      });
+      const elements = response.data?.elements || [];
+      if (t.nota !== 'completa') console.warn(`[OSM] consulta ${t.nota} funcionou (${elements.length} elementos)`);
+      return classificarElementos(elements);
+    } catch (err) {
+      console.warn(`[OSM] consulta ${t.nota} falhou: ${err.message}`);
+    }
   }
+  return null;
 }
 
 /**
@@ -213,7 +210,7 @@ async function buscarRuasPrincipais(lat, lng, raioMetros = 1500) {
   try {
     const response = await axios.post(OVERPASS_URL, `data=${encodeURIComponent(query)}`, {
       timeout: 25000,
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+      headers: OSM_HEADERS
     });
 
     const ruas = [];
