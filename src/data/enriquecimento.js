@@ -107,7 +107,11 @@ async function infraestruturaProxima(lat, lng) {
           { categoria: 'Mercados',  qtd: (c.comercio?.tipos?.supermarket || 0) + (c.comercio?.tipos?.convenience || 0) },
           { categoria: 'Farmácias', qtd: c.saude?.tipos?.pharmacy || 0 },
           { categoria: 'Bancos',    qtd: c.financeiro?.total || 0 },
-        ].map(l => ({ ...l, maisProximoM: null, fonte: 'OpenStreetMap' }));
+        // Num mapa COLABORATIVO ausencia nao e prova de inexistencia: o Jundiai
+        // tem escola, o OSM e que nao tem escola mapeada ali. Entao zero do OSM
+        // vira null (nao mapeado) e a linha some, em vez de o laudo afirmar
+        // "0 escolas" — o mesmo vicio do zero de falha do Google, noutra fonte.
+        ].map(l => ({ ...l, qtd: l.qtd > 0 ? l.qtd : null, maisProximoM: null, fonte: 'OpenStreetMap' }));
         if (linhas.some(l => l.qtd > 0)) {
           console.log(`[Infra] Google indisponivel — OpenStreetMap respondeu (${osm.totalEstabelecimentos} estabelecimentos em 1,5km)`);
           return linhas;
