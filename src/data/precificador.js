@@ -514,10 +514,26 @@ async function calcularPreco(dadosImovel) {
     }
   }
 
-  // Mesclagem Perplexity + fallback quando confiança é baixa (< 3 amostras)
-  // Evita que 1 anúncio de bairro vizinho distorça o preço final
-  // Pesos: 1 amostra = 40% Perplexity + 60% fallback; 2 amostras = 65% + 35%
-  if (confiancaFonte === 'baixa' && analiseIA) {
+  // SEGUNDA tabela — mesma doenca da grade EBM, em outro lugar.
+  //
+  // Aqui o motor mesclava uma media chutada (R$ 5.500/m² para QUALQUER
+  // apartamento de Anapolis x mult do bairro = R$ 9.075/m² no Jundiai) com o
+  // preco de mercado, sempre que a confianca fosse baixa. Depois que a
+  // confianca passou a ser honesta, era essa mesclagem que assumia: 3 anuncios
+  // REAIS do proprio Jundiai (R$ 5.358/m²) viravam R$ 6.659/m².
+  //
+  // Amostra fina significa MENOS PRECISAO, nao outro valor. Com 2 ou mais
+  // anuncios do bairro o mercado manda e quem paga o preco da incerteza e a
+  // FAIXA (alargada mais abaixo), nao o valor central. A media chutada so entra
+  // quando ha 1 anuncio ou nenhum — ai realmente nao existe amostra.
+  let amostraFina = false;
+  const nAmostras = analiseIA?.anunciosAnalisados || 0;
+  if (confiancaFonte === 'baixa' && analiseIA && nAmostras >= 2) {
+    amostraFina = true;
+    ajustesDescricao.push(`Amostra de ${nAmostras} anúncios do bairro — o valor é o do mercado, mas a faixa de negociação foi alargada (±18%) para refletir a incerteza.`);
+    console.log(`[Precificador] Amostra fina (${nAmostras} anúncios) — mercado mantido em R$${precoM2Final}/m², faixa alargada em vez de mesclar tabela`);
+  }
+  if (confiancaFonte === 'baixa' && analiseIA && nAmostras < 2) {
     const amostras = analiseIA.anunciosAnalisados || 1;
     const pesoPplx = amostras === 1 ? 0.40 : 0.65;
     const pesoFallback = 1 - pesoPplx;
@@ -554,7 +570,7 @@ async function calcularPreco(dadosImovel) {
       `Perplexity R$${precoM2Final}/m² (×${pesoPplx}) + Fallback R$${fallbackM2}/m² (×${pesoFallback}) = R$${precoMesclado}/m²`);
 
     precoM2Final = precoMesclado;
-    ajustesDescricao.push(`Estimativa combinada: ${Math.round(pesoPplx*100)}% mercado + ${Math.round(pesoFallback*100)}% base calibrada (poucos anúncios na região)`);
+    ajustesDescricao.push(`Apenas ${amostras} anúncio(s) na região — valor combinado com a média calibrada da cidade (${Math.round(pesoFallback*100)}%). Trate como indicativo.`);
   }
 
   // ─── Ajustes específicos para RURAL (após mesclagem de confiança) ──────────
@@ -638,8 +654,12 @@ async function calcularPreco(dadosImovel) {
   } else {
     precoRecomendado = Math.round(precoM2Final * metragem);
   }
-  const precoMinimo = Math.round(precoRecomendado * 0.92);
-  const precoMaximo = Math.round(precoRecomendado * 1.08);
+  // A incerteza da amostra fina aparece na FAIXA, nao no valor central: com 2-4
+  // anuncios a faixa abre para +-18% em vez de +-8%. O corretor ve o intervalo
+  // real de negociacao em vez de um numero falsamente preciso.
+  const bandaFaixa = amostraFina ? 0.18 : 0.08;
+  const precoMinimo = Math.round(precoRecomendado * (1 - bandaFaixa));
+  const precoMaximo = Math.round(precoRecomendado * (1 + bandaFaixa));
   const liquidez = estimarLiquidez(finalidade, precoM2Final, precoM2Mercado);
 
   const fontes = [fontePrincipal];
