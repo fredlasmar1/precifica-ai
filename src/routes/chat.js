@@ -194,6 +194,74 @@ router.post('/avaliar', async (req, res) => {
  * concorrência, geradores de movimento e demanda → veredito de ponto comercial.
  */
 /**
+ * POR QUANTO FECHOU — o laco que faz o sistema aprender.
+ *
+ * Toda fonte do motor e preco PEDIDO. Esta e a unica que registra o preco PAGO,
+ * e e o unico ativo que nenhum concorrente copia: a Perplexity le os mesmos
+ * anuncios para todo mundo; o que fechou na mao do corretor, so quem perguntou
+ * tem. Com 3 fechamentos num bairro, o preco daquele bairro passa a sair daqui.
+ */
+router.post('/fechamento', async (req, res) => {
+  const b = req.body || {};
+  const valorFechado = Number(b.valorFechado ?? b.valor_fechado) || 0;
+  const bairro = String(b.bairro || '').trim();
+
+  if (!valorFechado || !bairro) {
+    return res.status(400).json({ error: 'Informe o bairro e por quanto o negócio fechou.' });
+  }
+
+  try {
+    const db = require('../data/database');
+    const salvo = await db.salvarFechamento({
+      laudo_id: b.laudoId || b.laudo_id || null,
+      cidade: String(b.cidade || 'Anápolis').trim(),
+      bairro,
+      tipo: String(b.tipo || 'apartamento').trim().toLowerCase(),
+      finalidade: String(b.finalidade || 'venda').trim().toLowerCase(),
+      metragem: b.metragem,
+      valor_avaliado: b.valorAvaliado ?? b.valor_avaliado,
+      valor_anunciado: b.valorAnunciado ?? b.valor_anunciado,
+      valor_fechado: valorFechado,
+      dias_ate_fechar: b.diasAteFechar ?? b.dias_ate_fechar,
+      observacao: b.observacao,
+    });
+
+    // Devolve na hora o que esse registro mudou: quantos negocios o bairro ja
+    // tem e se ja bastam para o preco sair deles. O corretor ve o proprio dado
+    // virando inteligencia, em vez de responder no vazio.
+    const { sinalDeMercado, MINIMO_PARA_MANDAR } = require('../data/fechamentos');
+    const rows = await db.buscarFechamentos(salvo.cidade, salvo.bairro, salvo.tipo, salvo.finalidade);
+    const sinal = sinalDeMercado(rows);
+
+    let mensagem;
+    if (sinal && sinal.manda) {
+      mensagem = `Registrado. Com ${sinal.n} negócio(s) fechado(s) em ${salvo.bairro}, o preço desse bairro agora sai do que foi PAGO (R$ ${sinal.m2.toLocaleString('pt-BR')}/m²), não do que é pedido.`;
+    } else {
+      const faltam = MINIMO_PARA_MANDAR - (sinal?.n || 0);
+      mensagem = `Registrado. ${salvo.bairro} tem ${sinal?.n || 1} negócio(s) fechado(s) — faltam ${faltam} para o preço do bairro passar a sair de negócio fechado em vez de anúncio.`;
+    }
+
+    res.json({ type: 'fechamento', ok: true, response: mensagem, sinal, id: salvo.id });
+  } catch (err) {
+    console.error('[Fechamento] erro:', err.message);
+    res.status(500).json({ error: 'Não consegui registrar agora. Tente de novo.' });
+  }
+});
+
+/** Placar: o sistema contra a realidade. Erramos para cima ou para baixo? */
+router.get('/fechamentos/placar', async (req, res) => {
+  try {
+    const db = require('../data/database');
+    const { textoPlacar } = require('../data/fechamentos');
+    const p = await db.placarFechamentos(req.query.cidade || null);
+    res.json({ type: 'placar', response: textoPlacar(p), placar: p });
+  } catch (err) {
+    console.error('[Placar] erro:', err.message);
+    res.status(500).json({ error: 'Não consegui montar o placar agora.' });
+  }
+});
+
+/**
  * VIABILIDADE DO ALUGUEL — "esse ponto te quebra?"
  *
  * Nao depende de Google, de mapa nem de estimativa de faturamento: sai do

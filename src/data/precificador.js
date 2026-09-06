@@ -78,10 +78,50 @@ async function calcularPreco(dadosImovel) {
   let fontePrincipal = null;
   let analiseIA = null;
   let confiancaFonte = null;
+  let sinalFechamentos = null;   // o que REALMENTE foi pago neste bairro
+
+  // ─── PRIORIDADE 0: NEGÓCIOS FECHADOS ────────────────────────────
+  // Acima de tudo, inclusive do anúncio real. Todas as outras fontes deste
+  // motor — portal, Perplexity, tabela — são preço PEDIDO. Fechamento é preço
+  // PAGO: transação, não pretensão. Com 3+ no bairro, o preço sai daqui.
+  //
+  // Mesmo abaixo de 3 o dado entra no laudo: a margem de negociação e o tempo
+  // até fechar são úteis com um ou dois casos, porque informam sem mover o
+  // valor central.
+  try {
+    const { sinalDeMercado } = require('./fechamentos');
+    const rows = await db.buscarFechamentos(cidade, bairro, tipo, finalidade);
+    sinalFechamentos = sinalDeMercado(rows);
+    if (sinalFechamentos && sinalFechamentos.manda && sinalFechamentos.m2 > 0) {
+      precoM2Base = sinalFechamentos.m2;
+      confiancaFonte = sinalFechamentos.confianca;
+      fontePrincipal = `${sinalFechamentos.n} negócio(s) fechado(s) no bairro`;
+      analiseIA = {
+        precoMedioM2: sinalFechamentos.m2,
+        anunciosAnalisados: sinalFechamentos.n,
+        confianca: sinalFechamentos.confianca,
+        comparativos: rows.slice(0, 12).map(r => ({
+          area: Number(r.metragem),
+          preco: Number(r.valor_fechado),
+          precoM2: Math.round(Number(r.valor_fechado) / Number(r.metragem)),
+          bairro: r.bairro,
+          fonte: 'negócio fechado',
+          detalhe: `${Number(r.metragem)}m² — FECHADO por R$ ${Number(r.valor_fechado).toLocaleString('pt-BR')}${r.valor_anunciado > 0 ? ` (anunciado R$ ${Number(r.valor_anunciado).toLocaleString('pt-BR')})` : ''}`,
+        })),
+        raciocinio: sinalFechamentos.nota,
+        fonte: 'Negócios fechados registrados',
+      };
+      console.log(`[Fechamentos] ${bairro}/${tipo}/${finalidade}: ${sinalFechamentos.n} fechamentos → R$${sinalFechamentos.m2}/m² (confiança ${sinalFechamentos.confianca})`);
+    } else if (sinalFechamentos) {
+      console.log(`[Fechamentos] ${bairro}: ${sinalFechamentos.n} registro(s) — pouco para mandar no preço, entra como nota`);
+    }
+  } catch (e) { console.warn('[Fechamentos] erro:', e.message); }
 
   // Prioridade 1: Cache DB (pesquisa recente < 3 dias)
+  // Só entra se os fechamentos não resolveram: cache de anúncio não sobrepõe
+  // negócio fechado.
   try {
-    const precoDb = await db.buscarPreco(cidade, bairro, tipo, finalidade, condominio);
+    const precoDb = precoM2Base ? null : await db.buscarPreco(cidade, bairro, tipo, finalidade, condominio);
     // Só usa cache DB se:
     // - tem menos de 3 dias de idade
     // - E confiança é "alta" ou "media" (>=3 amostras)
@@ -405,6 +445,12 @@ async function calcularPreco(dadosImovel) {
   let ajustesDescricao = ['Preço baseado em amostragem de mercado'];
   if (notaPredio) ajustesDescricao.unshift(notaPredio);
   if (notaAmostra) ajustesDescricao.push(notaAmostra);
+  if (sinalFechamentos) {
+    const { textoNegociacao } = require('./fechamentos');
+    if (sinalFechamentos.manda) ajustesDescricao.unshift(sinalFechamentos.nota);
+    const neg = textoNegociacao(sinalFechamentos);
+    if (neg) ajustesDescricao.push(neg);
+  }
   if (notaCalibracao) ajustesDescricao.push(notaCalibracao);
 
 
@@ -717,6 +763,7 @@ async function calcularPreco(dadosImovel) {
 
   return {
     precoMinimo, precoRecomendado, precoMaximo,
+    fechamentos: sinalFechamentos,
     enriquecimento,
     fichaPredio, fichaPredioTexto,
     precoM2Mercado, precoM2Imovel: precoM2Final,

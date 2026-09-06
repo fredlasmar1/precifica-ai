@@ -147,6 +147,35 @@ async function inicializar() {
     await pool.query(`ALTER TABLE laudos ADD COLUMN IF NOT EXISTS kind TEXT DEFAULT 'imovel'`);
     await pool.query(`ALTER TABLE laudos ADD COLUMN IF NOT EXISTS titulo TEXT`);
 
+    // ─── fechamentos: por quanto o negócio REALMENTE fechou ───────────────────
+    // A tabela `feedbacks` guarda OPINIÃO ("o corretor acha que vale X"). Esta
+    // guarda TRANSAÇÃO. São coisas diferentes e a segunda vale muito mais:
+    // anúncio é preço PEDIDO, fechamento é preço PAGO. Toda a amostra do motor
+    // hoje é preço pedido — e é por isso que ninguém sabe dizer se o Jundiaí é
+    // R$ 5,3 mil ou R$ 8,5 mil o m².
+    //
+    // É o único ativo do Precifica Aí que nenhum concorrente copia: a Perplexity
+    // lê os mesmos anúncios para todo mundo; o que fechou na mão do corretor,
+    // só quem perguntou tem.
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS fechamentos (
+        id SERIAL PRIMARY KEY,
+        laudo_id INT,                        -- laudo que originou (opcional)
+        cidade VARCHAR(100),
+        bairro VARCHAR(100),
+        tipo VARCHAR(50),
+        finalidade VARCHAR(20),
+        metragem NUMERIC,
+        valor_avaliado NUMERIC,              -- o que o sistema disse
+        valor_anunciado NUMERIC,             -- por quanto foi anunciado (opcional)
+        valor_fechado NUMERIC NOT NULL,      -- por quanto FECHOU — o dado de ouro
+        dias_ate_fechar INT,
+        observacao TEXT,
+        criado_em TIMESTAMP DEFAULT NOW()
+      );
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS fechamentos_busca ON fechamentos (cidade, bairro, tipo, finalidade, criado_em DESC)`);
+
     // ─── precos_mercado: coluna `condominio` (correção de schema) ─────────────
     // A coluna foi adicionada ao CREATE TABLE acima DEPOIS que a tabela já
     // existia em produção — e CREATE TABLE IF NOT EXISTS não altera tabela
@@ -376,6 +405,56 @@ async function salvarFeedback(dados) {
   return result.rows[0];
 }
 
+// ─── Operações de Fechamento (o que REALMENTE foi pago) ──────────
+
+async function salvarFechamento(d) {
+  const metragem = Number(d.metragem) || null;
+  const fechado = Number(d.valor_fechado) || 0;
+  if (fechado <= 0) throw new Error('valor_fechado é obrigatório');
+  const r = await pool.query(`
+    INSERT INTO fechamentos
+      (laudo_id, cidade, bairro, tipo, finalidade, metragem, valor_avaliado, valor_anunciado, valor_fechado, dias_ate_fechar, observacao)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *
+  `, [d.laudo_id || null, d.cidade, d.bairro, d.tipo, d.finalidade || 'venda', metragem,
+      Number(d.valor_avaliado) || null, Number(d.valor_anunciado) || null, fechado,
+      Number(d.dias_ate_fechar) || null, d.observacao || null]);
+  return r.rows[0];
+}
+
+/**
+ * Fechamentos de um bairro/tipo/finalidade. `meses` limita a janela: negócio de
+ * dois anos atrás não descreve o mercado de hoje.
+ */
+async function buscarFechamentos(cidade, bairro, tipo, finalidade = 'venda', meses = 18) {
+  const r = await pool.query(`
+    SELECT * FROM fechamentos
+     WHERE LOWER(cidade) = LOWER($1)
+       AND LOWER(bairro) = LOWER($2)
+       AND tipo = $3
+       AND finalidade = $4
+       AND metragem > 0
+       AND criado_em > NOW() - ($5 || ' months')::INTERVAL
+     ORDER BY criado_em DESC
+     LIMIT 60
+  `, [cidade, bairro, tipo, finalidade, String(meses)]);
+  return r.rows;
+}
+
+/** Placar de precisão: o sistema errou para mais ou para menos, e quanto. */
+async function placarFechamentos(cidade = null) {
+  const r = await pool.query(`
+    SELECT
+      COUNT(*)::int AS total,
+      COUNT(valor_avaliado)::int AS com_avaliacao,
+      AVG(CASE WHEN valor_avaliado > 0 THEN (valor_avaliado - valor_fechado) / valor_fechado END) AS erro_medio,
+      AVG(CASE WHEN valor_anunciado > 0 THEN (valor_anunciado - valor_fechado) / valor_anunciado END) AS desconto_medio,
+      AVG(dias_ate_fechar) AS dias_medio
+      FROM fechamentos
+     WHERE ($1::text IS NULL OR LOWER(cidade) = LOWER($1))
+  `, [cidade]);
+  return r.rows[0];
+}
+
 // ─── Operações de Conhecimento ───────────────────────────────────
 
 async function salvarConhecimentoCidade(cidade, perfil, fonte, citacoes) {
@@ -464,6 +543,7 @@ async function apagarLaudo(id) {
 }
 
 module.exports = {
+  salvarFechamento, buscarFechamentos, placarFechamentos,
   pool, inicializar,
   salvarBairro, buscarBairro, listarBairros,
   salvarPreco, buscarPreco, invalidarPreco, salvarHistorico, buscarHistorico,

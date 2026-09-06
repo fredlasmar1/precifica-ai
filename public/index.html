@@ -136,6 +136,15 @@
     /* ---------------- Form ---------------- */
     form { padding: 22px; }
     .row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    /* "Por quanto fechou?" — bloco no fim do laudo */
+    .fechou-box { margin-top: 22px; padding: 16px; border: 1px solid #d7e0f5; border-radius: 14px; background: #f6f9ff; }
+    .fechou-tit { font-weight: 700; font-size: 15px; margin-bottom: 4px; }
+    .fechou-sub { font-size: 12.5px; color: #5a6782; line-height: 1.45; margin-bottom: 12px; }
+    .fechou-row { display: flex; flex-wrap: wrap; gap: 8px; }
+    .fechou-row input { flex: 1 1 130px; min-width: 0; padding: 9px 11px; border: 1px solid #cfd8ea; border-radius: 10px; font-size: 14px; }
+    .fechou-msg { margin-top: 10px; font-size: 13px; line-height: 1.45; }
+    .fechou-msg.ok { color: #0a7a3d; font-weight: 600; }
+    .fechou-msg.erro { color: #b3261e; }
     .field { margin-bottom: 15px; }
     .field.full { grid-column: 1 / -1; }
     label { display: block; font-size: 12.5px; color: var(--ink); margin-bottom: 7px; font-weight: 600; }
@@ -1589,6 +1598,64 @@
         '<button class="btn-pdf alt" onclick="baixarRelatorio(\'cliente\', this)">📄 Versão cliente (PDF)</button>' +
         '<button class="btn-pdf rep" onclick="abrirRepasse()">🔁 Transformar em Repasse</button>';
       laudo.prepend(bar);
+      mostrarPerguntaFechou();
+    }
+
+    // ── "Por quanto fechou?" — o laço que faz o sistema aprender ──
+    // Toda fonte do motor é preço PEDIDO. Esta é a única que registra o preço
+    // PAGO. É o ativo que nenhum concorrente copia: a Perplexity lê os mesmos
+    // anúncios para todo mundo; o que fechou na mão do corretor, só quem
+    // perguntou tem. Por isso a pergunta fica no fim do laudo, onde o corretor
+    // já está — e não numa aba que ninguém abre.
+    function mostrarPerguntaFechou() {
+      const laudo = document.querySelector('#result-body .laudo');
+      if (!laudo || !avaliacaoAtual || document.getElementById('fechou-box')) return;
+      const box = document.createElement('div');
+      box.id = 'fechou-box';
+      box.className = 'fechou-box';
+      box.innerHTML =
+        '<div class="fechou-tit">✅ Esse negócio fechou? Por quanto?</div>' +
+        '<div class="fechou-sub">Anúncio é preço pedido. Fechamento é preço pago — e é o que ensina o sistema. Com 3 registros neste bairro, o preço dele passa a sair de negócio fechado.</div>' +
+        '<div class="fechou-row">' +
+          '<input id="fechou-valor" type="number" min="0" placeholder="Fechou por (R$)" />' +
+          '<input id="fechou-anunciado" type="number" min="0" placeholder="Foi anunciado por (R$)" />' +
+          '<input id="fechou-dias" type="number" min="0" placeholder="Dias até fechar" />' +
+          '<button class="btn-pdf" id="fechou-btn" onclick="registrarFechamento()">Registrar</button>' +
+        '</div>' +
+        '<div class="fechou-msg" id="fechou-msg"></div>';
+      laudo.appendChild(box);
+    }
+
+    async function registrarFechamento() {
+      if (!avaliacaoAtual) return;
+      const valor = Number(document.getElementById('fechou-valor').value) || 0;
+      const msg = document.getElementById('fechou-msg');
+      if (!valor) { msg.textContent = 'Informe por quanto fechou.'; msg.className = 'fechou-msg erro'; return; }
+      const btn = document.getElementById('fechou-btn');
+      btn.disabled = true; msg.textContent = 'Registrando…'; msg.className = 'fechou-msg';
+      try {
+        const d = avaliacaoAtual.dados || {};
+        const res = await fetch('/api/fechamento', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            cidade: d.cidade, bairro: d.bairro, tipo: d.tipo, finalidade: d.finalidade,
+            metragem: d.metragem,
+            valorAvaliado: avaliacaoAtual.resultado && avaliacaoAtual.resultado.precoRecomendado,
+            valorAnunciado: Number(document.getElementById('fechou-anunciado').value) || 0,
+            diasAteFechar: Number(document.getElementById('fechou-dias').value) || 0,
+            valorFechado: valor,
+          })
+        });
+        const data = await res.json();
+        if (data.error) { msg.textContent = data.error; msg.className = 'fechou-msg erro'; btn.disabled = false; return; }
+        msg.textContent = data.response;
+        msg.className = 'fechou-msg ok';
+        document.querySelector('.fechou-row').style.display = 'none';
+      } catch (err) {
+        msg.textContent = 'Erro de conexão. Tente de novo.';
+        msg.className = 'fechou-msg erro';
+        btn.disabled = false;
+      }
     }
     async function baixarRelatorio(versao, btn) {
       if (!avaliacaoAtual) return;
