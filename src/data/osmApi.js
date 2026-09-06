@@ -32,36 +32,33 @@ async function mapearInfraestrutura(lat, lng, raioMetros = 1000) {
   // Puxar "amenity", "shop" e "leisure" inteiros de uma vez e classificar aqui
   // e mais rapido E mais completo: 2,3s contra timeout, e nao perde nenhum tipo
   // que nao estivesse na lista. `out tags center` dispensa a geometria.
-  const q = (raio, comWays) => `
+  // So NODES. O way["shop"] era o que estourava o Overpass: 17,9s (e 504 em
+  // raio maior) contra 3,9s sem ele, por um punhado de lojas mapeadas como
+  // poligono. Nao vale o preco.
+  const query = `
     [out:json][timeout:25];
     (
-      node["amenity"](around:${raio},${lat},${lng});
-      node["shop"](around:${raio},${lat},${lng});
-      node["leisure"](around:${raio},${lat},${lng});
-      node["highway"="bus_stop"](around:${raio},${lat},${lng});
-      ${comWays ? `way["shop"](around:${raio},${lat},${lng});` : ''}
+      node["amenity"](around:${raioMetros},${lat},${lng});
+      node["shop"](around:${raioMetros},${lat},${lng});
+      node["leisure"](around:${raioMetros},${lat},${lng});
+      node["highway"="bus_stop"](around:${raioMetros},${lat},${lng});
     );
     out tags center;
   `;
 
-  // Uma retentativa mais leve: instancia publica sobrecarregada devolve 504/429
-  // e o certo e insistir menor, nao desistir da fonte.
-  const tentativas = [
-    { query: q(raioMetros, true), timeout: 30000, nota: 'completa' },
-    { query: q(Math.min(raioMetros, 800), false), timeout: 20000, nota: 'reduzida' },
-  ];
-
-  for (const t of tentativas) {
+  // A retentativa REPETE a mesma pergunta com mais paciencia. Nao encolhe o
+  // raio: um resultado de 800m devolvido no lugar de um de 1.500m responde
+  // outra pergunta e subconta sem avisar — foi assim que "Escolas: 0" apareceu
+  // num bairro com escola.
+  for (const timeout of [25000, 40000]) {
     try {
-      const response = await axios.post(OVERPASS_URL, `data=${encodeURIComponent(t.query)}`, {
-        timeout: t.timeout,
+      const response = await axios.post(OVERPASS_URL, `data=${encodeURIComponent(query)}`, {
+        timeout,
         headers: OSM_HEADERS
       });
-      const elements = response.data?.elements || [];
-      if (t.nota !== 'completa') console.warn(`[OSM] consulta ${t.nota} funcionou (${elements.length} elementos)`);
-      return classificarElementos(elements);
+      return classificarElementos(response.data?.elements || []);
     } catch (err) {
-      console.warn(`[OSM] consulta ${t.nota} falhou: ${err.message}`);
+      console.warn(`[OSM] Overpass falhou (timeout ${timeout / 1000}s): ${err.message}`);
     }
   }
   return null;
