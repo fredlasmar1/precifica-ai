@@ -1469,7 +1469,7 @@
       // O Google nao tem mais cota fixa de US$200 — mostra o que sabemos de
       // verdade (chamadas deste app e o custo estimado), nao uma porcentagem
       // de um credito que nao existe mais.
-      if (u.google && !u.google.erro) partes.push(`Google: <b>${u.google.usados}</b> buscas (~R$ ${u.google.custoEstimadoBRL})`);
+      if (u.google && !u.google.erro) partes.push(`Google: <b>${u.google.hoje}/${u.google.tetoDia}</b> hoje · ${u.google.usados} no mês (~R$ ${u.google.custoEstimadoBRL})`);
       if (partes.length) c.innerHTML = ` &nbsp;|&nbsp; ${partes.join(' · ')}`;
       if (u.alertas && u.alertas.length) c.classList.add('alerta');
     }).catch(() => {});

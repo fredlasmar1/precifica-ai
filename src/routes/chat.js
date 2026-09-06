@@ -1261,11 +1261,17 @@ router.get('/uso', async (req, res) => {
     const USD_POR_BUSCA = 0.032;   // Nearby Search (legado), ordem de grandeza
     const USD_BRL = 5.4;
     const custoEstimadoBRL = Math.round(usados * USD_POR_BUSCA * USD_BRL * 100) / 100;
+    const hoje = await require('../data/database').obterUsoDia('google_places');
+    const tetoDia = Number(process.env.GOOGLE_TETO_DIA) || 300;
+    const tetoMes = Number(process.env.GOOGLE_TETO_MES) || 1500;
     out.google = {
-      usados,
+      usados, hoje, tetoDia, tetoMes,
       custoEstimadoBRL,
-      nota: 'Chamadas feitas por ESTE app. O crédito de US$200/mês do Maps acabou em 2025 — confira a cota e a fatura reais no console do Google Cloud.',
+      pctDia: Math.round((hoje / tetoDia) * 100),
+      nota: 'Chamadas feitas por ESTE app, com trava própria. O crédito de US$200/mês do Maps acabou em 2025 — confira a fatura real no console do Google Cloud.',
     };
+    if (hoje >= tetoDia) out.alertas.push(`🛑 Teto DIÁRIO do Google atingido (${hoje}/${tetoDia}) — o app parou de consultar o mapa hoje.`);
+    else if (hoje >= tetoDia * 0.8) out.alertas.push(`Google: ${hoje}/${tetoDia} buscas hoje (${Math.round(hoje / tetoDia * 100)}% do teto diário).`);
     if (usados >= 3000) out.alertas.push(`Google Maps: ${usados} buscas deste app (~R$ ${custoEstimadoBRL}). Confira a fatura no console.`);
   } catch (e) { out.google = { erro: e.message }; }
   res.json(out);

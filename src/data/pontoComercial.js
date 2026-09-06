@@ -49,6 +49,40 @@ function chavePlaces(tipo, { lat, lng, keyword, radius, maxPages }) {
 /** Dias de validade: o entorno urbano muda devagar. */
 const CACHE_DIAS = 30;
 
+/**
+ * TETO DE GASTO — o app se recusa a continuar chamando o Google depois do
+ * limite. Estrutural, nao conselho: com a trava em pe, nenhuma alteracao de
+ * codigo (nem um laco acidental) consegue repetir a fatura de R$ 1.403 num dia.
+ *
+ * O teto do DIA e o que importa: o estouro de ago/2026 foi num unico dia.
+ * Ajustavel por env sem mexer em codigo.
+ */
+const TETO_DIA = Number(process.env.GOOGLE_TETO_DIA) || 300;
+const TETO_MES = Number(process.env.GOOGLE_TETO_MES) || 1500;
+
+let _avisouTeto = null;   // evita encher o log com o mesmo aviso
+
+/**
+ * @returns null se pode chamar; senao a razao (que vira `indisponivel` para
+ * quem chamou — o app ja sabe degradar com honestidade nesse caso).
+ */
+async function tetoEstourado() {
+  try {
+    const db = require('./database');
+    const [dia, mes] = await Promise.all([db.obterUsoDia('google_places'), db.obterUso('google_places')]);
+    if (dia >= TETO_DIA) return `teto diário de ${TETO_DIA} buscas atingido (${dia} hoje)`;
+    if (mes >= TETO_MES) return `teto mensal de ${TETO_MES} buscas atingido (${mes} neste mês)`;
+    return null;
+  } catch { return null; }   // trava com defeito nao pode cegar o sistema
+}
+
+function avisarTeto(razao) {
+  const hoje = new Date().toISOString().slice(0, 10);
+  if (_avisouTeto === hoje + razao) return;
+  _avisouTeto = hoje + razao;
+  console.warn(`[TetoGoogle] 🛑 ${razao} — parando de consultar o Google. Ajuste GOOGLE_TETO_DIA/GOOGLE_TETO_MES se for legítimo.`);
+}
+
 async function placesNearby({ lat, lng, keyword, radius }) {
   const apiKey = process.env.GOOGLE_PLACES_API_KEY;
   if (!apiKey) return { erro: 'GOOGLE_PLACES_API_KEY não configurada', indisponivel: true, results: [] };
@@ -59,8 +93,13 @@ async function placesNearby({ lat, lng, keyword, radius }) {
     if (guardado) return { ...guardado, doCache: true };
   } catch {}
 
+  // O teto é checado DEPOIS do cache: resposta guardada não gasta nada e deve
+  // continuar servindo mesmo com a trava acionada.
+  const razao = await tetoEstourado();
+  if (razao) { avisarTeto(razao); return { erro: razao, indisponivel: true, results: [] }; }
+
   try {
-    try { require('./database').registrarUso('google_places', 1); } catch {} // contador de custo (best-effort)
+    try { require('./database').registrarUso('google_places', 1); require('./database').registrarUsoDia('google_places', 1); } catch {} // contador de custo (best-effort)
     const { data } = await axios.get(PLACES_URL, {
       params: { location: `${lat},${lng}`, radius, keyword, key: apiKey },
       timeout: 15000
@@ -104,13 +143,16 @@ async function placesCountExato({ lat, lng, keyword, radius, maxPages = 3 }) {
     if (guardado) return { ...guardado, doCache: true };
   } catch {}
 
+  const razaoC = await tetoEstourado();
+  if (razaoC) { avisarTeto(razaoC); return { total: 0, results: [], capou: false, indisponivel: true, erro: razaoC }; }
+
   let results = [];
   let fechados = [];        // negócios mortos = pontos que vagaram
   let pageToken = null;
   let pages = 0;
   try {
     while (pages < maxPages) {
-      try { require('./database').registrarUso('google_places', 1); } catch {}
+      try { require('./database').registrarUso('google_places', 1); require('./database').registrarUsoDia('google_places', 1); } catch {}
       const params = pageToken
         ? { pagetoken: pageToken, key: apiKey }
         : { location: `${lat},${lng}`, radius, keyword, key: apiKey };

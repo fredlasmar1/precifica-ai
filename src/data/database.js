@@ -625,6 +625,35 @@ async function registrarUso(servico, n = 1) {
   } catch (err) { /* uso é best-effort, nunca quebra o fluxo */ }
 }
 
+/**
+ * TRAVA DE GASTO — o app nunca mais pode gerar uma surpresa de R$ 1.400.
+ *
+ * A tabela api_uso e chaveada por (mes, servico) com `mes` TEXT, entao da para
+ * guardar o contador do DIA na mesma tabela usando 'dia:AAAA-MM-DD' — sem
+ * migracao. O teto do dia importa mais que o do mes: a fatura de ago/2026 foi
+ * R$ 1.403 gastos em UM dia.
+ */
+function chaveDoDia() {
+  return 'dia:' + new Date().toISOString().slice(0, 10);
+}
+
+async function registrarUsoDia(servico, n = 1) {
+  try {
+    await pool.query(
+      `INSERT INTO api_uso (mes, servico, chamadas) VALUES ($1, $2, $3)
+       ON CONFLICT (mes, servico) DO UPDATE SET chamadas = api_uso.chamadas + $3`,
+      [chaveDoDia(), servico, n]
+    );
+  } catch (err) { /* best-effort */ }
+}
+
+async function obterUsoDia(servico) {
+  try {
+    const r = await pool.query(`SELECT chamadas FROM api_uso WHERE mes = $1 AND servico = $2`, [chaveDoDia(), servico]);
+    return r.rows[0]?.chamadas || 0;
+  } catch (err) { return 0; }
+}
+
 async function obterUso(servico) {
   try {
     const r = await pool.query(`SELECT chamadas FROM api_uso WHERE mes = $1 AND servico = $2`, [mesAtual(), servico]);
@@ -674,6 +703,6 @@ module.exports = {
   buscarPredio, salvarPredio,
   salvarAvaliacao, salvarFeedback,
   salvarConhecimentoCidade, buscarConhecimentoCidade,
-  stats, registrarUso, obterUso,
+  stats, registrarUso, obterUso, registrarUsoDia, obterUsoDia,
   salvarLaudo, listarLaudos, buscarLaudo, limparLaudos, apagarLaudo
 };
