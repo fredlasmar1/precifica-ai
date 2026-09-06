@@ -36,7 +36,7 @@ const GERADORES = [
 
 async function placesNearby({ lat, lng, keyword, radius }) {
   const apiKey = process.env.GOOGLE_PLACES_API_KEY;
-  if (!apiKey) return { erro: 'GOOGLE_PLACES_API_KEY não configurada', results: [] };
+  if (!apiKey) return { erro: 'GOOGLE_PLACES_API_KEY não configurada', indisponivel: true, results: [] };
   try {
     try { require('./database').registrarUso('google_places', 1); } catch {} // contador de custo (best-effort)
     const { data } = await axios.get(PLACES_URL, {
@@ -44,12 +44,16 @@ async function placesNearby({ lat, lng, keyword, radius }) {
       timeout: 15000
     });
     if (data.status !== 'OK' && data.status !== 'ZERO_RESULTS') {
-      console.warn(`[Places] status ${data.status} p/ "${keyword}"`);
+      // REQUEST_DENIED / OVER_QUERY_LIMIT nao sao "nao ha nada aqui": sao "nao
+      // consegui perguntar". Devolver lista vazia calada fazia o analisador
+      // dizer "0 concorrentes, mercado inexplorado" para o cliente.
+      console.warn(`[Places] status ${data.status} p/ "${keyword}" — fonte INDISPONIVEL`);
+      return { erro: data.status, indisponivel: true, results: [] };
     }
     return { results: data.results || [], capado: (data.results || []).length >= 20 };
   } catch (err) {
     console.warn('[Places] erro:', err.message);
-    return { erro: err.message, results: [] };
+    return { erro: err.message, indisponivel: true, results: [] };
   }
 }
 
@@ -59,7 +63,7 @@ async function placesNearby({ lat, lng, keyword, radius }) {
  */
 async function placesCountExato({ lat, lng, keyword, radius, maxPages = 3 }) {
   const apiKey = process.env.GOOGLE_PLACES_API_KEY;
-  if (!apiKey) return { total: 0, results: [], capou: false };
+  if (!apiKey) return { total: 0, results: [], capou: false, indisponivel: true };
   let results = [];
   let pageToken = null;
   let pages = 0;
@@ -70,6 +74,10 @@ async function placesCountExato({ lat, lng, keyword, radius, maxPages = 3 }) {
         ? { pagetoken: pageToken, key: apiKey }
         : { location: `${lat},${lng}`, radius, keyword, key: apiKey };
       const { data } = await axios.get(PLACES_URL, { params, timeout: 15000 });
+      if (data.status !== 'OK' && data.status !== 'ZERO_RESULTS') {
+        console.warn(`[PlacesCount] status ${data.status} p/ "${keyword}" — fonte INDISPONIVEL`);
+        return { total: 0, results: [], capou: false, indisponivel: true };
+      }
       const r = (data.results || []).filter((x) => x.business_status !== 'CLOSED_PERMANENTLY');
       results = results.concat(r);
       pageToken = data.next_page_token || null;
@@ -80,7 +88,7 @@ async function placesCountExato({ lat, lng, keyword, radius, maxPages = 3 }) {
     return { total: results.length, results, capou: !!pageToken };
   } catch (e) {
     console.warn('[PlacesCount] erro:', e.message);
-    return { total: results.length, results, capou: false };
+    return { total: results.length, results, capou: false, indisponivel: results.length === 0 };
   }
 }
 
@@ -220,9 +228,24 @@ async function analisarPontoComercial(lat, lng, ramo, ctx = {}) {
   // 2) Geradores de movimento (500m)
   const geradoresRes = await Promise.all(
     GERADORES.map(g => placesNearby({ lat, lng, keyword: g.keyword, radius: 500 })
-      .then(r => ({ ...g, qtd: resumirConcorrentes(r.results).total, capado: r.capado })))
+      .then(r => ({ ...g, qtd: r.indisponivel ? null : resumirConcorrentes(r.results).total, capado: r.capado, indisponivel: !!r.indisponivel })))
   );
-  const movimentoScore = geradoresRes.reduce((acc, g) => acc + Math.min(g.qtd, 8) * g.peso, 0);
+  const movimentoScore = geradoresRes.reduce((acc, g) => acc + Math.min(g.qtd || 0, 8) * g.peso, 0);
+
+  // ─── A FONTE CAIU? Entao nao ha veredito. ────────────────────────
+  // O mapa e a espinha desta analise: sem ele nao existe concorrencia nem
+  // fluxo, e um score montado sobre zeros de falha dizia "mercado inexplorado,
+  // pode ser oportunidade" — conselho de investimento em cima de nada.
+  const mapaIndisponivel = !!c500.indisponivel || !!c1k.indisponivel || geradoresRes.every(g => g.indisponivel);
+  if (mapaIndisponivel) {
+    console.warn(`[PontoComercial] ${ctx.bairro || ''}: mapa indisponivel — analise devolvida SEM score`);
+    return {
+      erro: 'Não foi possível consultar o mapa (Google Places recusou a consulta). Sem concorrência e sem fluxo medidos, não há como dar nota ao ponto — o que sairia seria um número em cima de zeros de falha.',
+      fonteIndisponivel: 'google_places',
+      ramo: ramoLimpo,
+      bairro: ctx.bairro || null,
+    };
+  }
 
   // 3) Demanda (IBGE via perfilGuru, se veio)
   const mun = ctx.perfilGuru?.municipio || null;
@@ -352,7 +375,7 @@ function formatarRelatorioComercial(a) {
   t += `\n`;
 
   t += `🚶 *Geradores de movimento (500m):*\n`;
-  a.movimento.geradores.forEach(g => { t += `• ${g.label}: ${g.qtd}${g.capado ? '+' : ''}\n`; });
+  a.movimento.geradores.forEach(g => { t += `• ${g.label}: ${g.qtd == null ? 'não consultado' : g.qtd + (g.capado ? '+' : '')}\n`; });
   t += `\n`;
 
   if (a.demanda.populacao || a.demanda.pibPerCapita) {

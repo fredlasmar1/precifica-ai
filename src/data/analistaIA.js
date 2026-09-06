@@ -1200,4 +1200,4 @@ RETORNE SOMENTE JSON válido:
   }
 }
 
-module.exports = { estimarPrecoComIA, estimarPrecoPredio };
+module.exports = { estimarPrecoComIA, estimarPrecoPredio, filtrarComparativosPorBairro };

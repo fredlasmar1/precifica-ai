@@ -75,18 +75,25 @@ async function infraestruturaProxima(lat, lng) {
   const out = [];
   for (const c of cats) {
     try {
-      const { results } = await placesNearby({ lat, lng, keyword: c.kw, radius: 1500 });
-      const qtd = (results || []).length;
+      const r = await placesNearby({ lat, lng, keyword: c.kw, radius: 1500 });
+      // qtd null = NAO CONSULTADO. Antes a recusa do Google virava qtd 0 e o
+      // laudo afirmava "0 escolas, 0 bancos, 0 mercados" no bairro mais denso
+      // de Anapolis, com cara de dado apurado.
+      if (r.indisponivel) { out.push({ categoria: c.categoria, qtd: null, maisProximoM: null, indisponivel: true }); continue; }
+      const results = r.results || [];
       let maisProximoM = null;
-      for (const r of (results || [])) {
-        const loc = r.geometry && r.geometry.location;
+      for (const x of results) {
+        const loc = x.geometry && x.geometry.location;
         if (!loc) continue;
         const dm = Math.round(distM(lat, lng, loc.lat, loc.lng));
         if (maisProximoM == null || dm < maisProximoM) maisProximoM = dm;
       }
-      out.push({ categoria: c.categoria, qtd, maisProximoM });
-    } catch { out.push({ categoria: c.categoria, qtd: 0, maisProximoM: null }); }
+      out.push({ categoria: c.categoria, qtd: results.length, maisProximoM });
+    } catch { out.push({ categoria: c.categoria, qtd: null, maisProximoM: null, indisponivel: true }); }
   }
+  // Nenhuma categoria respondeu: nao devolve bloco nenhum em vez de uma tabela
+  // de zeros que o corretor leria como "a regiao nao tem nada".
+  if (out.every(o => o.indisponivel)) return null;
   return out;
 }
 

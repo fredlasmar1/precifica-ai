@@ -126,6 +126,26 @@ async function calcularPreco(dadosImovel) {
         raciocinio: 'Dados recentes do banco de dados',
         faixaM2: `R$ ${precoDb.faixa_min} - R$ ${precoDb.faixa_max}/m²`
       } : null;
+
+      // O CACHE PASSA PELO MESMO FILTRO. O filtro de bairro mora dentro do
+      // estimarPrecoComIA; toda linha salva antes dele (ou por uma versao mais
+      // velha do motor) devolvia a amostra contaminada direto do Postgres e
+      // pulava a limpeza — o conserto ficava invisivel ate o cache vencer.
+      if (analiseIA && Array.isArray(analiseIA.comparativos) && analiseIA.comparativos.length >= 2) {
+        try {
+          const { filtrarComparativosPorBairro } = require('./analistaIA');
+          const limpo = filtrarComparativosPorBairro(analiseIA, bairro, cidade);
+          if (limpo && limpo.precoMedioM2 > 0 && limpo.precoMedioM2 !== analiseIA.precoMedioM2) {
+            console.log(`[Precificador] Cache re-filtrado: R$ ${analiseIA.precoMedioM2}/m² → R$ ${limpo.precoMedioM2}/m² (${analiseIA.anunciosAnalisados} → ${limpo.anunciosAnalisados} anúncios)`);
+            analiseIA = limpo;
+            precoM2Base = limpo.precoMedioM2;
+            confiancaFonte = limpo.confianca || confiancaFonte;
+            // A linha do banco esta suja: apaga para a proxima consulta refazer
+            // a busca ja com o filtro em pe.
+            try { await db.invalidarPreco(cidade, bairro, tipo, finalidade, condominio); } catch {}
+          }
+        } catch (e) { console.warn('[Precificador] re-filtro do cache:', e.message); }
+      }
       console.log(`[Precificador] Cache DB: R$ ${precoM2Base}/m² (${Math.round(precoDb.dias_desde * 24)}h atrás, ${precoDb.amostras} amostras)`);
     } else if (precoDb) {
       console.log(`[Precificador] Cache DB ignorado: confiança="${precoDb.confianca}", amostras=${precoDb.amostras} — forçando nova busca`);
