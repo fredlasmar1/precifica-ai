@@ -273,6 +273,24 @@ function filtrarRelevanciaComercial(resultado, metragemRef) {
  *  5. Nunca esvazia: sobrando menos de 2, devolve a amostra original marcada
  *     com confiança 'baixa'.
  */
+// ─── REGRA UNICA: quantos anuncios = quanta confianca ───────────────
+// Estava escrita em dois lugares com numeros diferentes (o precificador dava
+// "alta" com 5 anuncios; o filtro so com 8) e a segunda sobrescrevia a
+// primeira, jogando fora ate o rebaixamento por contaminacao da amostra.
+const ORDEM_CONFIANCA = { baixa: 0, media: 1, alta: 2 };
+
+/** Confianca que o TAMANHO da amostra sustenta, sozinho. */
+function confiancaPorAmostra(n) {
+  return n >= 8 ? 'alta' : n >= 5 ? 'media' : 'baixa';
+}
+
+/** Entre dois vereditos de confianca, vale sempre o mais conservador. */
+function maisConservadora(a, b) {
+  const va = ORDEM_CONFIANCA[a] ?? 0;
+  const vb = ORDEM_CONFIANCA[b] ?? 0;
+  return va <= vb ? (a || 'baixa') : (b || 'baixa');
+}
+
 function filtrarComparativosPorBairro(resultado, bairroRef, cidadeRef = 'Anápolis') {
   if (!resultado?.comparativos || resultado.comparativos.length < 2) return resultado;
   const { getMultiplicadorBairro } = require('./bairros');
@@ -356,9 +374,8 @@ function filtrarComparativosPorBairro(resultado, bairroRef, cidadeRef = 'Anápol
   // A confianca passa a refletir a amostra QUE SOBROU. Antes o filtro podia
   // cortar 9 anuncios para 3 e manter "alta" — o laudo prometia firmeza que a
   // amostra nao tinha.
-  const teto = precos.length >= 8 ? 'alta' : precos.length >= 5 ? 'media' : 'baixa';
-  const ordem = { baixa: 0, media: 1, alta: 2 };
-  if (ordem[teto] < ordem[confianca ?? 'baixa']) {
+  const teto = confiancaPorAmostra(precos.length);
+  if (ORDEM_CONFIANCA[teto] < (ORDEM_CONFIANCA[confianca] ?? 0)) {
     if (!notaAmostra) notaAmostra = `Amostra final de ${precos.length} anuncio(s) em ${bairroRef} — faixa indicativa.`;
     confianca = teto;
   }
@@ -1200,4 +1217,4 @@ RETORNE SOMENTE JSON válido:
   }
 }
 
-module.exports = { estimarPrecoComIA, estimarPrecoPredio, filtrarComparativosPorBairro };
+module.exports = { estimarPrecoComIA, estimarPrecoPredio, filtrarComparativosPorBairro, confiancaPorAmostra, maisConservadora };

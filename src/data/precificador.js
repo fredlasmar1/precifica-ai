@@ -195,9 +195,11 @@ async function calcularPreco(dadosImovel) {
         // Confiança determinada objetivamente pelo número de amostras reais
         // (não pela opinião do GPT-4o, que tende a ser conservador)
         const amostrasReais = analiseIA.anunciosAnalisados || 0;
-        confiancaFonte = amostrasReais >= 5 ? 'alta'
-          : amostrasReais >= 3 ? 'media'
-          : 'baixa';
+        // O filtro de bairro ja emitiu um veredito (e rebaixa por contaminacao,
+        // nao so por tamanho). Vale sempre o mais conservador dos dois — antes
+        // esta linha simplesmente apagava a opiniao do filtro.
+        const { confiancaPorAmostra, maisConservadora } = require('./analistaIA');
+        confiancaFonte = maisConservadora(confiancaPorAmostra(amostrasReais), analiseIA.confianca);
         analiseIA.confianca = confiancaFonte; // sincroniza para o laudo
         console.log(`[Precificador] Perplexity: R$ ${precoM2Base}/m² — ${amostrasReais} amostras → confiança ${confiancaFonte}`);
         // Salva no DB para próximas consultas
