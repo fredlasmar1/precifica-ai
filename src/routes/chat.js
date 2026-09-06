@@ -248,6 +248,29 @@ router.post('/fechamento', async (req, res) => {
   }
 });
 
+/**
+ * Apagar um fechamento. Quem digita valor digita errado uma hora, e um
+ * fechamento errado e pior que nenhum: ele vira PRECO do bairro. Protegido por
+ * X-API-Key, o mesmo padrao do /api/estimate.
+ */
+router.delete('/fechamento/:id', async (req, res) => {
+  const esperado = process.env.API_KEY;
+  if (!esperado) return res.status(503).json({ error: 'API_KEY não configurada no servidor' });
+  if (req.header('X-API-Key') !== esperado) return res.status(401).json({ error: 'não autorizado' });
+
+  const id = Number(req.params.id);
+  if (!id) return res.status(400).json({ error: 'id inválido' });
+  try {
+    const db = require('../data/database');
+    const r = await db.apagarFechamento(id);
+    if (!r) return res.status(404).json({ error: 'fechamento não encontrado' });
+    res.json({ ok: true, apagado: r });
+  } catch (err) {
+    console.error('[Fechamento] delete:', err.message);
+    res.status(500).json({ error: 'não consegui apagar' });
+  }
+});
+
 /** Placar: o sistema contra a realidade. Erramos para cima ou para baixo? */
 router.get('/fechamentos/placar', async (req, res) => {
   try {

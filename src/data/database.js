@@ -440,6 +440,11 @@ async function buscarFechamentos(cidade, bairro, tipo, finalidade = 'venda', mes
   return r.rows;
 }
 
+async function apagarFechamento(id) {
+  const r = await pool.query('DELETE FROM fechamentos WHERE id = $1 RETURNING *', [id]);
+  return r.rows[0] || null;
+}
+
 /** Placar de precisão: o sistema errou para mais ou para menos, e quanto. */
 async function placarFechamentos(cidade = null) {
   const r = await pool.query(`
@@ -543,7 +548,7 @@ async function apagarLaudo(id) {
 }
 
 module.exports = {
-  salvarFechamento, buscarFechamentos, placarFechamentos,
+  salvarFechamento, buscarFechamentos, placarFechamentos, apagarFechamento,
   pool, inicializar,
   salvarBairro, buscarBairro, listarBairros,
   salvarPreco, buscarPreco, invalidarPreco, salvarHistorico, buscarHistorico,

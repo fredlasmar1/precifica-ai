@@ -442,12 +442,17 @@ async function calcularPreco(dadosImovel) {
   // ─── Ajuste por análise da rua ──────────────────────────────────
 
   let precoM2Final = precoM2Base;
-  let ajustesDescricao = ['Preço baseado em amostragem de mercado'];
+  // A frase de abertura tem de dizer a fonte REAL. Quando o preço saiu de
+  // negócio fechado, chamar isso de "amostragem de mercado" apaga justamente o
+  // que o laudo tem de mais forte para mostrar.
+  const veioDeFechamento = !!(sinalFechamentos && sinalFechamentos.manda);
+  let ajustesDescricao = [veioDeFechamento
+    ? 'Preço apurado em negócios FECHADOS no bairro (o que foi pago)'
+    : 'Preço baseado em amostragem de mercado'];
   if (notaPredio) ajustesDescricao.unshift(notaPredio);
   if (notaAmostra) ajustesDescricao.push(notaAmostra);
   if (sinalFechamentos) {
     const { textoNegociacao } = require('./fechamentos');
-    if (sinalFechamentos.manda) ajustesDescricao.unshift(sinalFechamentos.nota);
     const neg = textoNegociacao(sinalFechamentos);
     if (neg) ajustesDescricao.push(neg);
   }
@@ -591,7 +596,8 @@ async function calcularPreco(dadosImovel) {
   const nAmostras = analiseIA?.anunciosAnalisados || 0;
   if (confiancaFonte === 'baixa' && analiseIA && nAmostras >= 2) {
     amostraFina = true;
-    ajustesDescricao.push(`Amostra de ${nAmostras} anúncios do bairro — o valor é o do mercado, mas a faixa de negociação foi alargada (±18%) para refletir a incerteza.`);
+    const unidade = veioDeFechamento ? 'negócios fechados' : 'anúncios';
+    ajustesDescricao.push(`Amostra de ${nAmostras} ${unidade} do bairro — o valor é o do mercado, mas a faixa de negociação foi alargada (±18%) para refletir a incerteza.`);
     console.log(`[Precificador] Amostra fina (${nAmostras} anúncios) — mercado mantido em R$${precoM2Final}/m², faixa alargada em vez de mesclar tabela`);
   }
   if (confiancaFonte === 'baixa' && analiseIA && nAmostras < 2) {
