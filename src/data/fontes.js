@@ -6,7 +6,10 @@
 function hoje() { return new Date().toLocaleDateString('pt-BR'); }
 
 const BASE_PGV = 'Planta Genérica de Valores — Prefeitura de Anápolis (2023)';
-const BASE_EBM = 'EBM Anápolis / levantamento Aderni-GO (R$/m² por bairro)';
+// Noticiario de mercado, NAO base com fe publica: a EBM/Aderni publica
+// levantamento de LANCAMENTOS por bairro. Serve de referencia e de grade de
+// sanidade; nunca entra num parecer como fonte oficial ao lado da PGV/IBGE.
+const BASE_EBM = 'EBM Anápolis / Aderni-GO — noticiário de mercado (lançamentos por bairro), usado só como referência de sanidade';
 const BASE_IBGE = 'IBGE (população e renda do município)';
 const BASE_MAPS = 'Google Maps (geolocalização e perfil do entorno)';
 const BASE_RECEITA = 'Receita Federal / bases públicas de CNPJ';

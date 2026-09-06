@@ -338,7 +338,7 @@ async function calcularPreco(dadosImovel) {
         // Sem NENHUM anúncio no período não existe mercado para mandar: aí a
         // base do bairro é o melhor palpite que temos — e o laudo diz isso.
         precoM2Base = ancora.m2;
-        notaCalibracao = `Nenhum anúncio encontrado em ${bairro} no período — valor pela base do bairro (${ancora.fonte}). Trate como referência, não como avaliação de mercado.`;
+        notaCalibracao = `Nenhum anúncio encontrado em ${bairro} no período — o valor veio da referência publicada de mercado (${ancora.fonte}), que acompanha LANÇAMENTOS e tende ao topo do bairro. Trate como referência, não como avaliação de mercado.`;
         console.log(`[Grade] ${tipo}/${finalidade} ${bairro}: 0 amostras → base R$${ancora.m2}/m²`);
       } else {
         const piso = Math.round(ancora.m2 * 0.5);
@@ -348,7 +348,7 @@ async function calcularPreco(dadosImovel) {
           // Só chega aqui quem passou de 50% de distância da base: é sinal de
           // amostra contaminada, não de bairro caro.
           precoM2Base = limitado;
-          notaCalibracao = `Amostra de mercado indicava R$ ${mercadoBruto.toLocaleString('pt-BR')}/m², fora da grade de sanidade do bairro (R$ ${piso.toLocaleString('pt-BR')} a R$ ${teto.toLocaleString('pt-BR')}/m² · ${ancora.fonte}) — limitado a R$ ${limitado.toLocaleString('pt-BR')}/m².`;
+          notaCalibracao = `Amostra de mercado indicava R$ ${mercadoBruto.toLocaleString('pt-BR')}/m², fora da grade de sanidade do bairro (R$ ${piso.toLocaleString('pt-BR')} a R$ ${teto.toLocaleString('pt-BR')}/m², referência ${ancora.fonte}) — limitado a R$ ${limitado.toLocaleString('pt-BR')}/m². Amostra provavelmente contaminada; confira os comparativos.`;
           console.warn(`[Grade] ${tipo}/${finalidade} ${bairro}: mercado R$${mercadoBruto} fora da banda [${piso}, ${teto}] (base R$${ancora.m2}, ${amostras} amostras) → R$${limitado}`);
         } else {
           console.log(`[Grade] ${tipo}/${finalidade} ${bairro}: mercado R$${mercadoBruto}/m² dentro da banda [${piso}, ${teto}] — mantido (${amostras} amostras)`);

@@ -12,15 +12,28 @@ function getOpenAI() {
   return _openai;
 }
 
-/** Rentabilidade: aluguel estimado, yield anual e payback (anos). */
-function rentabilidade(tipo, cidade, bairro, metragem, valorVenda) {
+/**
+ * Rentabilidade: aluguel, yield anual e payback (anos).
+ *
+ * `aluguelReal` e o aluguel que o MOTOR apurou no mercado. Quando existe, manda.
+ * Sem ele, cai na referencia publicada (EBM) — que e noticiario de lancamento e
+ * puxa para cima. Era so essa a fonte, e o laudo saia com DOIS alugueis
+ * diferentes: R$ 3.060 aqui contra R$ 2.790 no motor, para o mesmo imovel.
+ */
+function rentabilidade(tipo, cidade, bairro, metragem, valorVenda, aluguelReal = 0) {
   if (!valorVenda || !metragem) return null;
-  const al = getAncora(tipo, 'aluguel', cidade, bairro);
-  const aluguelMensal = Math.round((al.m2 || 0) * metragem);
+  let aluguelMensal = Math.round(Number(aluguelReal) || 0);
+  let fonte = 'mercado (anúncios de aluguel do bairro)';
+  if (!aluguelMensal) {
+    const al = getAncora(tipo, 'aluguel', cidade, bairro);
+    aluguelMensal = Math.round((al.m2 || 0) * metragem);
+    fonte = 'estimado pela referência publicada — sem anúncio de aluguel na amostra';
+  }
   if (!aluguelMensal) return null;
   const anual = aluguelMensal * 12;
   return {
     aluguelMensal,
+    fonte,
     yieldAnual: +((anual / valorVenda) * 100).toFixed(2),
     paybackAnos: +(valorVenda / anual).toFixed(1),
   };
@@ -95,13 +108,13 @@ async function tendenciaBairro(cidade, bairro, valorM2) {
 }
 
 /** Calcula todos os enriquecimentos (best-effort, em paralelo). */
-async function enriquecer({ tipo, cidade, bairro, metragem, valorVenda, precoM2, lat, lng }) {
+async function enriquecer({ tipo, cidade, bairro, metragem, valorVenda, precoM2, lat, lng, aluguelReal }) {
   const [infra, tendencia] = await Promise.all([
     infraestruturaProxima(lat, lng).catch(() => null),
     tendenciaBairro(cidade, bairro, precoM2).catch(() => null),
   ]);
   return {
-    rentabilidade: rentabilidade(tipo, cidade, bairro, metragem, valorVenda),
+    rentabilidade: rentabilidade(tipo, cidade, bairro, metragem, valorVenda, aluguelReal),
     financiamento: financiamento(valorVenda),
     infraestrutura: infra,
     tendencia,

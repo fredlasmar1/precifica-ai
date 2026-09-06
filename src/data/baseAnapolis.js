@@ -75,12 +75,15 @@ function getBaseVenda(cidade, bairro) {
   // 1) Match na tabela EBM — SOMENTE Anápolis (a EBM/Aderni é de Anápolis).
   if (isAnapolis(cidade)) {
     if (EBM_VENDA_M2[key]) {
-      return { m2: EBM_VENDA_M2[key], fonte: 'EBM/Aderni-GO', confianca: 'alta' };
+      // A EBM e noticiario de mercado (levantamento de LANCAMENTOS publicado na
+      // imprensa), nao base com fe publica como a PGV ou o IBGE. Por isso a
+      // confianca e 'media': ela referencia o TOPO do mercado do bairro.
+      return { m2: EBM_VENDA_M2[key], fonte: 'EBM/Aderni-GO (noticiário de lançamentos)', confianca: 'media' };
     }
     // match por "contém" (ex: "vila jaiara setor norte" → "vila jaiara")
     for (const ebmKey of Object.keys(EBM_VENDA_M2)) {
       if (key.includes(ebmKey)) {
-        return { m2: EBM_VENDA_M2[ebmKey], fonte: 'EBM/Aderni-GO (região)', confianca: 'alta' };
+        return { m2: EBM_VENDA_M2[ebmKey], fonte: 'EBM/Aderni-GO (noticiário, região)', confianca: 'media' };
       }
     }
   }

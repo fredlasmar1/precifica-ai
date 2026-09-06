@@ -150,6 +150,20 @@ router.post('/avaliar', async (req, res) => {
     if (resultado.erro) {
       return res.status(422).json({ error: resultado.mensagem });
     }
+
+    // O quadro completo ja apurou o aluguel de MERCADO deste imovel. Usa ele na
+    // rentabilidade em vez da referencia publicada — senao o mesmo laudo mostra
+    // dois alugueis diferentes (o do motor e o da tabela) e o corretor nao sabe
+    // qual levar para o cliente.
+    if (dadosImovel.finalidade === 'venda' && rOutra && !rOutra.erro && rOutra.precoRecomendado > 0 && resultado.enriquecimento) {
+      try {
+        const { rentabilidade } = require('../data/enriquecimento');
+        const nova = rentabilidade(dadosImovel.tipo, dadosImovel.cidade, dadosImovel.bairro,
+          dadosImovel.metragem, resultado.precoRecomendado, rOutra.precoRecomendado);
+        if (nova) resultado.enriquecimento.rentabilidade = nova;
+      } catch (e) { console.warn('[Avaliar] rentabilidade pelo mercado:', e.message); }
+    }
+
     let laudo = gerarLaudo(dadosImovel, resultado);
     if (rOutra && !rOutra.erro && rOutra.precoRecomendado > 0) {
       const fmt = (v) => 'R$ ' + Number(v).toLocaleString('pt-BR');
