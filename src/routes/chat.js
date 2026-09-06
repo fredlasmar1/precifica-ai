@@ -495,7 +495,60 @@ router.post('/ponto-comercial', async (req, res) => {
     }
     if (analise.erro) return res.status(422).json({ error: analise.erro });
 
-    const texto = formatarRelatorioComercial(analise);
+    let texto = formatarRelatorioComercial(analise);
+
+    // A CONTA DO ALUGUEL VALE SEMPRE, nao so quando o mapa cai.
+    //
+    // Defeito pego no teste em producao: eu tinha posto a viabilidade so no
+    // caminho de ERRO (mapa indisponivel). Com o Google funcionando ela sumia —
+    // justo quando a analise e mais completa. E o parecer da IA saiu dizendo
+    // que aluguel de R$ 8.000 contra faturamento estimado de R$ 15-25 mil
+    // "sugere uma margem saudavel". Sao 32% a 53% da receita; a regua de
+    // barbearia e 8-12%. O laudo estava recomendando um ponto que quebra o
+    // negocio — exatamente o que este bloco existe para impedir.
+    let contaAluguel = null;
+    const aluguelPedidoOk = Number(b.aluguelPedido) || 0;
+    if (aluguelPedidoOk > 0) {
+      try {
+        const { analisarAluguel, formatarAluguel } = require('../data/viabilidadeAluguel');
+        let aluguelMercadoM2 = 0, confMercado = null, amoMercado = 0;
+        if (Number(b.metragem) > 0) {
+          const r = await calcularPreco({ tipo: 'comercial', finalidade: 'aluguel', cidade, bairro, metragem: Number(b.metragem) });
+          if (r && !r.erro && r.precoM2Imovel > 0) {
+            aluguelMercadoM2 = r.precoM2Imovel;
+            confMercado = r.analiseIA?.confianca || null;
+            amoMercado = r.analiseIA?.anunciosAnalisados || 0;
+          }
+        }
+        contaAluguel = analisarAluguel({
+          ramo, metragem: Number(b.metragem) || 0, aluguelPedido: aluguelPedidoOk,
+          ticketMedio: Number(b.ticketMedio) || 0,
+          faturamentoAtual: Number(b.faturamentoAtual) || 0,
+          aluguelMercadoM2, confiancaMercado: confMercado, amostraMercado: amoMercado,
+        });
+        if (!contaAluguel.erro) {
+          texto += `\n\n━━━━━━━━━━━━━━━━━━━━━\n${formatarAluguel(contaAluguel)}`;
+
+          // O confronto que faltava: a estimativa de faturamento do laudo contra
+          // a regua do ramo. Se o aluguel pedido nao cabe nem no TOPO da faixa
+          // estimada, isso tem de aparecer ANTES do parecer, e em voz alta.
+          const faixa = String(analise?.ticket?.faturamentoMensal || '');
+          const nums = (faixa.match(/[\d.]+/g) || []).map(n => Number(n.replace(/\./g, ''))).filter(n => n > 1000);
+          const topo = nums.length ? Math.max(...nums) : 0;
+          if (topo > 0) {
+            const peso = (aluguelPedidoOk / topo) * 100;
+            if (peso > contaAluguel.percentualTeto) {
+              texto += `\n\n🔴 *ATENÇÃO — o aluguel não cabe na estimativa deste laudo.*\n` +
+                `Mesmo no TOPO do faturamento estimado (R$ ${topo.toLocaleString('pt-BR')}/mês), ` +
+                `o aluguel de R$ ${aluguelPedidoOk.toLocaleString('pt-BR')} seria *${peso.toFixed(0)}% da receita* — ` +
+                `a régua de ${contaAluguel.ramoLabel.toLowerCase()} é ${contaAluguel.percentualSaudavel}% a ${contaAluguel.percentualTeto}%. ` +
+                `Ponto bom não salva contrato ruim.`;
+            }
+          }
+        }
+      } catch (e) { console.warn('[Comercial] viabilidade do aluguel:', e.message); }
+    }
+
     try {
       require('../data/database').salvarLaudo({
         kind: 'comercial', titulo: analise.ramo, tipo: 'comercial',
@@ -503,7 +556,7 @@ router.post('/ponto-comercial', async (req, res) => {
         dados: { ramo: analise.ramo, bairro: analise.bairro }, resultado: analise,
       });
     } catch {}
-    return res.json({ type: 'comercial', response: texto, analise });
+    return res.json({ type: 'comercial', response: texto, analise: { ...analise, viabilidadeAluguel: contaAluguel } });
   } catch (err) {
     console.error('[PontoComercial API] Erro:', err);
     return res.status(500).json({ error: '⚠️ Erro ao analisar o ponto comercial. Tente novamente.', debug: err.message });
