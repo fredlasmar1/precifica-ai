@@ -38,11 +38,30 @@ async function handleTelegram(req, res) {
     if (text === '/start') {
       clearSession(sessionId);
       laudoCache.delete(sessionId);
+      // O /start convidava ao interrogatorio ("qual o tipo?") e ensinava o
+      // caminho lento — 8 perguntas ate o laudo. Uma linha so ja resolve, mas
+      // ninguem descobre isso sozinho. Entao o bot ENSINA o atalho.
       await enviar(chatId,
-        '👋 Olá! Sou o *PrecificaAI* — seu assistente de precificação imobiliária.\n\n' +
-        'Me diga os dados do imóvel e eu consulto o mercado em tempo real para gerar um laudo com faixa de preço.\n\n' +
-        'Vamos começar? Qual o *tipo* do imóvel? (casa, apartamento, terreno ou comercial)'
+        '👋 Sou o *PrecificaAI* — avaliação de imóvel com anúncio real do mercado.\n\n' +
+        '*Me manda tudo numa linha só* e eu já devolvo o laudo. Por exemplo:\n\n' +
+        '_apartamento 90m² no Jundiaí, Anápolis, venda, 3 quartos_\n' +
+        '_casa 150m² no Centro de Anápolis para alugar_\n' +
+        '_terreno 400m² na Vila Jaiara, venda_\n\n' +
+        'Preciso de 4 coisas: *tipo*, *metragem*, *bairro/cidade* e *venda ou aluguel*. ' +
+        'O resto (condomínio, vagas, diferenciais) é opcional e só refina.\n\n' +
+        'Se preferir ir por partes, é só começar dizendo o tipo do imóvel.'
       );
+      return;
+    }
+
+    // Comando /completo — devolve o laudo inteiro que ficou guardado
+    if (text === '/completo') {
+      const guardado = laudoCache.get(sessionId);
+      if (!guardado) {
+        await enviar(chatId, 'Nenhum laudo recente. Me manda os dados do imóvel que eu avalio.');
+      } else {
+        await enviar(chatId, guardado.texto);
+      }
       return;
     }
 
@@ -244,7 +263,7 @@ Se o usuário quiser avaliar um novo imóvel, oriente-o a digitar /novo.`;
         } else {
           const laudo = gerarLaudo(dadosImovel, resultado);
           addMessage(sessionId, 'assistant', laudo);
-          await enviar(chatId, laudo);
+          await enviar(chatId, resumirLaudo(laudo));
 
           // Salva laudo para modo conversa pós-laudo
           laudoCache.set(sessionId, { texto: laudo, dados: dadosImovel, resultado });
@@ -308,6 +327,44 @@ function splitMessage(text, maxLen) {
 /**
  * Gera laudo formatado para Telegram (Markdown)
  */
+/**
+ * LAUDO CURTO PARA O TELEGRAM.
+ *
+ * O laudo completo tem ~58 blocos de texto: no navegador cabe, no celular vira
+ * rolagem infinita e o corretor perde o numero que importa. Aqui fica o
+ * essencial — preco, faixa, R$/m², liquidez, 3 comparativos e a confianca — e o
+ * resto continua a um comando de distancia (/completo), porque o texto inteiro
+ * ja e guardado no laudoCache para o modo conversa.
+ *
+ * Corta por SECAO (as linhas comecam com emoji), nunca por numero de
+ * caracteres: cortar no meio de um numero seria pior que a parede de texto.
+ */
+const SECOES_CURTAS = ['📊', '🏠', '🏡', '🌾', '🌿', '📍', '📐', '💰', '⚡', '🔍'];
+
+function resumirLaudo(textoCompleto) {
+  const linhas = String(textoCompleto || '').split('\n');
+  const out = [];
+  let dentro = true;
+  let comparativos = 0;
+
+  for (const l of linhas) {
+    const t = l.trim();
+    const abreSecao = /^[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u.test(t);
+    if (abreSecao) dentro = SECOES_CURTAS.some((e) => t.startsWith(e));
+    // Dentro dos comparativos, só os 3 primeiros (cada um ocupa 3 linhas).
+    if (dentro && /^\d+\./.test(t)) {
+      comparativos++;
+      if (comparativos > 3) dentro = false;
+    }
+    if (dentro) out.push(l);
+  }
+
+  let curto = out.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  curto += '\n\n📄 */completo* — laudo inteiro (infraestrutura, financiamento, fontes)';
+  curto += '\n💬 Ou pergunte: _por que esse preço?_ · _e se fosse aluguel?_';
+  return curto;
+}
+
 function gerarLaudo(dados, resultado) {
   const { tipo, finalidade, cidade, bairro, endereco, metragem, areaLote, quartos, vagas } = dados;
   const {
