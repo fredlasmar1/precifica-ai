@@ -138,11 +138,39 @@ async function extrairCampos(modo, texto) {
   let s = String(r || '').replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
   const i = s.indexOf('{'), f = s.lastIndexOf('}');
   if (i >= 0 && f > i) s = s.slice(i, f + 1);
+  let j;
   try {
-    const j = JSON.parse(s);
+    j = JSON.parse(s);
     for (const k of Object.keys(j)) if (j[k] === null || j[k] === '') delete j[k];
-    return j;
-  } catch { return {}; }
+  } catch { j = {}; }
+
+  // ── Três reforços em código, porque o modelo não precisa acertar tudo ──
+
+  // 1. BAIRRO. Em "apartamento 90m² Jundiaí Anápolis pedindo 600 mil" o modelo
+  //    devolveu cidade=Anápolis e bairro VAZIO — e o bot ficava pedindo um
+  //    bairro que estava escrito na frase. E quando acerta, costuma devolver
+  //    "maracana": a lista do sistema (177 grafias só de Anápolis) dá a grafia
+  //    certa, que é a que o filtro de comparativos usa depois.
+  {
+    const { extrairBairro } = require('./fechou');
+    const achado = extrairBairro(texto, j.cidade || 'Anápolis');
+    if (achado) j.bairro = achado;
+  }
+
+  // 2. CIDADE. O sistema é de Anápolis; ninguém escreve a cidade toda vez.
+  //    Sem isto o bot travava em "faltou a cidade" numa frase completa.
+  if (!j.cidade) j.cidade = 'Anápolis';
+
+  // 3. TIPO. A rota espera o nome inteiro; o corretor escreve "apto".
+  if (j.tipo) {
+    const t = String(j.tipo).toLowerCase();
+    if (/^(apto|ap|apart)/.test(t))            j.tipo = 'apartamento';
+    else if (/^(sobrado|resid)/.test(t))       j.tipo = 'casa';
+    else if (/^(lote|[aá]rea)/.test(t))        j.tipo = 'terreno';
+    else if (/(galp|barrac|loja|sala|escrit)/.test(t)) j.tipo = 'comercial';
+  }
+
+  return j;
 }
 
 /** O que ainda falta para poder chamar a rota. */
