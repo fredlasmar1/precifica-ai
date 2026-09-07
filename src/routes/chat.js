@@ -1292,7 +1292,10 @@ router.get('/uso', async (req, res) => {
   const axios = require('axios');
   const out = { scraperapi: null, google: null, alertas: [] };
   try {
-    const k = process.env.SCRAPER_API_KEY;
+    // Só consulta a conta do ScraperAPI se o scraping estiver LIGADO. Com ele
+    // desligado a chamada dava 400 a cada abertura do painel, por nada.
+    const k = String(process.env.SCRAPING_ATIVO || '').match(/^(1|true|sim)$/i)
+      ? process.env.SCRAPER_API_KEY : null;
     if (k) {
       const { data } = await axios.get(`http://api.scraperapi.com/account?api_key=${k}`, { timeout: 12000 });
       const usados = data.requestCount, limite = data.requestLimit, restam = data.creditsLeft;

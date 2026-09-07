@@ -25,7 +25,30 @@ const BROWSER_HEADERS = {
  * Combina os resultados de quem responder.
  * Retorna null se nenhum portal retornar dados (para o GPT-4o assumir).
  */
+/**
+ * SCRAPING DESLIGADO POR PADRÃO — decisão de custo (06/09/2026).
+ *
+ * Raspar OLX/ZAP/VivaReal exige proxy com IP brasileiro para furar o Cloudflare.
+ * No ScraperAPI isso só existe a partir do plano Business (US$ 299/mês ≈
+ * R$ 1.600) — os planos Hobby (US$ 49) e Startup (US$ 149) são restritos a
+ * US/EU, e é por isso que a chave configurada aqui devolve 401 em todos os
+ * portais. O sistema estava tentando 4 portais e falhando 4 vezes em TODA
+ * avaliação, gastando segundos por laudo por uma fonte que não existe.
+ *
+ * O que o scraping traria é preço PEDIDO — a Perplexity já entrega isso com
+ * anúncio real e fonte citada. O que falta ao motor é preço PAGO, e isso vem
+ * dos fechamentos registrados (fechamentos.js), de graça.
+ *
+ * Para religar: definir SCRAPING_ATIVO=1 e uma SCRAPER_API_KEY que funcione
+ * no Brasil. Nada foi apagado.
+ */
+function scrapingLigado() {
+  const v = String(process.env.SCRAPING_ATIVO || '').toLowerCase();
+  return v === '1' || v === 'true' || v === 'sim';
+}
+
 async function buscarComparativos(dados) {
+  if (!scrapingLigado()) return null;   // desligado: o motor segue para a Perplexity
   const { tipo, finalidade, cidade, bairro, quartos } = dados;
   const cacheKey = `comp_${tipo}_${finalidade}_${cidade}_${bairro}_${quartos}`
     .toLowerCase().replace(/\s/g, '_');
