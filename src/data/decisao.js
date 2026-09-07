@@ -84,7 +84,7 @@ async function gerarParecerDecisao(r) {
     const m = (v) => `R$ ${Number(v).toLocaleString('pt-BR')}`;
     const resp = await completarLLM({
       forte: false,
-      maxTokens: 380,
+      maxTokens: 700,
       messages: [
         { role: 'system', content: 'Você é consultor imobiliário e de patrimônio. Explica de forma clara e equilibrada para o proprietário decidir. Português do Brasil. NÃO recomende um título específico; compare cenários e aponte trade-offs (liquidez, risco, trabalho, tributação, valorização).' },
         { role: 'user', content: `Compare, para a proprietária, MANTER o imóvel alugado vs VENDER e aplicar em títulos (renda fixa). Imóvel ${m(r.valorImovel)}; aluguel ${m(r.aluguelMensal)}/mês. Manter: renda líquida ${m(r.cenarioA.rendaMensal)}/mês (yield ${r.cenarioA.yieldLiquido}% a.a.) + valorização ${r.premissas.valorizacao}% a.a.; patrimônio em ${r.anos} anos ${m(r.cenarioA.patrimonio)}. Vender: líquido ${m(r.cenarioB.liquidoVenda)}, aplicado a ${r.cenarioB.taxaLiquida}% a.a. líquido = ${m(r.cenarioB.rendaMensal)}/mês; patrimônio em ${r.anos} anos ${m(r.cenarioB.patrimonio)}. Em 3-5 frases: diga qual tende a render mais no patrimônio, a diferença de renda mensal, e os trade-offs (o imóvel dá valorização e renda mas tem vacância/trabalho/liquidez baixa; os títulos têm liquidez/zero trabalho mas sem valorização de imóvel e renda tributada). Termine lembrando que não é recomendação de investimento e sugerindo validar com um profissional.` },

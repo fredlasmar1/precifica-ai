@@ -99,6 +99,15 @@ async function completar({ messages = [], forte = false, maxTokens = 1024, effor
     throw new Error(`recusado pelo modelo (${resposta.stop_details?.category || 'sem categoria'})`);
   }
 
+  // Teto estourado = parecer cortado no meio da frase. Isso NAO da erro: a
+  // chamada devolve 200 e o texto truncado segue para o cliente como se
+  // estivesse pronto. Os tetos deste sistema vieram do gpt-4o-mini e o mesmo
+  // texto em portugues gasta mais tokens aqui, entao o corte precisa gritar.
+  if (resposta.stop_reason === 'max_tokens') {
+    const quem = (system || '').trim().split(/\s+/).slice(0, 6).join(' ') || 'sem system';
+    console.warn(`[LLM] resposta CORTADA no teto de ${maxTokens} tokens — "${quem}..." (aumente maxTokens)`);
+  }
+
   return resposta.content
     .filter((b) => b.type === 'text')
     .map((b) => b.text)

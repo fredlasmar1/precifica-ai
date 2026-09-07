@@ -129,7 +129,7 @@ async function tendenciaBairro(cidade, bairro, valorM2) {
   const client = getOpenAI();
   if (!client) return null;
   try {
-    const resp = await completarLLM({ forte: false, maxTokens: 120, messages: [
+    const resp = await completarLLM({ forte: false, maxTokens: 250, messages: [
         { role: 'system', content: 'Você conhece o mercado imobiliário de Anápolis-GO. Responda em 1-2 frases curtas e simples, sem inventar números.' },
         { role: 'user', content: `O bairro ${bairro} em ${cidade}-GO tem valor de referência ~R$ ${Number(valorM2 || 0).toLocaleString('pt-BR')}/m². Em 1-2 frases, diga se é um bairro em valorização, estável ou de oportunidade, e por quê (perfil, localização, demanda). Sem números inventados.` },
       ] });

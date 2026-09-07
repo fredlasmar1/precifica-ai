@@ -240,7 +240,7 @@ async function estimarTicketMedio(ramo, bairro, cidade, rendaTier) {
   const client = getOpenAI();
   if (!client) return null;
   try {
-    const r = await completarLLM({ forte: false, maxTokens: 220, messages: [
+    const r = await completarLLM({ forte: false, maxTokens: 400, messages: [
         { role: 'system', content: 'Consultor de negócios em Anápolis-GO. Dê estimativas realistas e conservadoras para o interior de Goiás. Responda SOMENTE JSON.' },
         { role: 'user', content: `Estime para um(a) "${ramo}" no bairro ${bairro} (${cidade}-GO), renda da região: ${rendaTier}.\nResponda JSON: {"ticketMedio":"R$ valor médio por venda/serviço","faturamentoMensal":"R$ X a R$ Y (faixa realista de UM estabelecimento desse porte na região)","racional":"1 frase curta"}` },
       ] });
@@ -475,8 +475,8 @@ async function gerarParecerIA(a) {
     resumo.INSTRUCAO_CRITICA = 'A régua acima já está calculada e é a verdade. NÃO recalcule percentuais nem conclua que o aluguel "cabe" se o faturamento estimado for menor que o mínimo indicado. Se não couber, diga com todas as letras.';
   }
   try {
-    const r = await completarLLM({ forte: false, maxTokens: 300, messages: [
-        { role: 'system', content: 'Você é um consultor sênior de pontos comerciais de uma imobiliária corporativa em Anápolis-GO. Escreva pareceres objetivos, profissionais e diretos, sem enrolação.' },
+    const r = await completarLLM({ forte: false, maxTokens: 700, messages: [
+        { role: 'system', content: 'Você é um consultor sênior de pontos comerciais de uma imobiliária corporativa em Anápolis-GO. Escreva pareceres objetivos, profissionais e diretos, sem enrolação. FORMATO: o parecer entra DENTRO de um relatório que já tem título e já mostra os números — não escreva cabeçalho, não repita o nome do ramo/bairro como título e não use ** (o destaque aqui é *asterisco simples*).' },
         { role: 'user', content: `Com base nestes dados de viabilidade comercial, escreva um parecer profissional (3 a 5 frases) recomendando ou não o ponto para o ramo: cite o principal motivo, relacione o potencial de faturamento com o custo do ponto comercial, sugira a melhor rua e dê uma orientação prática. Não repita os números crus, interprete-os. Dados:\n${JSON.stringify(resumo)}` }
       ] });
     return String(r || '').trim().replace(/^parecer:\s*/i, '');
@@ -687,7 +687,7 @@ async function gerarRespostaMelhorBairro(ramo, ranking) {
   }));
   if (!client) return null;
   try {
-    const r = await completarLLM({ forte: false, maxTokens: 400, messages: [
+    const r = await completarLLM({ forte: false, maxTokens: 700, messages: [
         { role: 'system', content: 'Você é um consultor que explica de forma MUITO SIMPLES, como se falasse com um cliente leigo que não entende de mercado. Use frases curtas, sem jargão técnico. Nada de "score", "fluxo" ou números crus — fale em "movimento", "concorrência", "quanto dá pra faturar".' },
         { role: 'user', content: `Um cliente quer abrir um(a) "${ramo}" em Anápolis e pergunta qual o melhor bairro. Com base nestes dados dos melhores bairros, escreva uma recomendação em linguagem SIMPLES (4-6 frases): diga claramente os 2-3 melhores bairros e POR QUÊ (em palavras simples: pouca/muita concorrência, movimento, público), cite o faturamento estimado quando houver, e dê uma dica prática de como se destacar. Dados:\n${JSON.stringify(top)}` }
       ] });

@@ -162,7 +162,7 @@ Se o usuário quiser avaliar um novo imóvel, oriente-o a digitar /novo.`;
 
       const history = addMessage(sessionId, 'user', texto);
 
-      const resposta = await completarLLM({ forte: true, maxTokens: 600, effort: 'low', messages: [
+      const resposta = await completarLLM({ forte: true, maxTokens: 900, effort: 'low', messages: [
           { role: 'system', content: systemPostLaudo },
           ...history.slice(-10) // últimas 10 mensagens para contexto da conversa
         ] });
