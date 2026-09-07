@@ -172,6 +172,12 @@ async function calcularPreco(dadosImovel) {
     precoM2Base = analiseIA.precoMedioM2 || precoM2Base;
     confiancaFonte = fil.confiancaPorAmostra(nFinal);
     analiseIA.confianca = confiancaFonte;
+
+    // O texto foi escrito antes da limpeza e ficava dizendo "35 anuncios
+    // coletados" logo abaixo de "10 anuncios comparaveis", no mesmo bloco do
+    // laudo. Vale o numero que sustenta o preco, nao o que a busca trouxe.
+    analiseIA.raciocinio = `${nFinal} anúncio(s) de perfil compatível em ${bairro} (${comparativos.fonte})` +
+      (n > nFinal ? `, de ${n} coletados` : '') + '; preço/m² pela mediana.';
     console.log(`[Precificador] Portais após limpeza: ${n} → ${nFinal} anúncios · R$ ${precoM2Base}/m² (${confiancaFonte})`);
 
     try {
