@@ -222,6 +222,24 @@ async function inicializar() {
     `);
     await pool.query(`CREATE INDEX IF NOT EXISTS places_cache_idade ON places_cache (criado_em)`);
 
+    // ─── portais_cache: o anúncio raspado também não pode ser pago duas vezes ─
+    // O scraping voltou a funcionar (Zyte com IP brasileiro, 07/09/2026) e agora
+    // custa dinheiro de verdade: ~4 requisições por avaliação, páginas de até
+    // 900 KB. O cache que existia no portais.js é NodeCache em memória — some a
+    // cada deploy da Railway, então na prática o mesmo bairro pagava de novo o
+    // tempo todo.
+    //
+    // TTL menor que o do places_cache: anúncio de imóvel muda mais rápido que a
+    // farmácia da esquina. 7 dias.
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS portais_cache (
+        chave     VARCHAR(300) PRIMARY KEY,
+        payload   JSONB NOT NULL,
+        criado_em TIMESTAMP DEFAULT NOW()
+      );
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS portais_cache_idade ON portais_cache (criado_em)`);
+
     // ─── precos_mercado: coluna `condominio` (correção de schema) ─────────────
     // A coluna foi adicionada ao CREATE TABLE acima DEPOIS que a tabela já
     // existia em produção — e CREATE TABLE IF NOT EXISTS não altera tabela
@@ -449,6 +467,26 @@ async function salvarFeedback(dados) {
     VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *
   `, [dados.avaliacao_id, dados.cidade, dados.bairro, dados.tipo, dados.finalidade, dados.preco_sistema, dados.preco_corretor, dados.comentario]);
   return result.rows[0];
+}
+
+// ─── Cache do scraping de portais (anúncio raspado custa dinheiro) ─
+
+async function lerPortaisCache(chave, dias = 7) {
+  try {
+    const r = await pool.query(
+      `SELECT payload FROM portais_cache WHERE chave = $1 AND criado_em > NOW() - ($2 || ' days')::INTERVAL`,
+      [chave, String(dias)]);
+    return r.rows[0]?.payload || null;
+  } catch { return null; }
+}
+
+async function gravarPortaisCache(chave, payload) {
+  try {
+    await pool.query(
+      `INSERT INTO portais_cache (chave, payload, criado_em) VALUES ($1,$2,NOW())
+       ON CONFLICT (chave) DO UPDATE SET payload = $2, criado_em = NOW()`,
+      [chave, JSON.stringify(payload)]);
+  } catch (e) { /* cache nunca derruba a busca */ }
 }
 
 // ─── Cache do Google Places (o entorno não muda toda semana) ─────
@@ -696,7 +734,7 @@ async function apagarLaudo(id) {
 module.exports = {
   salvarFechamento, buscarFechamentos, placarFechamentos, apagarFechamento,
   registrarPontosFechados, buscarPontosVagos, marcarPontoContatado,
-  lerPlacesCache, gravarPlacesCache,
+  lerPlacesCache, gravarPlacesCache, lerPortaisCache, gravarPortaisCache,
   pool, inicializar,
   salvarBairro, buscarBairro, listarBairros,
   salvarPreco, buscarPreco, invalidarPreco, salvarHistorico, buscarHistorico,

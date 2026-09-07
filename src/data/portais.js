@@ -61,8 +61,18 @@ async function buscarComparativos(dados) {
   const cacheKey = `comp_${tipo}_${finalidade}_${cidade}_${bairro}_${quartos}`
     .toLowerCase().replace(/\s/g, '_');
 
+  // Memória primeiro (mais rápido), Postgres depois. O NodeCache sozinho não
+  // servia: some a cada deploy da Railway, então o mesmo bairro pagava o Zyte
+  // de novo toda vez que o serviço reiniciava.
   const cached = cache.get(cacheKey);
   if (cached) return cached;
+
+  const doBanco = await require('./database').lerPortaisCache(cacheKey);
+  if (doBanco) {
+    console.log(`[Portais] cache do banco: ${cacheKey}`);
+    cache.set(cacheKey, doBanco);
+    return doBanco;
+  }
 
   // Busca real via ScraperAPI. VivaReal/ZAP (JSON-LD, ~30 anúncios cada) +
   // OLX/Imovelweb (best-effort — se o parser falhar, allSettled ignora).
@@ -101,6 +111,7 @@ async function buscarComparativos(dados) {
 
   const resultado = montarResultado(unicos, fontesUsadas, dados);
   cache.set(cacheKey, resultado);
+  try { await require('./database').gravarPortaisCache(cacheKey, resultado); } catch {}
   return resultado;
 }
 
