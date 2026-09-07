@@ -167,7 +167,7 @@ Se o usuário quiser avaliar um novo imóvel, oriente-o a digitar /novo.`;
           ...history.slice(-10) // últimas 10 mensagens para contexto da conversa
         ] });
 
-      const respostaTexto = resposta.data.choices[0].message.content;
+      const respostaTexto = String(resposta || '');
       addMessage(sessionId, 'assistant', respostaTexto);
       await enviar(chatId, respostaTexto);
       await new Promise(r => setTimeout(r, 800));

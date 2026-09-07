@@ -137,7 +137,7 @@ async function gerarParecerTerreno(r) {
         { role: 'system', content: 'Você é um consultor de incorporação imobiliária. Explica de forma clara e direta para um corretor/investidor. Português do Brasil, sem jargão excessivo.' },
         { role: 'user', content: `Dê um parecer de 4-6 frases sobre a viabilidade de incorporar um terreno de ${r.area}m² no bairro ${r.bairro}, ${r.cidade}-GO (zona ${r.zonaLabel}, coef. de aproveitamento ${r.ca}). Potencial construtivo ${r.areaConstruivel}m², área vendável ${r.areaPrivativa}m². VGV realizável ${m(r.vgv)} (prazo ${r.prazoMeses} meses); custo total ${m(r.custoTotal)} = terreno ${m(r.custoTerreno)} + obra ${m(r.custoObra)} + indiretos ${m(r.custoIndiretoObra)} + vendas ${m(r.custoVendas)} + impostos ${m(r.impostos)} + custo financeiro ${m(r.custoFinanceiro)}; resultado ${m(r.lucro)} (margem ${r.margem}% sobre o VGV). Diga se vale a pena (margem de incorporação saudável costuma ser 15-25%), o que mais pesa no resultado, 1 alavanca para melhorar a margem e 1 ressalva (confirmar zoneamento/coeficiente no Plano Diretor de Anápolis).` },
       ] });
-    return resp.choices[0].message.content.trim();
+    return String(resp || '').trim();
   } catch (e) { console.warn('[Terreno] parecer erro:', e.message); return null; }
 }
 

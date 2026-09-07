@@ -390,7 +390,7 @@ async function gerarParecerBTS(r) {
         { role: 'system', content: 'Você é um consultor de investimento imobiliário Build to Suit. Explica de forma clara e direta para um investidor/corretor. Português do Brasil.' },
         { role: 'user', content: `Dê um parecer de 4-6 frases sobre um estudo BTS de um terreno de ${r.area}m² no bairro ${r.bairro}, ${r.cidade}-GO. Investimento total ${m(r.investimento)} (terreno ${m(r.custoTerreno)} + obra ${m(r.custoObra)} + indiretos ${m(r.custoIndireto)}); área locável ${r.areaLocavel}m²; aluguel de mercado ${m(r.aluguelMensal)}/mês; cap rate ${(r.yieldMes * 100).toFixed(2)}%/mês (${(r.yieldAno * 100).toFixed(1)}%/ano); payback ${r.paybackAnos} anos. O melhor uso indicado é ${top}. Diga se o retorno é atraente para BTS (referência saudável ~0,8-1,0%/mês), qual o principal fator do resultado, 1 alavanca para melhorar o yield (ex: negociar terreno, reduzir obra, buscar inquilino âncora) e 1 ressalva (o cap rate depende de fechar contrato longo com inquilino sólido).` },
       ] });
-    return resp.choices[0].message.content.trim();
+    return String(resp || '').trim();
   } catch (e) { console.warn('[BTS] parecer erro:', e.message); return null; }
 }
 
@@ -712,7 +712,7 @@ async function gerarEmailProspeccao(input = {}) {
     + `Assinatura: Frederico Ivan Lasmar Alves — Bens Imóveis Corporativos · CRECI-J 43.934 (corretor CRECI-F 41.009) · (62) 9973-9596 · benscorporativos.com.br.`;
   try {
     const resp = await completarLLM({ forte: false, maxTokens: 550, messages: [{ role: 'system', content: sys }, { role: 'user', content: user }] });
-    return { empresa, formato, texto: resp.choices[0].message.content.trim() };
+    return { empresa, formato, texto: String(resp || '').trim() };
   } catch (e) { console.warn('[EmailProsp]', e.message); return { erro: 'Não consegui gerar agora. Tente de novo.' }; }
 }
 

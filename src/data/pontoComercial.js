@@ -228,7 +228,7 @@ async function extrairRamo(pergunta) {
         { role: 'system', content: 'Você recebe a frase de um empreendedor e deve dizer QUAL ramo de comércio/serviço ele quer abrir. Responda só o ramo, 1 a 3 palavras minúsculas, sem pontuação. Ex: "quero abrir uma pizzaria no centro" -> pizzaria. Se não houver ramo, responda nenhum.' },
         { role: 'user', content: txt }
       ] });
-    const ramo = r.choices[0].message.content.trim().toLowerCase().replace(/[.?!]/g, '');
+    const ramo = String(r || '').trim().toLowerCase().replace(/[.?!]/g, '');
     return ramo === 'nenhum' ? null : ramo;
   } catch { return txt; }
 }
@@ -244,7 +244,7 @@ async function estimarTicketMedio(ramo, bairro, cidade, rendaTier) {
         { role: 'system', content: 'Consultor de negócios em Anápolis-GO. Dê estimativas realistas e conservadoras para o interior de Goiás. Responda SOMENTE JSON.' },
         { role: 'user', content: `Estime para um(a) "${ramo}" no bairro ${bairro} (${cidade}-GO), renda da região: ${rendaTier}.\nResponda JSON: {"ticketMedio":"R$ valor médio por venda/serviço","faturamentoMensal":"R$ X a R$ Y (faixa realista de UM estabelecimento desse porte na região)","racional":"1 frase curta"}` },
       ] });
-    let s = r.choices[0].message.content.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
+    let s = String(r || '').replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
     return JSON.parse(s);
   } catch (e) { console.warn('[Ticket] erro:', e.message); return null; }
 }
@@ -479,7 +479,7 @@ async function gerarParecerIA(a) {
         { role: 'system', content: 'Você é um consultor sênior de pontos comerciais de uma imobiliária corporativa em Anápolis-GO. Escreva pareceres objetivos, profissionais e diretos, sem enrolação.' },
         { role: 'user', content: `Com base nestes dados de viabilidade comercial, escreva um parecer profissional (3 a 5 frases) recomendando ou não o ponto para o ramo: cite o principal motivo, relacione o potencial de faturamento com o custo do ponto comercial, sugira a melhor rua e dê uma orientação prática. Não repita os números crus, interprete-os. Dados:\n${JSON.stringify(resumo)}` }
       ] });
-    return r.choices[0].message.content.trim().replace(/^parecer:\s*/i, '');
+    return String(r || '').trim().replace(/^parecer:\s*/i, '');
   } catch (err) {
     console.warn('[Parecer IA] erro:', err.message);
     return null;
@@ -691,7 +691,7 @@ async function gerarRespostaMelhorBairro(ramo, ranking) {
         { role: 'system', content: 'Você é um consultor que explica de forma MUITO SIMPLES, como se falasse com um cliente leigo que não entende de mercado. Use frases curtas, sem jargão técnico. Nada de "score", "fluxo" ou números crus — fale em "movimento", "concorrência", "quanto dá pra faturar".' },
         { role: 'user', content: `Um cliente quer abrir um(a) "${ramo}" em Anápolis e pergunta qual o melhor bairro. Com base nestes dados dos melhores bairros, escreva uma recomendação em linguagem SIMPLES (4-6 frases): diga claramente os 2-3 melhores bairros e POR QUÊ (em palavras simples: pouca/muita concorrência, movimento, público), cite o faturamento estimado quando houver, e dê uma dica prática de como se destacar. Dados:\n${JSON.stringify(top)}` }
       ] });
-    return r.choices[0].message.content.trim();
+    return String(r || '').trim();
   } catch (err) { console.warn('[MelhorBairro IA] erro:', err.message); return null; }
 }
 

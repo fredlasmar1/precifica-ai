@@ -133,7 +133,7 @@ async function tendenciaBairro(cidade, bairro, valorM2) {
         { role: 'system', content: 'Você conhece o mercado imobiliário de Anápolis-GO. Responda em 1-2 frases curtas e simples, sem inventar números.' },
         { role: 'user', content: `O bairro ${bairro} em ${cidade}-GO tem valor de referência ~R$ ${Number(valorM2 || 0).toLocaleString('pt-BR')}/m². Em 1-2 frases, diga se é um bairro em valorização, estável ou de oportunidade, e por quê (perfil, localização, demanda). Sem números inventados.` },
       ] });
-    return resp.choices[0].message.content.trim();
+    return String(resp || '').trim();
   } catch (e) { console.warn('[Enriquecimento] tendência erro:', e.message); return null; }
 }
 
