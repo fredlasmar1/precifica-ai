@@ -181,7 +181,12 @@ async function calcularPreco(dadosImovel) {
       // pulava a limpeza — o conserto ficava invisivel ate o cache vencer.
       if (analiseIA && Array.isArray(analiseIA.comparativos) && analiseIA.comparativos.length >= 2) {
         try {
-          const { filtrarComparativosPorBairro, confiancaPorAmostra, maisConservadora } = require('./analistaIA');
+          const { filtrarComparativosPorBairro, dedupComparativos, confiancaPorAmostra, maisConservadora } = require('./analistaIA');
+          // O dedup vem ANTES do filtro de bairro, pelo mesmo motivo que o
+          // filtro esta aqui: a linha gravada no Postgres foi salva por uma
+          // versao do motor que ainda contava o mesmo anuncio duas vezes, e a
+          // media do filtro de bairro precisa ver a lista ja limpa.
+          analiseIA = dedupComparativos(analiseIA);
           const limpo = filtrarComparativosPorBairro(analiseIA, bairro, cidade);
           if (limpo && limpo.precoMedioM2 > 0) {
             if (limpo.precoMedioM2 !== analiseIA.precoMedioM2) {

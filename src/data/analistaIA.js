@@ -1248,4 +1248,4 @@ RETORNE SOMENTE JSON válido:
   }
 }
 
-module.exports = { estimarPrecoComIA, estimarPrecoPredio, filtrarComparativosPorBairro, confiancaPorAmostra, maisConservadora };
+module.exports = { estimarPrecoComIA, estimarPrecoPredio, filtrarComparativosPorBairro, dedupComparativos, confiancaPorAmostra, maisConservadora };
