@@ -10,7 +10,13 @@ const BOT_TOKEN = () => process.env.TELEGRAM_BOT_TOKEN;
 const API = () => `https://api.telegram.org/bot${BOT_TOKEN()}`;
 
 // Guarda o último laudo por sessão para uso no modo conversa
+const { interpretarFechamento, textoConfirmacao, brl } = require('./fechou');
 const laudoCache = new Map();
+
+// Fechamento aguardando o "sim" do corretor. Nada entra no banco sem ele: com
+// 3 fechamentos o bairro passa a ter o preco tirado dali, entao um digito a
+// mais aqui vira preco errado no laudo de todo mundo.
+const fechamentoPendente = new Map();
 
 /**
  * Handler do webhook do Telegram
@@ -50,7 +56,9 @@ async function handleTelegram(req, res) {
         '_terreno 400m² na Vila Jaiara, venda_\n\n' +
         'Preciso de 4 coisas: *tipo*, *metragem*, *bairro/cidade* e *venda ou aluguel*. ' +
         'O resto (condomínio, vagas, diferenciais) é opcional e só refina.\n\n' +
-        'Se preferir ir por partes, é só começar dizendo o tipo do imóvel.'
+        'Se preferir ir por partes, é só começar dizendo o tipo do imóvel.\n\n' +
+        '📌 *Fechou um negócio?* Me conta com `/fechou` — ex.: `/fechou apto 90m2 Jundiaí 520 mil`. ' +
+        'É o que faz o preço do bairro deixar de ser anúncio e virar o que foi realmente pago.'
       );
       return;
     }
@@ -103,6 +111,53 @@ async function handleTelegram(req, res) {
       return;
     }
 
+    // ─── POR QUANTO FECHOU ────────────────────────────────────────────────
+    // A resposta ao pedido de confirmacao vem primeiro: e um "sim" solto, e se
+    // cair no fluxo normal o bot responde sobre o laudo e o registro se perde.
+    const pendente = fechamentoPendente.get(sessionId);
+    if (pendente && /^(sim|s|isso|confirmo?|confirma|ok|pode|correto|certo)\b/i.test(text)) {
+      fechamentoPendente.delete(sessionId);
+      await gravarFechamento(chatId, pendente);
+      return;
+    }
+    if (pendente && /^(n[aã]o|n|cancela|errado|deixa)\b/i.test(text)) {
+      fechamentoPendente.delete(sessionId);
+      await enviar(chatId, 'Cancelado, não gravei nada. Manda de novo quando quiser: `/fechou apto 90m2 Jundiaí 520 mil`');
+      return;
+    }
+
+    if (/^[/]?fechou\b|^[/]?fechei\b|^[/]?fechamento\b/i.test(text)) {
+      const corpo = text.replace(/^[/]?(fechou|fechei|fechamento)\b/i, '').trim();
+      const guardado = laudoCache.get(sessionId);
+      const doLaudo = guardado ? {
+        cidade:   guardado.dados?.cidade,
+        bairro:   guardado.dados?.bairro,
+        tipo:     guardado.dados?.tipo,
+        metragem: guardado.dados?.metragem,
+        valorAvaliado: guardado.resultado?.precoRecomendado,
+      } : null;
+
+      if (!corpo) {
+        await enviar(chatId,
+          '💰 *Por quanto fechou?*\n\n' +
+          'Todo preço que eu mostro vem de ANÚNCIO — é preço pedido. O que fechou de verdade só quem vendeu sabe, e é isso que faz o preço do bairro virar real.\n\n' +
+          'Manda numa linha:\n' +
+          '`/fechou apto 90m2 Jundiaí 520 mil`\n' +
+          '`/fechou casa 150m2 Vila Jaiara 380 mil`\n\n' +
+          (doLaudo?.bairro ? `_Se for o imóvel do último laudo (${doLaudo.tipo} em ${doLaudo.bairro}), basta \`/fechou 520 mil\`._` : '_Vale negócio antigo também — quanto mais, melhor o preço do bairro._'));
+        return;
+      }
+
+      const d = interpretarFechamento(corpo, doLaudo);
+      if (d.faltando.length) {
+        await enviar(chatId, `Faltou ${d.faltando.join(' e ')}.\n\nExemplo completo: \`/fechou apto 90m2 Jundiaí 520 mil\``);
+        return;
+      }
+      fechamentoPendente.set(sessionId, d);
+      await enviar(chatId, textoConfirmacao(d));
+      return;
+    }
+
     // Comando /reiniciar ou /novo
     if (/^[/]?(reiniciar|novo|nova|reset)/i.test(text)) {
       clearSession(sessionId);
@@ -115,6 +170,40 @@ async function handleTelegram(req, res) {
 
   } catch (err) {
     console.error('[Telegram] Erro:', err.message);
+  }
+}
+
+/**
+ * Grava e devolve o que aquele registro MUDOU. O corretor precisa ver o proprio
+ * dado virando preco — senao ele responde no vazio e nunca mais manda outro.
+ */
+async function gravarFechamento(chatId, d) {
+  try {
+    const salvo = await db.salvarFechamento({
+      laudo_id: d.laudoId || null,
+      cidade: d.cidade, bairro: d.bairro, tipo: d.tipo, finalidade: d.finalidade,
+      metragem: d.metragem,
+      valor_avaliado: d.valorAvaliado || null,
+      valor_fechado: d.valorFechado,
+      observacao: 'via Telegram',
+    });
+
+    const { sinalDeMercado, MINIMO_PARA_MANDAR } = require('../data/fechamentos');
+    const rows = await db.buscarFechamentos(salvo.cidade, salvo.bairro, salvo.tipo, salvo.finalidade);
+    const sinal = sinalDeMercado(rows);
+    const n = sinal?.n || 1;
+
+    let msg = `✅ *Registrado.*\n\n`;
+    if (sinal && sinal.manda) {
+      msg += `${salvo.bairro} tem *${n} negócios fechados*. A partir de agora o preço desse bairro sai do que foi PAGO (${brl(sinal.m2)}/m²), não do que é pedido.`;
+    } else {
+      const faltam = MINIMO_PARA_MANDAR - n;
+      msg += `${salvo.bairro} tem *${n} negócio(s) fechado(s)* — ${faltam === 1 ? 'falta 1' : `faltam ${faltam}`} para o preço do bairro passar a sair de negócio fechado em vez de anúncio.`;
+    }
+    await enviar(chatId, msg);
+  } catch (err) {
+    console.error('[Fechou] erro:', err.message);
+    await enviar(chatId, '❌ Não consegui gravar agora. Tenta de novo daqui a pouco.');
   }
 }
 
