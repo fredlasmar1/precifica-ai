@@ -1,5 +1,10 @@
+const { ehNovaAvaliacao, responderSobreLaudo } = require('../agent/posLaudo');
 const express = require('express');
 const router = express.Router();
+
+// O laudo da sessao, para responder pergunta sobre ele em vez de refazer.
+// Mesma vida do cache de sessao: some no restart, e ai o usuario so refaz.
+const laudoDaSessao = new Map();
 const { getSession, addMessage, clearSession, isReadyToEvaluate } = require('../agent/session');
 const { chat, extractPropertyData } = require('../agent/openai');
 const { calcularPreco, formatarReais } = require('../data/precificador');
@@ -19,6 +24,7 @@ router.post('/chat', async (req, res) => {
   // Comando de reset
   if (/reiniciar|nova avalia[çc][aã]o|reset/i.test(message)) {
     clearSession(sessionId);
+    laudoDaSessao.delete(sessionId);
     return res.json({
       response: '🔄 Sessão reiniciada! Vamos começar uma nova avaliação.\n\nQual tipo de imóvel você quer avaliar? (casa, apartamento, terreno ou comercial)',
       type: 'text'
@@ -26,6 +32,37 @@ router.post('/chat', async (req, res) => {
   }
 
   try {
+    // ─── JA HA UM LAUDO NESTA SESSAO? ENTAO E PERGUNTA, NAO PEDIDO ────────
+    //
+    // Sem isto, "por que esse preco?" e "quanto fica a parcela?" devolviam o
+    // LAUDO INTEIRO outra vez — o /chat so olhava se os dados do imovel
+    // estavam completos e, estando, precificava de novo. O Telegram ja
+    // respondia direito; o site nao. A regra agora e a mesma nos dois
+    // (agent/posLaudo.js).
+    const guardado = laudoDaSessao.get(sessionId);
+    if (guardado) {
+      const nova = ehNovaAvaliacao(message);
+      if (nova.sim) {
+        clearSession(sessionId);
+        laudoDaSessao.delete(sessionId);
+        if (!nova.descreve) {
+          const msg = '🔄 Certo! Vamos avaliar outro imóvel.\n\nQual o *tipo*? (casa, apartamento, terreno ou comercial)';
+          addMessage(sessionId, 'assistant', msg);
+          return res.json({ response: msg, type: 'text' });
+        }
+        // Descreveu o imovel novo direto: segue o fluxo normal com a sessao limpa.
+      } else {
+        const history = addMessage(sessionId, 'user', message);
+        const resposta = await responderSobreLaudo({
+          laudo: guardado.texto, dados: guardado.dados, historico: history, pergunta: message,
+        });
+        const texto = String(resposta || '').trim() ||
+          'Não consegui responder agora. Pode reformular a pergunta?';
+        addMessage(sessionId, 'assistant', texto);
+        return res.json({ response: texto, type: 'text', sobreLaudo: true });
+      }
+    }
+
     const history = addMessage(sessionId, 'user', message);
     const jaColetouDados = isReadyToEvaluate(history.slice(0, -1));
 
@@ -47,6 +84,7 @@ router.post('/chat', async (req, res) => {
       salvarLaudoImovel(dadosImovel, resultado);
 
       addMessage(sessionId, 'assistant', laudo);
+      laudoDaSessao.set(sessionId, { texto: laudo, dados: dadosImovel, resultado });
       return res.json({ response: laudo, type: 'laudo', dados: dadosImovel, resultado });
     }
 
@@ -67,6 +105,7 @@ router.post('/chat', async (req, res) => {
         const laudo = gerarLaudo(dadosImovel, resultado);
         salvarLaudoImovel(dadosImovel, resultado);
         addMessage(sessionId, 'assistant', laudo);
+        laudoDaSessao.set(sessionId, { texto: laudo, dados: dadosImovel, resultado });
 
         return res.json({
           response: resposta,
