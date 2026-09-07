@@ -56,8 +56,23 @@ function getClient() {
 function blocoParaClaude(b) {
   if (!b || typeof b !== 'object') return { type: 'text', text: String(b ?? '') };
   if (b.type === 'image_url') {
-    const url = b.image_url?.url || b.image_url;
-    return { type: 'image', source: { type: 'url', url: String(url) } };
+    const url = String(b.image_url?.url || b.image_url || '');
+
+    // ⚠️ AS IMAGENS DESTE SISTEMA SAO dataURL, NAO LINK.
+    //
+    // A matricula e as fotos chegam do navegador como
+    // "data:image/jpeg;base64,...". A OpenAI aceitava isso no mesmo campo do
+    // link; a Anthropic NAO — devolve 400 "Only HTTPS URLs are supported" e
+    // exige source.type = 'base64' com o media_type separado.
+    //
+    // Sem esta conversao a leitura de matricula ficou quebrada desde a
+    // migracao, e de um jeito que nao aparecia: quem envia a foto recebe um
+    // erro generico, nao "nao consegui ver a imagem".
+    const m = url.match(/^data:([^;,]+);base64,(.+)$/s);
+    if (m) {
+      return { type: 'image', source: { type: 'base64', media_type: m[1], data: m[2] } };
+    }
+    return { type: 'image', source: { type: 'url', url } };
   }
   if (b.type === 'text') return { type: 'text', text: String(b.text ?? '') };
   return b;   // ja esta no formato do Claude
