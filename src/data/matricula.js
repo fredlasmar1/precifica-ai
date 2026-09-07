@@ -132,7 +132,11 @@ async function lerMatricula(paginas = []) {
       { role: 'user', content }
     ]
   });
-  const dados = JSON.parse(r);
+  // parseJSON, nao JSON.parse: o Claude devolve o objeto dentro de ```json (o
+  // response_format do GPT nao existe aqui). A leitura de FOTOS ja usava a
+  // funcao certa; esta ficou para tras e quebrava toda matricula com
+  // "Unexpected token '`'".
+  const dados = parseJSON(r);
 
   // Rede de segurança do CÓDIGO (não da IA): matrícula sem averbação de
   // construção não pode sair com área construída, aconteça o que acontecer.
