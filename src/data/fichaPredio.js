@@ -1,3 +1,4 @@
+const { pesquisar: pesquisarPplx } = require('./perplexity');
 const axios = require('axios');
 const { processosPorCnpj } = require('./escavador');
 
@@ -31,15 +32,12 @@ Retorne SOMENTE um JSON com (campos sem dado confirmado = null):
 }
 Use SOMENTE dados reais e confirmados em ${cidade}-GO. NUNCA invente CNPJ nem valores.`;
   try {
-    const { data } = await axios.post('https://api.perplexity.ai/chat/completions', {
-      model: 'sonar-pro',
-      messages: [
-        { role: 'system', content: 'Pesquisador imobiliário. SOMENTE dados reais e confirmados. NUNCA invente CNPJ ou valores. Retorne SOMENTE JSON.' },
-        { role: 'user', content: prompt },
-      ],
-      temperature: 0.1, max_tokens: 900,
-    }, { timeout: 60000, headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' } });
-    let s = data.choices[0].message.content.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
+    const _pplx = await pesquisarPplx({
+      tag: 'Perplexity/fichaPredio', modelo: 'sonar-pro', maxTokens: 900, timeout: 60000,
+      sistema: 'Pesquisador imobiliário. SOMENTE dados reais e confirmados. NUNCA invente CNPJ ou valores. Retorne SOMENTE JSON.',
+      pergunta: prompt,
+    });
+    let s = _pplx.texto.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
     try { return JSON.parse(s); } catch { return null; }
   } catch (e) {
     console.warn('[FichaPredio] dossiê erro:', e.message);
@@ -54,15 +52,12 @@ async function buscarCnpjPredio(condominio, cidade) {
   const apiKey = process.env.PERPLEXITY_API_KEY;
   if (!apiKey) return null;
   try {
-    const { data } = await axios.post('https://api.perplexity.ai/chat/completions', {
-      model: 'sonar-pro',
-      messages: [
-        { role: 'system', content: 'Responda APENAS com o CNPJ no formato XX.XXX.XXX/XXXX-XX, ou a palavra "nenhum". Sem nenhum texto extra.' },
-        { role: 'user', content: `Qual o CNPJ do Condomínio/Edifício "${condominio}" em ${cidade}-GO? Procure em Receita Federal, Econodata, CNPJ.biz, Solutudo, consulta-empresa. É informação pública.` },
-      ],
-      temperature: 0, max_tokens: 30,
-    }, { timeout: 40000, headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' } });
-    const m = data.choices[0].message.content.match(/\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2}/);
+    const _pplx = await pesquisarPplx({
+      tag: 'Perplexity/fichaPredio', modelo: 'sonar-pro', maxTokens: 30, timeout: 40000,
+      sistema: 'Responda APENAS com o CNPJ no formato XX.XXX.XXX/XXXX-XX, ou a palavra "nenhum". Sem nenhum texto extra.',
+      pergunta: `Qual o CNPJ do Condomínio/Edifício "${condominio}" em ${cidade}-GO? Procure em Receita Federal, Econodata, CNPJ.biz, Solutudo, consulta-empresa. É informação pública.`,
+    });
+    const m = _pplx.texto.match(/\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2}/);
     return m ? m[0] : null;
   } catch { return null; }
 }
@@ -76,15 +71,12 @@ async function buscarAnoPredio(condominio, bairro, cidade) {
   const apiKey = process.env.PERPLEXITY_API_KEY;
   if (!apiKey) return null;
   try {
-    const { data } = await axios.post('https://api.perplexity.ai/chat/completions', {
-      model: 'sonar-pro',
-      messages: [
-        { role: 'system', content: 'Responda APENAS com o ano (4 dígitos) de construção/entrega do edifício, ou a palavra "nenhum". Sem nenhum texto extra.' },
-        { role: 'user', content: `Em que ano foi construído/entregue o edifício "${condominio}", bairro ${bairro}, ${cidade}-GO? Procure em anúncios de imóveis, site da construtora, condomínio, matrícula. Se não tiver certeza, responda "nenhum".` },
-      ],
-      temperature: 0, max_tokens: 12,
-    }, { timeout: 40000, headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' } });
-    const m = String(data.choices[0].message.content).match(/(19|20)\d{2}/);
+    const _pplx = await pesquisarPplx({
+      tag: 'Perplexity/fichaPredio', modelo: 'sonar-pro', maxTokens: 12, timeout: 40000,
+      sistema: 'Responda APENAS com o ano (4 dígitos) de construção/entrega do edifício, ou a palavra "nenhum". Sem nenhum texto extra.',
+      pergunta: `Em que ano foi construído/entregue o edifício "${condominio}", bairro ${bairro}, ${cidade}-GO? Procure em anúncios de imóveis, site da construtora, condomínio, matrícula. Se não tiver certeza, responda "nenhum".`,
+    });
+    const m = String(_pplx.texto).match(/(19|20)\d{2}/);
     const ano = m ? Number(m[0]) : null;
     const atual = new Date().getFullYear();
     return ano && ano >= 1900 && ano <= atual + 5 ? ano : null;

@@ -1,3 +1,4 @@
+const { pesquisar: pesquisarPplx } = require('./perplexity');
 const axios = require('axios');
 const db = require('./database');
 
@@ -50,21 +51,14 @@ Retorne as seguintes informações:
 Fonte obrigatória: portais imobiliários REAIS com dados atuais de ${cidadeNorm}-GO.`;
 
   try {
-    const response = await axios.post('https://api.perplexity.ai/chat/completions', {
-      model: 'sonar',
-      messages: [
-        { role: 'system', content: 'Pesquisador de mercado imobiliário brasileiro. Dados reais, factuais e organizados.' },
-        { role: 'user', content: prompt }
-      ],
-      temperature: 0.1,
-      max_tokens: 2000
-    }, {
-      timeout: 60000,
-      headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' }
+    const _pplx = await pesquisarPplx({
+      tag: 'Perplexity/conhecimentoLocal', modelo: 'sonar', maxTokens: 2000, timeout: 60000,
+      sistema: 'Pesquisador de mercado imobiliário brasileiro. Dados reais, factuais e organizados.',
+      pergunta: prompt,
     });
 
-    const conhecimento = response.data.choices[0].message.content;
-    const citations = response.data.citations || [];
+    const conhecimento = _pplx.texto;
+    const citations = _pplx.fontes;
 
     // Salva no Postgres
     await db.salvarConhecimentoCidade(cidadeNorm, conhecimento, 'Perplexity', citations.slice(0, 10));

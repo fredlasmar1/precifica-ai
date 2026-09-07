@@ -1,3 +1,4 @@
+const { pesquisar: pesquisarPplx } = require('./perplexity');
 const { completar: completarLLM } = require('../agent/llm');
 // Avaliação de imóveis RURAIS no padrão profissional (referência ABNT NBR 14653-3):
 // valor = TERRA NUA (ponderada pela APTIDÃO: lavoura × pastagem × reserva) + BENFEITORIAS,
@@ -45,15 +46,12 @@ async function precoHaPorUso(cidade) {
   if (!apiKey) return base;
   try {
     const prompt = `Valor de mercado da TERRA em ${cidade}, Goiás, em 2025, em R$ por HECTARE, por uso. Responda SOMENTE JSON: {"lavoura": R$/ha de terra de lavoura/agricultura mecanizada, "pastagem": R$/ha de terra de pastagem/pecuária, "reserva": R$/ha de reserva/mata (ou null), "vtn": VTN-INCRA R$/ha do município (ou null)}. Baseie em fontes reais (Scot Consultoria, CEPEA/ESALQ, AgriFatto, INCRA). Só números reais; campo desconhecido = null. Nunca invente.`;
-    const { data } = await axios.post('https://api.perplexity.ai/chat/completions', {
-      model: 'sonar-pro',
-      messages: [
-        { role: 'system', content: 'Especialista em valor de terras agrícolas no Brasil. Responda SOMENTE JSON com números reais de fontes (Scot/CEPEA/AgriFatto/INCRA). Nunca invente.' },
-        { role: 'user', content: prompt },
-      ],
-      temperature: 0.1, max_tokens: 400,
-    }, { timeout: 60000, headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' } });
-    let s = String(data.choices[0].message.content || '').replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
+    const _pplx = await pesquisarPplx({
+      tag: 'Perplexity/fazenda', modelo: 'sonar-pro', maxTokens: 400, timeout: 60000,
+      sistema: 'Especialista em valor de terras agrícolas no Brasil. Responda SOMENTE JSON com números reais de fontes (Scot/CEPEA/AgriFatto/INCRA). Nunca invente.',
+      pergunta: prompt,
+    });
+    let s = String(_pplx.texto || '').replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
     const i = s.indexOf('{'), j = s.lastIndexOf('}'); if (i >= 0 && j > i) s = s.slice(i, j + 1);
     const d = JSON.parse(s);
     const lav = Number(d.lavoura) || 0, past = Number(d.pastagem) || 0;
@@ -64,7 +62,7 @@ async function precoHaPorUso(cidade) {
         reserva: Number(d.reserva) > 0 ? Number(d.reserva) : Math.round(pastF * 0.35),
         vtn: Number(d.vtn) > 0 ? Number(d.vtn) : null,
         fonteLabel: `Mercado de ${cidade} (Scot/CEPEA/AgriFatto)`,
-        fontes: (data.citations || []).slice(0, 5), confianca: 'media', regiao: reg.label,
+        fontes: (_pplx.fontes).slice(0, 5), confianca: 'media', regiao: reg.label,
       };
     }
   } catch (e) { console.warn('[Fazenda] precoHaPorUso:', e.message); }
@@ -222,20 +220,18 @@ async function precoM2Chacara(cidade) {
   if (!apiKey) return base;
   try {
     const prompt = `Qual o preço de mercado de CHÁCARAS DE RECREIO / LAZER à venda em ${cidade}, Goiás, em 2025, em R$ por METRO QUADRADO do terreno (só a terra, sem contar a casa)? Considere chácaras pequenas (de 1.000 a 20.000 m²). Responda SOMENTE JSON: {"precoM2": R$/m² típico do terreno de chácara de recreio, "obs": "faixa/observação curta"}. Baseie em anúncios reais (VivaReal, ZAP, Chaves na Mão, OLX, imobiliárias locais). Só número real; se não achar, use null.`;
-    const { data } = await axios.post('https://api.perplexity.ai/chat/completions', {
-      model: 'sonar-pro',
-      messages: [
-        { role: 'system', content: 'Pesquisador do mercado de chácaras de recreio no interior de Goiás. Responda SOMENTE JSON com número real de anúncios. Nunca invente.' },
-        { role: 'user', content: prompt },
-      ],
-      temperature: 0.1, max_tokens: 350,
-    }, { timeout: 60000, headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' } });
-    let s = String(data.choices[0].message.content || '').replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
+    const _pplx = await pesquisarPplx({
+      tag: 'Perplexity/fazenda', modelo: 'sonar-pro', maxTokens: 350, timeout: 60000,
+      portais: true,   // busca ANUNCIO: o portal e a fonte certa
+      sistema: 'Pesquisador do mercado de chácaras de recreio no interior de Goiás. Responda SOMENTE JSON com número real de anúncios. Nunca invente.',
+      pergunta: prompt,
+    });
+    let s = String(_pplx.texto || '').replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
     const i = s.indexOf('{'), j = s.lastIndexOf('}'); if (i >= 0 && j > i) s = s.slice(i, j + 1);
     const d = JSON.parse(s);
     const p = Number(d.precoM2) || 0;
     if (p >= 3 && p <= 2000) {
-      return { m2: Math.round(p), fonteLabel: `Anúncios de chácaras em ${cidade}`, fontes: (data.citations || []).slice(0, 5), confianca: 'media', obs: d.obs || null };
+      return { m2: Math.round(p), fonteLabel: `Anúncios de chácaras em ${cidade}`, fontes: (_pplx.fontes).slice(0, 5), confianca: 'media', obs: d.obs || null };
     }
   } catch (e) { console.warn('[Chacara] precoM2:', e.message); }
   return base;

@@ -1,3 +1,4 @@
+const { pesquisar: pesquisarPplx } = require('./perplexity');
 const axios = require('axios');
 
 /**
@@ -44,16 +45,13 @@ async function candidatosNoEndereco({ logradouro, numero, cidade, uf = 'GO' }) {
   if (!apiKey) return [];
   const end = `${logradouro}${numero ? ', ' + numero : ''}, ${cidade}-${uf}`;
   try {
-    const { data } = await axios.post('https://api.perplexity.ai/chat/completions', {
-      model: 'sonar-pro',
-      messages: [
-        { role: 'system', content: 'Pesquisador de dados públicos de empresas (CNPJ) no Brasil. Responda SOMENTE JSON válido. NUNCA invente CNPJ — cite apenas CNPJ que você encontrar em fonte real. Se não encontrar nenhum, devolva lista vazia.' },
-        { role: 'user', content: `Liste os CNPJs (14 dígitos) de empresas que estão ou já estiveram estabelecidas no endereço "${end}", incluindo as que já encerraram atividade. Responda APENAS JSON: {"cnpjs":["..."]}` },
-      ],
-      temperature: 0, max_tokens: 500,
-    }, { timeout: 60000, headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' } });
+    const _pplx = await pesquisarPplx({
+      tag: 'Perplexity/rotatividade', modelo: 'sonar-pro', maxTokens: 500, timeout: 60000,
+      sistema: 'Pesquisador de dados públicos de empresas (CNPJ) no Brasil. Responda SOMENTE JSON válido. NUNCA invente CNPJ — cite apenas CNPJ que você encontrar em fonte real. Se não encontrar nenhum, devolva lista vazia.',
+      pergunta: `Liste os CNPJs (14 dígitos) de empresas que estão ou já estiveram estabelecidas no endereço "${end}", incluindo as que já encerraram atividade. Responda APENAS JSON: {"cnpjs":["..."]}`,
+    });
 
-    let s = String(data.choices?.[0]?.message?.content || '').replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
+    let s = String(_pplx.texto || '').replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
     const i = s.indexOf('{'), j = s.lastIndexOf('}');
     if (i >= 0 && j > i) s = s.slice(i, j + 1);
     const lista = JSON.parse(s).cnpjs || [];

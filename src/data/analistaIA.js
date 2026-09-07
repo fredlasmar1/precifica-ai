@@ -1,3 +1,4 @@
+const { pesquisar: pesquisarPplx, limparJSON: limparJSONPplx } = require('./perplexity');
 const axios = require('axios');
 const { getConhecimentoLocal } = require('./conhecimentoLocal');
 const cache = require('./cacheFile');
@@ -837,26 +838,17 @@ IMPORTANTE: o campo "bairro" em cada comparativo deve conter o nome exato do bai
   try {
     console.log(`[Perplexity] Pesquisando preços reais: ${tipo} ${finalidade} ${bairro}, ${cidade}...`);
 
-    const response = await axios.post('https://api.perplexity.ai/chat/completions', {
-      model: 'sonar-pro',
-      messages: [
-        {
-          role: 'system',
-          content: 'Você é um pesquisador de mercado imobiliário brasileiro. Sua função é pesquisar preços REAIS e ATUAIS em portais de imóveis (OLX, ZAP, VivaReal, Imovelweb, 62imóveis). NUNCA invente preços. NUNCA use médias nacionais genéricas. Use SOMENTE anúncios reais encontrados na internet para a cidade e bairro solicitados. Retorne SOMENTE JSON válido, sem markdown, sem texto extra.'
-        },
-        { role: 'user', content: prompt }
-      ],
-      temperature: 0.1,
-      max_tokens: 3200
-    }, {
-      timeout: 60000,
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json'
-      }
+    // Restringe a busca aos portais — mas NAO para rural: terra agricola nao
+    // esta na OLX nem no Zap, e o filtro so cegaria a pesquisa.
+    const busca = await pesquisarPplx({
+      tag: 'Perplexity',
+      portais: tipo !== 'rural',
+      maxTokens: 3200,
+      sistema: 'Você é um pesquisador de mercado imobiliário brasileiro. Sua função é pesquisar preços REAIS e ATUAIS em portais de imóveis (OLX, ZAP, VivaReal, Imovelweb, 62imóveis). NUNCA invente preços. NUNCA use médias nacionais genéricas. Use SOMENTE anúncios reais encontrados na internet para a cidade e bairro solicitados. Retorne SOMENTE JSON válido, sem markdown, sem texto extra.',
+      pergunta: prompt,
     });
 
-    const content = response.data.choices[0].message.content;
+    const content = busca.texto;
 
     // Perplexity pode retornar JSON dentro de code block
     let jsonStr = content.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
@@ -913,7 +905,7 @@ IMPORTANTE: o campo "bairro" em cada comparativo deve conter o nome exato do bai
     }
 
     // Extrai fontes citadas pela Perplexity (se disponíveis)
-    const citations = response.data.citations || [];
+    const citations = busca.fontes;
 
     // Recalcula médias a partir dos comparativos brutos
     if (resultado.comparativos && resultado.comparativos.length > 0) {
@@ -1030,20 +1022,15 @@ ${isTerreno ? 'SOMENTE lotes vazios. NÃO inclua casas ou imóveis construídos.
 
 Retorne SOMENTE JSON: {"comparativos":[{"area":N,"preco":N,"precoM2":N,"bairro":"nome bairro","fonte":"site","detalhe":"desc"}],"precoMedioM2":N (média simples de TODOS — não filtre nada),"faixaMinM2":N,"faixaMaxM2":N,"anunciosAnalisados":N,"confianca":"alta|media|baixa","raciocinio":"resumo"}`;
 
-    const retryResp = await axios.post('https://api.perplexity.ai/chat/completions', {
-      model: 'sonar-pro',
-      messages: [
-        { role: 'system', content: 'Pesquisador imobiliário. Retorne SOMENTE JSON válido, curto e direto.' },
-        { role: 'user', content: promptSimples }
-      ],
-      temperature: 0.1,
-      max_tokens: 1500
-    }, {
-      timeout: 60000,
-      headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' }
+    const retryBusca = await pesquisarPplx({
+      tag: 'Perplexity/retry',
+      portais: tipo !== 'rural',
+      maxTokens: 1500,
+      sistema: 'Pesquisador imobiliário. Retorne SOMENTE JSON válido, curto e direto.',
+      pergunta: promptSimples,
     });
 
-    const retryContent = retryResp.data.choices[0].message.content;
+    const retryContent = retryBusca.texto;
     let retryJson = retryContent.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
 
     let retryResult;
@@ -1058,7 +1045,7 @@ Retorne SOMENTE JSON: {"comparativos":[{"area":N,"preco":N,"precoM2":N,"bairro":
       if (tipo === 'rural' && retryResult.precoMedioAlq > 0 && !retryResult.precoMedioM2) {
         retryResult.precoMedioM2 = Math.round(retryResult.precoMedioAlq / 48400);
       }
-      const citations = retryResp.data.citations || [];
+      const citations = retryBusca.fontes;
       retryResult = filtrarComparativosPorBairro(retryResult, bairro);
       if ((tipo === 'apartamento' || tipo === 'casa') && metragem > 0) {
         retryResult = filtrarRelevanciaApartamento(retryResult, metragem, quartos, tipo);
@@ -1168,16 +1155,15 @@ RETORNE SOMENTE JSON válido:
 }`;
 
   try {
-    const response = await axios.post('https://api.perplexity.ai/chat/completions', {
-      model: 'sonar-pro',
-      messages: [
-        { role: 'system', content: 'Pesquisador imobiliário. Retorne SOMENTE anúncios reais do edifício solicitado, nunca de outros prédios. NUNCA invente. SOMENTE JSON.' },
-        { role: 'user', content: prompt }
-      ],
-      temperature: 0.1, max_tokens: 1500
-    }, { timeout: 60000, headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' } });
+    const busca = await pesquisarPplx({
+      tag: 'Perplexity/predio',
+      portais: true,          // anuncio de unidade de edificio: portal e a fonte certa
+      maxTokens: 1500,
+      sistema: 'Pesquisador imobiliário. Retorne SOMENTE anúncios reais do edifício solicitado, nunca de outros prédios. NUNCA invente. SOMENTE JSON.',
+      pergunta: prompt,
+    });
 
-    let jsonStr = response.data.choices[0].message.content.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
+    let jsonStr = limparJSONPplx(busca.texto);
     let r;
     try { r = JSON.parse(jsonStr); } catch { r = repararJSON(jsonStr); }
     if (!r || !Array.isArray(r.comparativos)) return { comparativos: [], anunciosAnalisados: 0 };
@@ -1209,7 +1195,7 @@ RETORNE SOMENTE JSON válido:
       confianca: comps.length >= 3 ? 'alta' : 'media',
       suspeitaFabricacao: m2.length >= 3 && disp < 0.015,
       raciocinio: r.raciocinio || `${comps.length} unidade(s) encontrada(s) no ${condominio}.`,
-      citacoes: (response.data.citations || []).slice(0, 5),
+      citacoes: busca.fontes.slice(0, 5),
     };
   } catch (e) {
     console.warn('[Predio] erro:', e.response?.data?.error || e.message);

@@ -1,3 +1,4 @@
+const { pesquisar: pesquisarPplx } = require('./perplexity');
 const { completar: completarLLM } = require('../agent/llm');
 // Estudo de viabilidade BTS (Build to Suit) — o investidor constrói um imóvel
 // sob medida para um inquilino corporativo que assina contrato longo (10–20 anos)
@@ -207,17 +208,14 @@ async function empresasExpansao(cidade, bairro, ramos, area) {
       const prompt = `Liste empresas/redes REAIS que estão em expansão, abrindo unidades ou buscando pontos em ${cidade}-GO ou na região metropolitana de Goiânia/entorno em 2025-2026, nos ramos: ${labels.join(', ')}. `
         + `Foque em redes que operam por Build to Suit ou aluguel de longo prazo (atacarejo, varejo, academias, farmácias, fast-food, logística, saúde). `
         + `Responda em JSON: {"empresas":[{"nome":"...","ramo":"...","status":"o que se sabe da expansão"}]}. Máximo 8. Use SOMENTE informação real e verificável; se não houver, retorne lista vazia.`;
-      const { data } = await axios.post('https://api.perplexity.ai/chat/completions', {
-        model: 'sonar-pro',
-        messages: [
-          { role: 'system', content: 'Pesquisador de expansão de varejo no Brasil. SOMENTE dados reais e verificáveis. Nunca invente. Retorne SOMENTE JSON.' },
-          { role: 'user', content: prompt },
-        ],
-        temperature: 0.1, max_tokens: 700,
-      }, { timeout: 60000, headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' } });
-      const s = data.choices[0].message.content.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
+      const _pplx = await pesquisarPplx({
+        tag: 'Perplexity/bts', modelo: 'sonar-pro', maxTokens: 700, timeout: 60000,
+        sistema: 'Pesquisador de expansão de varejo no Brasil. SOMENTE dados reais e verificáveis. Nunca invente. Retorne SOMENTE JSON.',
+        pergunta: prompt,
+      });
+      const s = _pplx.texto.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
       try { live = (JSON.parse(s).empresas || []).map(e => ({ nome: semCit(e.nome), ramo: semCit(e.ramo), status: semCit(e.status) })); } catch {}
-      fontes = (data.citations || []).slice(0, 6);
+      fontes = (_pplx.fontes).slice(0, 6);
     } catch (e) { console.warn('[BTS] expansão web:', e.message); }
   }
   return { curadas, live, fontes };
@@ -279,15 +277,12 @@ async function _radarQuery(reg, ramoTxt, alvoMax) {
     + `Priorize quem opera por Build to Suit ou locação de longo prazo, e redes conhecidas por expandir no Centro-Oeste/Goiás. `
     + `Responda APENAS com JSON válido, sem texto antes ou depois: {"empresas":[{"nome":"...","ramo":"${ramoTxt}","sinal":"sinal concreto de expansão + data","cidadeAlvo":"cidade(s) de interesse na região","imovelBuscado":"tipo/área de imóvel típico (ex: loja 300m² em avenida, galpão 3000m²)","statusRegiao":"já tem unidade na região? está abrindo?","fonte":"URL da fonte","site":"site oficial da rede","telefone":"telefone de contato (comercial/expansão se souber, senão geral)","email":"email de contato (expansão/novos negócios se souber, senão geral)"}]}. `
     + `Preencha site, telefone e email SEMPRE que souber (dados públicos das redes). Liste de 2 a ${alvoMax} empresas reais que você conhece estarem em expansão no Centro-Oeste. Não invente empresas, fontes, telefones nem emails; se não souber um campo, deixe-o vazio mas mantenha a empresa.`;
-  const { data } = await axios.post('https://api.perplexity.ai/chat/completions', {
-    model: 'sonar-pro',
-    messages: [
-      { role: 'system', content: 'Pesquisador de expansão de varejo e franquias no Brasil, especialista no interior/Centro-Oeste. Use dados reais. Nunca invente empresas ou fontes. Retorne SOMENTE JSON válido, começando com { e terminando com }.' },
-      { role: 'user', content: prompt },
-    ],
-    temperature: 0.2, max_tokens: 2000,
-  }, { timeout: 75000, headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' } });
-  let s = String(data.choices[0].message.content || '').replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
+  const _pplx = await pesquisarPplx({
+    tag: 'Perplexity/bts', modelo: 'sonar-pro', maxTokens: 2000, timeout: 75000,
+    sistema: 'Pesquisador de expansão de varejo e franquias no Brasil, especialista no interior/Centro-Oeste. Use dados reais. Nunca invente empresas ou fontes. Retorne SOMENTE JSON válido, começando com { e terminando com }.',
+    pergunta: prompt,
+  });
+  let s = String(_pplx.texto || '').replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
   const i = s.indexOf('{'), j = s.lastIndexOf('}');
   if (i >= 0 && j > i) s = s.slice(i, j + 1);
   let empresas = [];
@@ -303,7 +298,7 @@ async function _radarQuery(reg, ramoTxt, alvoMax) {
       };
     }).filter(e => e.nome);
   } catch {}
-  return { empresas, fontes: (data.citations || []).slice(0, 6) };
+  return { empresas, fontes: (_pplx.fontes).slice(0, 6) };
 }
 
 async function radarExpansao(regiao, ramo, porte) {
@@ -560,15 +555,12 @@ async function confirmarFiliais(empresa, regiao) {
   if (apiKey) {
     try {
       const prompt = `Liste os CNPJs (14 dígitos, formato XX.XXX.XXX/XXXX-XX) de lojas, unidades ou filiais da rede "${emp}" localizadas em ${reg.alvo}. Inclua o CNPJ da matriz se ela ficar nessa região. Responda APENAS JSON válido: {"cnpjs":["..."]}. Só CNPJs REAIS e verificáveis; se não souber, retorne lista vazia. NUNCA invente CNPJ.`;
-      const { data } = await axios.post('https://api.perplexity.ai/chat/completions', {
-        model: 'sonar-pro',
-        messages: [
-          { role: 'system', content: 'Pesquisador de dados públicos de empresas (CNPJ) no Brasil. Responda SOMENTE JSON válido. NUNCA invente CNPJ — só cite CNPJ que você encontrar em fonte real.' },
-          { role: 'user', content: prompt },
-        ],
-        temperature: 0, max_tokens: 500,
-      }, { timeout: 60000, headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' } });
-      let s = String(data.choices[0].message.content || '').replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
+      const _pplx = await pesquisarPplx({
+        tag: 'Perplexity/bts', modelo: 'sonar-pro', maxTokens: 500, timeout: 60000,
+        sistema: 'Pesquisador de dados públicos de empresas (CNPJ) no Brasil. Responda SOMENTE JSON válido. NUNCA invente CNPJ — só cite CNPJ que você encontrar em fonte real.',
+        pergunta: prompt,
+      });
+      let s = String(_pplx.texto || '').replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
       const i = s.indexOf('{'), j = s.lastIndexOf('}');
       if (i >= 0 && j > i) s = s.slice(i, j + 1);
       try { candidatos = JSON.parse(s).cnpjs || []; } catch {}
@@ -612,15 +604,12 @@ async function buscarContato(empresa) {
       const prompt = `Para a rede/empresa "${emp}" no Brasil, retorne SOMENTE JSON válido: `
         + `{"cnpjMatriz":"XX.XXX.XXX/XXXX-XX ou vazio","site":"","canalExpansao":"URL da página de EXPANSÃO / NOVOS PONTOS / OFEREÇA SEU IMÓVEL (onde proprietários oferecem terreno para novas lojas) ou vazio","emailExpansao":"email do setor de expansão/novos negócios/imóveis ou vazio","emailGeral":"email de contato geral ou vazio","telefone":"telefone principal ou vazio"}. `
         + `Priorize o CANAL DE EXPANSÃO/IMÓVEIS. Use SOMENTE dados reais e verificáveis; campo sem info = string vazia. NUNCA invente email, CNPJ ou telefone.`;
-      const { data } = await axios.post('https://api.perplexity.ai/chat/completions', {
-        model: 'sonar-pro',
-        messages: [
-          { role: 'system', content: 'Pesquisador de dados públicos de empresas no Brasil. Responda SOMENTE JSON válido. NUNCA invente email, CNPJ ou telefone — só cite o que encontrar em fonte real.' },
-          { role: 'user', content: prompt },
-        ],
-        temperature: 0, max_tokens: 500,
-      }, { timeout: 60000, headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' } });
-      let s = String(data.choices[0].message.content || '').replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
+      const _pplx = await pesquisarPplx({
+        tag: 'Perplexity/bts', modelo: 'sonar-pro', maxTokens: 500, timeout: 60000,
+        sistema: 'Pesquisador de dados públicos de empresas no Brasil. Responda SOMENTE JSON válido. NUNCA invente email, CNPJ ou telefone — só cite o que encontrar em fonte real.',
+        pergunta: prompt,
+      });
+      let s = String(_pplx.texto || '').replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
       const i = s.indexOf('{'), j = s.lastIndexOf('}');
       if (i >= 0 && j > i) s = s.slice(i, j + 1);
       try { dados = JSON.parse(s) || {}; } catch {}

@@ -1,3 +1,4 @@
+const { pesquisar: pesquisarPplx } = require('./perplexity');
 const { completar: completarLLM } = require('../agent/llm');
 const axios = require('axios');
 const OpenAI = require('openai');
@@ -254,15 +255,12 @@ async function melhoresRuas(ramo, bairro, cidade) {
   const apiKey = process.env.PERPLEXITY_API_KEY;
   if (!apiKey) return null;
   try {
-    const { data } = await axios.post('https://api.perplexity.ai/chat/completions', {
-      model: 'sonar-pro',
-      messages: [
-        { role: 'system', content: 'Você conhece o comércio de Anápolis-GO. Responda SOMENTE JSON.' },
-        { role: 'user', content: `Quais as 2 a 3 ruas/avenidas comerciais mais movimentadas do bairro ${bairro} em ${cidade}-GO, boas para instalar um(a) "${ramo}"? Para cada, o nome real e uma frase do porquê (fluxo, comércio, acesso). JSON: {"ruas":[{"nome":"...","motivo":"..."}]}` },
-      ],
-      temperature: 0.2, max_tokens: 450,
-    }, { timeout: 50000, headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' } });
-    let s = data.choices[0].message.content.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
+    const _pplx = await pesquisarPplx({
+      tag: 'Perplexity/pontoComercial', modelo: 'sonar-pro', maxTokens: 450, timeout: 50000,
+      sistema: 'Você conhece o comércio de Anápolis-GO. Responda SOMENTE JSON.',
+      pergunta: `Quais as 2 a 3 ruas/avenidas comerciais mais movimentadas do bairro ${bairro} em ${cidade}-GO, boas para instalar um(a) "${ramo}"? Para cada, o nome real e uma frase do porquê (fluxo, comércio, acesso). JSON: {"ruas":[{"nome":"...","motivo":"..."}]}`,
+    });
+    let s = _pplx.texto.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
     const j = JSON.parse(s);
     if (Array.isArray(j.ruas)) j.ruas = j.ruas.map(r => ({ nome: semCit(r.nome), motivo: semCit(r.motivo) })).filter(r => r.nome);
     return j;
