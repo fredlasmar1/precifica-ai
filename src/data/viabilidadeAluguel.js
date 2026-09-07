@@ -149,6 +149,7 @@ function analisarAluguel(p = {}) {
     percentualSaudavel: regua.saudavel,
     percentualTeto: regua.teto,
     aluguelPedido,
+    metragem,              // sai no retorno: quem lê precisa dela p/ o R$/m² do PEDIDO
     faturamentoSaudavel,   // aluguel ocupa o % confortável
     faturamentoMinimo,     // aluguel ocupa o % teto — abaixo disso o ponto sufoca
     porDiaUtil: Math.round(faturamentoMinimo / diasUteis),

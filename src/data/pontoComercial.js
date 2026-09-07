@@ -452,7 +452,7 @@ async function gerarParecerIA(a) {
     ticket_medio: a.ticket && a.ticket.ticketMedio,
     faturamento_estimado: a.ticket && a.ticket.faturamentoMensal,
     melhores_ruas: a.ruas && Array.isArray(a.ruas.ruas) ? a.ruas.ruas.map(r => r.nome).join(', ') : null,
-    custo_comercial: a.precoComercial ? `compra R$${a.precoComercial.vendaM2 || '?'}/m², aluguel R$${a.precoComercial.aluguelM2 || '?'}/m²` : null,
+    custo_comercial: a.precoComercial ? `MEDIANA DO BAIRRO (não é o imóvel em questão): compra R$${a.precoComercial.vendaM2 || '?'}/m², aluguel R$${a.precoComercial.aluguelM2 || '?'}/m²` : null,
   };
 
   // ⚠️ A CONTA VAI PRONTA, o modelo NÃO recalcula.
@@ -468,11 +468,34 @@ async function gerarParecerIA(a) {
   // só interpretar.
   if (a.viabilidadeAluguel && !a.viabilidadeAluguel.erro) {
     const v = a.viabilidadeAluguel;
+    const aluguelPedido = Number(v.aluguelPedido) || 0;
     resumo.regua_do_aluguel = `Régua do ramo: o aluguel deve ficar entre ${v.percentualSaudavel}% e ${v.percentualTeto}% do faturamento. ` +
       `Com o aluguel pedido, o negócio precisa faturar no mínimo R$ ${Number(v.faturamentoMinimo).toLocaleString('pt-BR')}/mês ` +
       `(R$ ${Number(v.faturamentoSaudavel).toLocaleString('pt-BR')} para respirar).` +
       (v.mercado ? ` O pedido está ${v.mercado.desvioPct > 0 ? v.mercado.desvioPct + '% ACIMA' : Math.abs(v.mercado.desvioPct) + '% abaixo'} do aluguel de mercado do bairro.` : '');
-    resumo.INSTRUCAO_CRITICA = 'A régua acima já está calculada e é a verdade. NÃO recalcule percentuais nem conclua que o aluguel "cabe" se o faturamento estimado for menor que o mínimo indicado. Se não couber, diga com todas as letras.';
+
+    // O R$/m² do imóvel em questão. Sem isto o resumo só tinha o R$/m² MEDIANO
+    // do bairro, e o modelo o citava como se fosse o preço pedido: escreveu
+    // "o aluguel de R$ 46/m²" num ponto que estava sendo pedido a R$ 67/m².
+    resumo.aluguel_pedido = `R$ ${aluguelPedido.toLocaleString('pt-BR')}/mês` +
+      (v.metragem ? ` por ${v.metragem} m² = R$ ${Math.round(aluguelPedido / v.metragem)}/m² (este é o preço PEDIDO; o do custo_comercial é a mediana do bairro)` : '');
+
+    // Quanto caberia, calculado aqui. Sem isto o modelo fecha o parecer
+    // mandando "negocie até R$ 30/m²" — um número que ele inventou.
+    const faixa = String(a.ticket && a.ticket.faturamentoMensal || '')
+      .match(/\d[\d.]*/g);
+    if (faixa && faixa.length) {
+      const topo = Math.max(...faixa.map((n) => Number(n.replace(/\./g, '')) || 0));
+      if (topo >= 1000) {
+        const cabe    = Math.round(topo * (v.percentualTeto / 100));
+        const folgado = Math.round(topo * (v.percentualSaudavel / 100));
+        resumo.aluguel_que_caberia = `Pelo TOPO do faturamento estimado (R$ ${topo.toLocaleString('pt-BR')}/mês), ` +
+          `o aluguel máximo é R$ ${cabe.toLocaleString('pt-BR')}/mês (R$ ${folgado.toLocaleString('pt-BR')} para operar folgado)` +
+          (v.metragem ? `, ou seja R$ ${Math.round(cabe / v.metragem)}/m².` : '.');
+      }
+    }
+
+    resumo.INSTRUCAO_CRITICA = 'A régua e os valores acima já estão calculados e são a verdade. NÃO recalcule percentuais, NÃO some, NÃO divida e NÃO conclua que o aluguel "cabe" se o faturamento estimado for menor que o mínimo indicado — se não couber, diga com todas as letras. Ao sugerir um alvo de negociação, use EXATAMENTE o valor de aluguel_que_caberia; se esse campo não vier, não invente número nenhum, apenas diga que o aluguel precisa cair.';
   }
   try {
     const r = await completarLLM({ forte: false, maxTokens: 700, messages: [
