@@ -292,6 +292,47 @@ function maisConservadora(a, b) {
   return va <= vb ? (a || 'baixa') : (b || 'baixa');
 }
 
+/**
+ * Tira o MESMO anuncio contado duas vezes.
+ *
+ * Visto em producao (07/09/2026, apartamento no Jundiai): a amostra trouxe
+ * "90m², R$ 525.000, 3q, Chaves na Mao" duas vezes — a segunda descrita como
+ * "anuncio coincidente com busca por tamanho similar". O laudo dizia 4
+ * anuncios, mas eram 3 imoveis.
+ *
+ * Nao e detalhe de exibicao: a CONTAGEM da amostra decide a confianca e a
+ * largura da faixa de negociacao. Duplicata infla as duas.
+ *
+ * Dedup por (area, preco): dois apartamentos distintos com area E preco
+ * identicos ate podem existir, mas contar o par duas vezes dobra o peso dele na
+ * media de qualquer jeito. Fica a primeira ocorrencia, que costuma ser a que
+ * traz o endereco.
+ */
+function dedupComparativos(resultado) {
+  const comps = resultado?.comparativos;
+  if (!Array.isArray(comps) || comps.length < 2) return resultado;
+
+  const vistos = new Set();
+  const unicos = [];
+  for (const c of comps) {
+    const area  = Math.round(Number(c.area) || 0);
+    const preco = Math.round(Number(c.preco ?? c.precoAlq) || 0);
+    const chave = area > 0 && preco > 0
+      ? `${area}|${preco}`
+      : `m2:${Math.round(Number(c.precoM2) || 0)}|${String(c.detalhe || '').slice(0, 40)}`;
+    if (vistos.has(chave)) continue;
+    vistos.add(chave);
+    unicos.push(c);
+  }
+
+  if (unicos.length === comps.length) return resultado;
+  console.warn(`[Dedup] ${comps.length} → ${unicos.length} comparativos (${comps.length - unicos.length} anúncio(s) repetido(s))`);
+  resultado.comparativos = unicos;
+  if (Number(resultado.anunciosAnalisados) > unicos.length) resultado.anunciosAnalisados = unicos.length;
+  resultado.confianca = maisConservadora(resultado.confianca, confiancaPorAmostra(unicos.length));
+  return resultado;
+}
+
 function filtrarComparativosPorBairro(resultado, bairroRef, cidadeRef = 'Anápolis') {
   if (!resultado?.comparativos || resultado.comparativos.length < 2) return resultado;
   const { getMultiplicadorBairro } = require('./bairros');
@@ -879,6 +920,9 @@ IMPORTANTE: o campo "bairro" em cada comparativo deve conter o nome exato do bai
       throw new Error('0 comparativos — forçando retry');
     }
 
+    // Antes de qualquer conta: o mesmo anúncio não pode valer por dois.
+    resultado = dedupComparativos(resultado);
+
     // Faixas de sanidade por tipo — terrenos podem ter m² bem abaixo de casas/aptos
     const faixas = {
       venda: {
@@ -1046,6 +1090,7 @@ Retorne SOMENTE JSON: {"comparativos":[{"area":N,"preco":N,"precoM2":N,"bairro":
         retryResult.precoMedioM2 = Math.round(retryResult.precoMedioAlq / 48400);
       }
       const citations = retryBusca.fontes;
+      retryResult = dedupComparativos(retryResult);
       retryResult = filtrarComparativosPorBairro(retryResult, bairro);
       if ((tipo === 'apartamento' || tipo === 'casa') && metragem > 0) {
         retryResult = filtrarRelevanciaApartamento(retryResult, metragem, quartos, tipo);
