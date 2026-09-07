@@ -135,9 +135,17 @@ async function calcularPreco(dadosImovel) {
       if (Array.isArray(comps) && comps.length > 0) {
         const bairroNorm = bairro.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
         // Se NENHUM comparativo menciona o bairro solicitado, o cache é de outra consulta
+        // ⚠️ Olhar SÓ o texto derrubava o cache toda vez que a fonte era o
+        // scraping: o `detalhe` de anúncio raspado é "120m² • 3q — anúncio
+        // real", sem bairro nem cidade. O bairro vem no CAMPO `c.bairro`, que
+        // esta checagem ignorava — então o cache era invalidado à toa e a busca
+        // refeita (agora que o scraping voltou, isso custa dinheiro no Zyte).
+        const semAcento = (t) => String(t || '').toLowerCase()
+          .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
         const algumDosBairro = comps.some(c => {
-          const det = (c.detalhe || c.descricao || '').toLowerCase();
-          return det.includes(bairroNorm) || det.includes(cidade.toLowerCase());
+          if (semAcento(c.bairro) && semAcento(c.bairro).includes(bairroNorm)) return true;
+          const det = semAcento(c.detalhe || c.descricao || '');
+          return det.includes(bairroNorm) || det.includes(semAcento(cidade));
         });
         if (!algumDosBairro && comps.length > 0) {
           console.warn(`[Precificador] Cache DB com comparativos de bairro diferente — invalidando`);
@@ -224,7 +232,7 @@ async function calcularPreco(dadosImovel) {
       comparativos: (comparativos.imoveis || []).map(i => ({
         area: i.area, preco: i.preco, precoM2: i.precoM2, quartos: i.quartos,
         bairro, fonte: i.fonte || comparativos.fonte,
-        detalhe: `${i.area || '?'}m²${i.quartos ? ` • ${i.quartos}q` : ''} — anúncio real`
+        detalhe: `${i.area || '?'}m²${i.quartos ? ` • ${i.quartos}q` : ''} — anúncio real em ${bairro}, ${cidade}`
       })),
       confianca: confiancaFonte,
       raciocinio: `${n} anúncios reais coletados via scraping (${comparativos.fonte}); preço/m² pela MEDIANA dos anúncios.`,
