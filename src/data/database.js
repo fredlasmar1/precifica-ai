@@ -477,7 +477,12 @@ async function lerPortaisCache(chave, dias = 7) {
       `SELECT payload FROM portais_cache WHERE chave = $1 AND criado_em > NOW() - ($2 || ' days')::INTERVAL`,
       [chave, String(dias)]);
     return r.rows[0]?.payload || null;
-  } catch { return null; }
+  } catch (e) {
+    // Engolir o erro aqui esconde justamente o que precisa aparecer: um cache
+    // que nao le e indistinguivel de um cache vazio, e o gasto continua.
+    console.warn('[PortaisCache] leitura falhou:', e.message);
+    return null;
+  }
 }
 
 async function gravarPortaisCache(chave, payload) {
@@ -486,7 +491,10 @@ async function gravarPortaisCache(chave, payload) {
       `INSERT INTO portais_cache (chave, payload, criado_em) VALUES ($1,$2,NOW())
        ON CONFLICT (chave) DO UPDATE SET payload = $2, criado_em = NOW()`,
       [chave, JSON.stringify(payload)]);
-  } catch (e) { /* cache nunca derruba a busca */ }
+    console.log(`[PortaisCache] gravado: ${chave}`);
+  } catch (e) {
+    console.warn('[PortaisCache] gravacao falhou:', e.message);
+  }
 }
 
 // ─── Cache do Google Places (o entorno não muda toda semana) ─────
