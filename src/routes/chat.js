@@ -1297,20 +1297,19 @@ router.post('/relatorio-terreno', async (req, res) => {
  */
 router.get('/uso', async (req, res) => {
   const axios = require('axios');
-  const out = { scraperapi: null, google: null, alertas: [] };
-  try {
-    // Só consulta a conta do ScraperAPI se o scraping estiver LIGADO. Com ele
-    // desligado a chamada dava 400 a cada abertura do painel, por nada.
-    const k = String(process.env.SCRAPING_ATIVO || '').match(/^(1|true|sim)$/i)
-      ? process.env.SCRAPER_API_KEY : null;
-    if (k) {
-      const { data } = await axios.get(`http://api.scraperapi.com/account?api_key=${k}`, { timeout: 12000 });
-      const usados = data.requestCount, limite = data.requestLimit, restam = data.creditsLeft;
-      const pct = limite ? Math.round((usados / limite) * 100) : 0;
-      out.scraperapi = { usados, limite, restam, pct };
-      if (restam < limite * 0.1) out.alertas.push(`ScraperAPI: só ${restam} buscas restantes (${pct}% usado)`);
-    }
-  } catch (e) { out.scraperapi = { erro: e.message }; }
+  const out = { scraping: null, google: null, alertas: [] };
+
+  // O proxy e o Zyte, pay-as-you-go: nao ha cota mensal para consultar. O
+  // painel mostra apenas se o scraping esta ligado e por onde ele sai.
+  const ligado = /^(1|true|sim)$/i.test(String(process.env.SCRAPING_ATIVO || ''));
+  out.scraping = {
+    ligado,
+    proxy: process.env.ZYTE_API_KEY ? 'Zyte (geolocation BR)' : 'nenhum configurado',
+    nota: ligado
+      ? 'Cobrado por uso no Zyte. O resultado fica em cache no Postgres para o mesmo bairro não pagar duas vezes.'
+      : 'Desligado: o motor usa a Perplexity, que já traz anúncio real com fonte citada.',
+  };
+  if (ligado && !process.env.ZYTE_API_KEY) out.alertas.push('SCRAPING_ATIVO=1 mas não há ZYTE_API_KEY — o scraping vai sair sem proxy e o Cloudflare bloqueia.');
   try {
     const usados = await require('../data/database').obterUso('google_places');
     // ⚠️ O credito de US$200/mes do Maps Platform ACABOU (Google encerrou em

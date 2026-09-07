@@ -39,8 +39,8 @@ const BROWSER_HEADERS = {
  * anúncio real e fonte citada. O que falta ao motor é preço PAGO, e isso vem
  * dos fechamentos registrados (fechamentos.js), de graça.
  *
- * Para religar: definir SCRAPING_ATIVO=1 e uma SCRAPER_API_KEY que funcione
- * no Brasil. Nada foi apagado.
+ * Para religar: definir SCRAPING_ATIVO=1 na Railway. O proxy e o Zyte
+ * (ZYTE_API_KEY), que ja esta configurado. Nada foi apagado.
  */
 function scrapingLigado() {
   const v = String(process.env.SCRAPING_ATIVO || '').toLowerCase();
@@ -50,7 +50,6 @@ function scrapingLigado() {
 /** Qual proxy esta configurado — aparece no log para nao haver duvida. */
 function proxyEmUso() {
   if (process.env.ZYTE_API_KEY) return 'Zyte (geolocation BR)';
-  if (process.env.SCRAPER_API_KEY) return 'ScraperAPI (sem geotarget)';
   return 'nenhum (acesso direto, o Cloudflare bloqueia)';
 }
 
@@ -117,18 +116,13 @@ async function buscarComparativos(dados) {
 
 // ─── Helpers de request ──────────────────────────────────────────────
 
+/**
+ * Sem proxy. So sobra o acesso direto, que o Cloudflare dos portais bloqueia —
+ * fica como ultimo recurso para nao derrubar a chamada, e o `via` diz no log
+ * que a busca saiu sem proxy nenhum.
+ */
 function getUrl(targetUrl) {
-  const scraperKey = process.env.SCRAPER_API_KEY;
-  if (scraperKey) {
-    return {
-      // Sem country_code (geotargeting não está no plano Hobby → dava 403 em tudo).
-      // Os portais retornam o JSON-LD normalmente sem geotarget.
-      url: `http://api.scraperapi.com/?api_key=${scraperKey}&url=${encodeURIComponent(targetUrl)}&render=false`,
-      timeout: PROXY_TIMEOUT,
-      via: 'ScraperAPI'
-    };
-  }
-  return { url: targetUrl, timeout: DIRECT_TIMEOUT, via: 'direto' };
+  return { url: targetUrl, timeout: DIRECT_TIMEOUT, via: 'direto (sem proxy)' };
 }
 
 /**

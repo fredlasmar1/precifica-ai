@@ -19,30 +19,16 @@ async function enviarTelegram(chatId, texto) {
   }
 }
 
-/** Checa o consumo da ScraperAPI e avisa se estiver acabando. */
+/**
+ * Alertas de consumo. A ScraperAPI saiu daqui em 07/09/2026: a assinatura foi
+ * cancelada e a chave removida da Railway, mas o alerta continuava batendo na
+ * conta todo dia e logando `erro ao checar ScraperAPI: status 400`. Alarme que
+ * toca sozinho ensina a ignorar alarme. O proxy hoje e o Zyte, que e
+ * pay-as-you-go — nao ha cota mensal para vigiar.
+ */
 async function checkUsoEAlertar() {
   const chatId = process.env.ALERT_CHAT_ID;
   if (!chatId) return;
-  try {
-    const k = process.env.SCRAPER_API_KEY;
-    if (!k) return;
-    const { data } = await axios.get(`http://api.scraperapi.com/account?api_key=${k}`, { timeout: 15000 });
-    const limite = data.requestLimit || 0;
-    const restam = data.creditsLeft ?? 0;
-    const pct = limite ? Math.round((data.requestCount / limite) * 100) : 0;
-    if (limite && restam < limite * 0.15) {
-      const avals = Math.floor(restam / 2);
-      const reset = (data.nextBillingDate || '').slice(0, 10) || 'em breve';
-      await enviarTelegram(chatId,
-        `⚠️ *Precifica Aí — alerta de uso*\n` +
-        `Scraping de anúncios: *${pct}%* usado este mês.\n` +
-        `Restam *${restam}* buscas (~${avals} avaliações).\n` +
-        `Renova em ${reset}.`);
-      console.log(`[Alerta] aviso ScraperAPI enviado (${pct}% usado)`);
-    }
-  } catch (e) {
-    console.warn('[Alerta] erro ao checar ScraperAPI:', e.message);
-  }
 
   // ── Google Places (contador interno × cota grátis de US$200 ≈ 6.250 buscas) ──
   try {
