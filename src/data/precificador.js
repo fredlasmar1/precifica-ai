@@ -117,7 +117,69 @@ async function calcularPreco(dadosImovel) {
     }
   } catch (e) { console.warn('[Fechamentos] erro:', e.message); }
 
-  // Prioridade 1: Cache DB (pesquisa recente < 3 dias)
+  // ─── PRIORIDADE 1: ANUNCIO REAL DO PORTAL (scraping via Zyte) ──────────
+  //
+  // Subiu na frente do cache em 07/09/2026. O scraping trazia 35 anuncios do
+  // VivaReal e do Imovelweb, com o link de cada um, e o laudo saia com 3 da
+  // Perplexity porque o cache era consultado primeiro. Pagava-se o Zyte e
+  // jogava-se o resultado fora.
+  //
+  // So perde para negocio FECHADO, que e preco pago — anuncio, por mais que
+  // seja real e verificavel, continua sendo preco pedido.
+  if (!precoM2Base && comparativos?.precoMedioM2) {
+    precoM2Base = comparativos.precoMedioM2;
+    fontePrincipal = comparativos.fonte;
+    const n = comparativos.totalEncontrados || 0;
+    console.log(`[Precificador] Portais (real): ${n} anúncios brutos via ${comparativos.fonte}`);
+
+    // Monta analiseIA a partir dos anúncios REAIS para o laudo mostrar os comparativos
+    analiseIA = {
+      precoMedioM2: comparativos.precoMedioM2,
+      faixaMinM2: comparativos.faixaMinM2 || comparativos.precoMedioM2,
+      faixaMaxM2: comparativos.faixaMaxM2 || comparativos.precoMedioM2,
+      anunciosAnalisados: n,
+      comparativos: (comparativos.imoveis || []).map(i => ({
+        area: i.area, preco: i.preco, precoM2: i.precoM2, quartos: i.quartos,
+        bairro, fonte: i.fonte || comparativos.fonte,
+        detalhe: `${i.area || '?'}m²${i.quartos ? ` • ${i.quartos}q` : ''} — anúncio real em ${bairro}, ${cidade}`
+      })),
+      confianca: confiancaFonte,
+      raciocinio: `${n} anúncios reais coletados via scraping (${comparativos.fonte}); preço/m² pela MEDIANA dos anúncios.`,
+      fonte: `Anúncios reais — ${comparativos.fonte}`,
+      citacoes: (comparativos.imoveis || []).map(i => i.url).filter(Boolean).slice(0, 5)
+    };
+
+    // O PORTAL DEVOLVE O BAIRRO INTEIRO, NAO O IMOVEL PARECIDO.
+    //
+    // Numa busca de apartamento de 90m² com 3 quartos o scraping trouxe
+    // "apartamento-1-quartos-40m2-RS95000". Os filtros de metragem e quartos
+    // moravam dentro do estimarPrecoComIA, entao so a Perplexity passava por
+    // eles: a fonte com MAIS anuncio era justamente a que entrava sem nenhuma
+    // limpeza. Aqui ela passa pela mesma regua — dedup, metragem/quartos — e a
+    // media e a confianca saem do que sobrou, nao do que veio.
+    //
+    // O filtro de BAIRRO nao entra: a busca no portal ja foi feita pela URL do
+    // bairro, e todo anuncio ja vem etiquetado com ele.
+    const fil = require('./analistaIA');
+    analiseIA = fil.dedupComparativos(analiseIA);
+    if ((tipo === 'apartamento' || tipo === 'casa') && metragem > 0) {
+      analiseIA = fil.filtrarRelevanciaApartamento(analiseIA, metragem, quartos, tipo);
+    } else if (tipo === 'comercial' && metragem > 0) {
+      analiseIA = fil.filtrarRelevanciaComercial(analiseIA, metragem);
+    }
+
+    const nFinal = analiseIA.anunciosAnalisados || (analiseIA.comparativos || []).length;
+    precoM2Base = analiseIA.precoMedioM2 || precoM2Base;
+    confiancaFonte = fil.confiancaPorAmostra(nFinal);
+    analiseIA.confianca = confiancaFonte;
+    console.log(`[Precificador] Portais após limpeza: ${n} → ${nFinal} anúncios · R$ ${precoM2Base}/m² (${confiancaFonte})`);
+
+    try {
+      await db.salvarPreco({ cidade, bairro, tipo, finalidade, condominio, preco_m2: precoM2Base, faixa_min: comparativos.precoMinimo, faixa_max: comparativos.precoMaximo, amostras: analiseIA.anunciosAnalisados || n, confianca: confiancaFonte, fonte: comparativos.fonte, comparativos: analiseIA.comparativos });
+    } catch {}
+  }
+
+  // Prioridade 2: Cache DB (pesquisa recente < 3 dias)
   // Só entra se os fechamentos não resolveram: cache de anúncio não sobrepõe
   // negócio fechado.
   try {
@@ -218,36 +280,6 @@ async function calcularPreco(dadosImovel) {
     }
   } catch (err) {
     console.warn('[Precificador] Erro ao buscar cache DB:', err.message);
-  }
-
-  // Prioridade 2: Portais diretos (scraping real verificado — VivaReal via ScraperAPI)
-  if (!precoM2Base && comparativos?.precoMedioM2) {
-    precoM2Base = comparativos.precoMedioM2;
-    fontePrincipal = comparativos.fonte;
-    const n = comparativos.totalEncontrados || 0;
-    confiancaFonte = n >= 5 ? 'alta' : n >= 3 ? 'media' : 'baixa';
-    console.log(`[Precificador] Portais (real): R$ ${precoM2Base}/m² — ${n} anúncios verificados (${confiancaFonte})`);
-
-    // Monta analiseIA a partir dos anúncios REAIS para o laudo mostrar os comparativos
-    analiseIA = {
-      precoMedioM2: comparativos.precoMedioM2,
-      faixaMinM2: comparativos.faixaMinM2 || comparativos.precoMedioM2,
-      faixaMaxM2: comparativos.faixaMaxM2 || comparativos.precoMedioM2,
-      anunciosAnalisados: n,
-      comparativos: (comparativos.imoveis || []).map(i => ({
-        area: i.area, preco: i.preco, precoM2: i.precoM2, quartos: i.quartos,
-        bairro, fonte: i.fonte || comparativos.fonte,
-        detalhe: `${i.area || '?'}m²${i.quartos ? ` • ${i.quartos}q` : ''} — anúncio real em ${bairro}, ${cidade}`
-      })),
-      confianca: confiancaFonte,
-      raciocinio: `${n} anúncios reais coletados via scraping (${comparativos.fonte}); preço/m² pela MEDIANA dos anúncios.`,
-      fonte: `Anúncios reais — ${comparativos.fonte}`,
-      citacoes: (comparativos.imoveis || []).map(i => i.url).filter(Boolean).slice(0, 5)
-    };
-
-    try {
-      await db.salvarPreco({ cidade, bairro, tipo, finalidade, condominio, preco_m2: precoM2Base, faixa_min: comparativos.precoMinimo, faixa_max: comparativos.precoMaximo, amostras: n, confianca: confiancaFonte, fonte: comparativos.fonte, comparativos: comparativos.imoveis });
-    } catch {}
   }
 
   // Prioridade 3: Perplexity
