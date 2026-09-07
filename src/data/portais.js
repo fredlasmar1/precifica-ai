@@ -47,8 +47,16 @@ function scrapingLigado() {
   return v === '1' || v === 'true' || v === 'sim';
 }
 
+/** Qual proxy esta configurado — aparece no log para nao haver duvida. */
+function proxyEmUso() {
+  if (process.env.ZYTE_API_KEY) return 'Zyte (geolocation BR)';
+  if (process.env.SCRAPER_API_KEY) return 'ScraperAPI (sem geotarget)';
+  return 'nenhum (acesso direto, o Cloudflare bloqueia)';
+}
+
 async function buscarComparativos(dados) {
   if (!scrapingLigado()) return null;   // desligado: o motor segue para a Perplexity
+  console.log(`[Portais] scraping LIGADO via ${proxyEmUso()}`);
   const { tipo, finalidade, cidade, bairro, quartos } = dados;
   const cacheKey = `comp_${tipo}_${finalidade}_${cidade}_${bairro}_${quartos}`
     .toLowerCase().replace(/\s/g, '_');
@@ -112,7 +120,45 @@ function getUrl(targetUrl) {
   return { url: targetUrl, timeout: DIRECT_TIMEOUT, via: 'direto' };
 }
 
+/**
+ * ZYTE API — o proxy que enxerga o Brasil.
+ *
+ * O ScraperAPI no plano Hobby NAO faz geotargeting (o comentario em getUrl ja
+ * registrava: "dava 403 em tudo"), e o plano que faz custa US$ 299/mes. O Zyte
+ * cobra por uso, sem mensalidade, a partir de US$ 0,13/1.000 requisicoes, e
+ * inclui `geolocation` em TODOS os niveis — inclusive no credito gratuito de
+ * US$ 5. No volume deste sistema (~1.000 requisicoes no historico inteiro) o
+ * teste sai de graca.
+ *
+ * Contrato da API (docs.zyte.com/zyte-api/usage/http.html):
+ *   POST https://api.zyte.com/v1/extract
+ *   Authorization: Basic base64(APIKEY + ":")   ← chave como usuario, senha vazia
+ *   body: { url, httpResponseBody: true, geolocation: "BR" }
+ *   resposta: httpResponseBody em BASE64 (precisa decodificar)
+ */
+const ZYTE_URL = 'https://api.zyte.com/v1/extract';
+
+async function fetchViaZyte(targetUrl, label) {
+  const key = process.env.ZYTE_API_KEY;
+  const auth = Buffer.from(`${key}:`).toString('base64');
+  const { data } = await axios.post(ZYTE_URL, {
+    url: targetUrl,
+    httpResponseBody: true,
+    geolocation: 'BR',          // IP brasileiro — sem isto o portal bloqueia
+  }, {
+    timeout: PROXY_TIMEOUT,
+    headers: { Authorization: `Basic ${auth}`, 'Content-Type': 'application/json' },
+  });
+  if (!data?.httpResponseBody) throw new Error('Zyte respondeu sem httpResponseBody');
+  const html = Buffer.from(data.httpResponseBody, 'base64').toString('utf-8');
+  console.log(`[${label}] OK via Zyte/BR (${html.length} chars)`);
+  return html;
+}
+
 async function fetchHtml(targetUrl, label) {
+  // Zyte tem prioridade quando configurado: e o unico caminho com IP brasileiro.
+  if (process.env.ZYTE_API_KEY) return fetchViaZyte(targetUrl, label);
+
   const { url, timeout, via } = getUrl(targetUrl);
   const response = await axios.get(url, {
     timeout,
