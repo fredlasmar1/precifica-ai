@@ -213,15 +213,27 @@ Se o usuário quiser avaliar um novo imóvel, oriente-o a digitar /novo.`;
     return;
   }
 
-  // Fluxo normal: agente conversa para coletar dados
+  // Fluxo normal: agente conversa para coletar dados.
+  //
+  // ANTES de perguntar, checa se o que o usuario ja disse basta. Sem isto o bot
+  // fazia a pergunta E entregava o laudo logo em seguida — respondia sozinho, e
+  // a pergunta era sempre de campo OPCIONAL (condominio). Quem manda tudo de
+  // uma vez merece o laudo, nao mais uma pergunta.
+  let resposta = null;
+  const jaDaParaAvaliar = isReadyToEvaluate(history);
+
   try {
-    const resposta = await chat(history);
-    addMessage(sessionId, 'assistant', resposta);
-    await enviar(chatId, resposta);
+    if (!jaDaParaAvaliar) {
+      resposta = await chat(history);
+      addMessage(sessionId, 'assistant', resposta);
+      await enviar(chatId, resposta);
+    }
 
     // Verifica se agora está pronto para precificar
-    const historicoAtual = [...history, { role: 'assistant', content: resposta }];
-    if (isReadyToEvaluate(historicoAtual)) {
+    const historicoAtual = resposta
+      ? [...history, { role: 'assistant', content: resposta }]
+      : history;
+    if (jaDaParaAvaliar || isReadyToEvaluate(historicoAtual)) {
       await new Promise(r => setTimeout(r, 1000));
       const dadosImovel = await extractPropertyData(historicoAtual);
       if (dadosImovel) {
