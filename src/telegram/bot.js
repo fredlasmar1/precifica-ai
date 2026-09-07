@@ -11,12 +11,17 @@ const API = () => `https://api.telegram.org/bot${BOT_TOKEN()}`;
 
 // Guarda o último laudo por sessão para uso no modo conversa
 const { interpretarFechamento, textoConfirmacao, brl } = require('./fechou');
+const { MODOS, tecladoMenu, extrairCampos, faltando, textoDoQueFalta } = require('./modos');
 const laudoCache = new Map();
 
 // Fechamento aguardando o "sim" do corretor. Nada entra no banco sem ele: com
 // 3 fechamentos o bairro passa a ter o preco tirado dali, entao um digito a
 // mais aqui vira preco errado no laudo de todo mundo.
 const fechamentoPendente = new Map();
+
+// Em que modo a pessoa está (avaliar venda, ponto comercial, fazenda...) e o
+// que já foi coletado. Sem isso o bot só sabia fazer uma coisa.
+const modoAtivo = new Map();
 
 /**
  * Handler do webhook do Telegram
@@ -26,6 +31,45 @@ async function handleTelegram(req, res) {
 
   try {
     const update = req.body;
+
+    // ─── CLIQUE NO BOTAO DO MENU ──────────────────────────────────────────
+    // O webhook so olhava `message` e descartava `callback_query`, entao
+    // qualquer botao inline ficava mudo.
+    if (update?.callback_query) {
+      const cq = update.callback_query;
+      const chatId = cq.message?.chat?.id;
+      const sessionId = `tg_${chatId}`;
+      // Tira o "reloginho" do botao — sem isso ele fica girando na tela.
+      await axios.post(`${API()}/answerCallbackQuery`, { callback_query_id: cq.id }).catch(() => {});
+      const escolha = String(cq.data || '');
+      if (escolha.startsWith('modo:')) {
+        const id = escolha.slice(5);
+        clearSession(sessionId);
+        laudoCache.delete(sessionId);
+        fechamentoPendente.delete(sessionId);
+
+        if (id === 'matricula') {
+          modoAtivo.delete(sessionId);
+          await enviar(chatId, '📜 *Ler matrícula*\n\nA leitura da certidão é pelo site — o Telegram comprime a foto e o texto do cartório fica ilegível.\n\nAbra https://precifica-ai-production.up.railway.app e use a aba *Matrícula*: eu transcrevo os atos, aponto ônus, penhora e se a construção está averbada.');
+          return;
+        }
+        if (id === 'fechou') {
+          modoAtivo.delete(sessionId);
+          await enviar(chatId,
+            '💰 *Registrar um negócio fechado*\n\n' +
+            'Todo preço que eu mostro vem de anúncio — é preço PEDIDO. O que fechou de verdade só quem vendeu sabe, e é isso que faz o preço do bairro virar real.\n\n' +
+            'Manda numa linha:\n`/fechou apto 90m2 Jundiaí 520 mil`');
+          return;
+        }
+        const m = MODOS[id];
+        if (!m) { await enviar(chatId, 'Não reconheci essa opção. Digite /menu.'); return; }
+        modoAtivo.set(sessionId, { id, dados: { ...(m.fixos || {}) } });
+        await enviar(chatId, `*${m.rotulo}*\n\n${m.pergunta}\n\nExemplo: _${m.exemplo}_`);
+        return;
+      }
+      return;
+    }
+
     const message = update?.message;
     if (!message || !message.text) return;
 
@@ -49,16 +93,11 @@ async function handleTelegram(req, res) {
       // caminho lento — 8 perguntas ate o laudo. Uma linha so ja resolve, mas
       // ninguem descobre isso sozinho. Entao o bot ENSINA o atalho.
       await enviar(chatId,
-        '👋 Sou o *PrecificaAI* — avaliação de imóvel com anúncio real do mercado.\n\n' +
-        '*Me manda tudo numa linha só* e eu já devolvo o laudo. Por exemplo:\n\n' +
-        '_apartamento 90m² no Jundiaí, Anápolis, venda, 3 quartos_\n' +
-        '_casa 150m² no Centro de Anápolis para alugar_\n' +
-        '_terreno 400m² na Vila Jaiara, venda_\n\n' +
-        'Preciso de 4 coisas: *tipo*, *metragem*, *bairro/cidade* e *venda ou aluguel*. ' +
-        'O resto (condomínio, vagas, diferenciais) é opcional e só refina.\n\n' +
-        'Se preferir ir por partes, é só começar dizendo o tipo do imóvel.\n\n' +
-        '📌 *Fechou um negócio?* Me conta com `/fechou` — ex.: `/fechou apto 90m2 Jundiaí 520 mil`. ' +
-        'É o que faz o preço do bairro deixar de ser anúncio e virar o que foi realmente pago.'
+        '👋 Sou o *PrecificaAI* — inteligência imobiliária e comercial de Anápolis e região.\n\n' +
+        '*Atalho:* me manda o imóvel numa linha só que eu já devolvo o laudo —\n' +
+        '_apartamento 90m² no Jundiaí, Anápolis, venda, 3 quartos_\n\n' +
+        'Ou escolha o que você precisa:',
+        tecladoMenu()
       );
       return;
     }
@@ -108,6 +147,31 @@ async function handleTelegram(req, res) {
           await enviar(chatId, '❌ Erro ao buscar histórico: ' + err.message);
         }
       }
+      return;
+    }
+
+    // ─── MENU ─────────────────────────────────────────────────────────────
+    if (/^[/]?(menu|ajuda|help|op[cç][oõ]es|servi[cç]os)\b/i.test(text)) {
+      modoAtivo.delete(sessionId);
+      await enviar(chatId,
+        '*O que você precisa hoje?*\n\nEscolha abaixo — ou me mande o imóvel numa linha só que eu já avalio.',
+        tecladoMenu());
+      return;
+    }
+
+    // ─── DENTRO DE UM MODO: coleta o que falta e chama a rota do site ─────
+    const emModo = modoAtivo.get(sessionId);
+    if (emModo && !/^[/]/.test(text)) {
+      const novos = await extrairCampos(emModo.id, text);
+      emModo.dados = { ...emModo.dados, ...novos };
+      const faltas = faltando(emModo.id, emModo.dados);
+      if (faltas.length) {
+        modoAtivo.set(sessionId, emModo);
+        await enviar(chatId, textoDoQueFalta(emModo.id, faltas));
+        return;
+      }
+      modoAtivo.delete(sessionId);
+      await executarModo(chatId, sessionId, emModo.id, emModo.dados);
       return;
     }
 
@@ -162,7 +226,9 @@ async function handleTelegram(req, res) {
     if (/^[/]?(reiniciar|novo|nova|reset)/i.test(text)) {
       clearSession(sessionId);
       laudoCache.delete(sessionId);
-      await enviar(chatId, '🔄 Sessão reiniciada! Qual o tipo do imóvel que quer avaliar?');
+      modoAtivo.delete(sessionId);
+      fechamentoPendente.delete(sessionId);
+      await enviar(chatId, '🔄 Recomeçando. O que você precisa?', tecladoMenu());
       return;
     }
 
@@ -170,6 +236,41 @@ async function handleTelegram(req, res) {
 
   } catch (err) {
     console.error('[Telegram] Erro:', err.message);
+  }
+}
+
+/**
+ * Chama a MESMA rota que o site usa e devolve o texto pronto.
+ *
+ * O bot nao reimplementa regra nenhuma: se a precificacao melhora no site,
+ * melhora aqui no mesmo deploy. E evita a armadilha de ter duas versoes da
+ * mesma conta divergindo em silencio.
+ */
+async function executarModo(chatId, sessionId, id, dados) {
+  const m = MODOS[id];
+  await enviar(chatId, '⏳ Levantando os dados...');
+  try {
+    const porta = process.env.PORT || 8080;
+    const { data } = await axios.post(`http://127.0.0.1:${porta}/api${m.rota}`, dados, {
+      timeout: 300000, headers: { 'Content-Type': 'application/json' },
+    });
+    const texto = String(data?.response || data?.resposta || data?.texto || '').trim();
+    if (!texto) {
+      console.warn(`[Modo ${id}] rota respondeu sem texto:`, JSON.stringify(data).slice(0, 200));
+      await enviar(chatId, 'Consegui os dados, mas não veio o relatório. Tenta de novo?', tecladoMenu());
+      return;
+    }
+    // Guarda o laudo para as perguntas seguintes ("por que esse preço?").
+    if (data.dados && data.resultado) {
+      laudoCache.set(sessionId, { texto, dados: data.dados, resultado: data.resultado });
+    }
+    await enviar(chatId, texto);
+    await new Promise((r) => setTimeout(r, 600));
+    await enviar(chatId, '_Pergunte o que quiser sobre este resultado, ou escolha outra coisa:_', tecladoMenu());
+  } catch (err) {
+    const msg = err.response?.data?.error || err.message;
+    console.error(`[Modo ${id}] erro:`, msg);
+    await enviar(chatId, `⚠️ ${String(msg).slice(0, 300)}`, tecladoMenu());
   }
 }
 
@@ -368,21 +469,20 @@ Se o usuário quiser avaliar um novo imóvel, oriente-o a digitar /novo.`;
 /**
  * Envia mensagem via Telegram Bot API
  */
-async function enviar(chatId, texto) {
+async function enviar(chatId, texto, teclado = null) {
   // Telegram tem limite de 4096 chars por mensagem
   const chunks = splitMessage(texto, 4000);
-  for (const chunk of chunks) {
-    await axios.post(`${API()}/sendMessage`, {
-      chat_id: chatId,
-      text: chunk,
-      parse_mode: 'Markdown'
-    }).catch(async (err) => {
+  for (let i = 0; i < chunks.length; i++) {
+    const corpo = { chat_id: chatId, text: chunks[i], parse_mode: 'Markdown' };
+    // O teclado vai só na ÚLTIMA parte: repetido em cada pedaço, o Telegram
+    // mostra o menu várias vezes no meio do laudo.
+    if (teclado && i === chunks.length - 1) corpo.reply_markup = teclado;
+    await axios.post(`${API()}/sendMessage`, corpo).catch(async (err) => {
       // Se falhar com Markdown, tenta sem formatação
       if (err.response?.data?.description?.includes('parse')) {
-        await axios.post(`${API()}/sendMessage`, {
-          chat_id: chatId,
-          text: chunk
-        });
+        const cru = { chat_id: chatId, text: chunks[i] };
+        if (corpo.reply_markup) cru.reply_markup = corpo.reply_markup;
+        await axios.post(`${API()}/sendMessage`, cru);
       } else {
         throw err;
       }
