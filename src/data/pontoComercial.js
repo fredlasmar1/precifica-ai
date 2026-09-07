@@ -1,3 +1,4 @@
+const { completar: completarLLM } = require('../agent/llm');
 const axios = require('axios');
 const OpenAI = require('openai');
 
@@ -223,14 +224,10 @@ async function extrairRamo(pergunta) {
   if (!txt) return null;
   if (!client) return txt; // sem IA, usa o texto cru
   try {
-    const r = await client.chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages: [
+    const r = await completarLLM({ forte: false, maxTokens: 12, messages: [
         { role: 'system', content: 'Você recebe a frase de um empreendedor e deve dizer QUAL ramo de comércio/serviço ele quer abrir. Responda só o ramo, 1 a 3 palavras minúsculas, sem pontuação. Ex: "quero abrir uma pizzaria no centro" -> pizzaria. Se não houver ramo, responda nenhum.' },
         { role: 'user', content: txt }
-      ],
-      temperature: 0, max_tokens: 12
-    });
+      ] });
     const ramo = r.choices[0].message.content.trim().toLowerCase().replace(/[.?!]/g, '');
     return ramo === 'nenhum' ? null : ramo;
   } catch { return txt; }
@@ -243,14 +240,10 @@ async function estimarTicketMedio(ramo, bairro, cidade, rendaTier) {
   const client = getOpenAI();
   if (!client) return null;
   try {
-    const r = await client.chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages: [
+    const r = await completarLLM({ forte: false, maxTokens: 220, messages: [
         { role: 'system', content: 'Consultor de negócios em Anápolis-GO. Dê estimativas realistas e conservadoras para o interior de Goiás. Responda SOMENTE JSON.' },
         { role: 'user', content: `Estime para um(a) "${ramo}" no bairro ${bairro} (${cidade}-GO), renda da região: ${rendaTier}.\nResponda JSON: {"ticketMedio":"R$ valor médio por venda/serviço","faturamentoMensal":"R$ X a R$ Y (faixa realista de UM estabelecimento desse porte na região)","racional":"1 frase curta"}` },
-      ],
-      temperature: 0.4, max_tokens: 220,
-    });
+      ] });
     let s = r.choices[0].message.content.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
     return JSON.parse(s);
   } catch (e) { console.warn('[Ticket] erro:', e.message); return null; }
@@ -412,6 +405,26 @@ async function analisarPontoComercial(lat, lng, ramo, ctx = {}) {
     ticket, ruas, precoComercial,
   };
 
+  // A régua do aluguel entra ANTES do parecer.
+  //
+  // Ela era calculada só na rota, depois desta função — então o parecer nunca a
+  // via e o modelo recalculava sozinho (e errava). Calculando aqui, o parecer
+  // recebe o veredito pronto e só interpreta.
+  if (Number(ctx.aluguelPedido) > 0) {
+    try {
+      const { analisarAluguel } = require('./viabilidadeAluguel');
+      const v = analisarAluguel({
+        ramo: ramoLimpo,
+        metragem: Number(ctx.metragem) || 0,
+        aluguelPedido: Number(ctx.aluguelPedido),
+        ticketMedio: Number(ctx.ticketMedio) || 0,
+        faturamentoAtual: Number(ctx.faturamentoAtual) || 0,
+        aluguelMercadoM2: precoComercial?.aluguelM2 || 0,
+      });
+      if (!v.erro) analise.viabilidadeAluguel = v;
+    } catch (e) { console.warn('[PontoComercial] régua do aluguel:', e.message); }
+  }
+
   // Parecer (IA) e mapa estático em paralelo — não bloqueiam se falharem
   const [parecer, mapaDataUri] = await Promise.all([
     gerarParecerIA(analise),
@@ -441,16 +454,31 @@ async function gerarParecerIA(a) {
     melhores_ruas: a.ruas && Array.isArray(a.ruas.ruas) ? a.ruas.ruas.map(r => r.nome).join(', ') : null,
     custo_comercial: a.precoComercial ? `compra R$${a.precoComercial.vendaM2 || '?'}/m², aluguel R$${a.precoComercial.aluguelM2 || '?'}/m²` : null,
   };
+
+  // ⚠️ A CONTA VAI PRONTA, o modelo NÃO recalcula.
+  //
+  // Medido em 07/09/2026 comparando GPT-6, Opus 5 e Haiku 4.5 no mesmo parecer:
+  // dado aluguel de R$ 8.000 e faturamento estimado de R$ 15-25 mil, o Haiku
+  // escreveu que "garante margem operacional adequada". São 32% a 53% da
+  // receita, contra uma régua de 8-12% para barbearia. Ou seja: o modelo olhou
+  // os números certos e concluiu errado — o mesmo defeito que o GPT-4o tinha.
+  //
+  // Aritmética de negócio não é trabalho de modelo. A régua já existe em código
+  // (viabilidadeAluguel.js) e não erra; o parecer passa a RECEBER o veredito e
+  // só interpretar.
+  if (a.viabilidadeAluguel && !a.viabilidadeAluguel.erro) {
+    const v = a.viabilidadeAluguel;
+    resumo.regua_do_aluguel = `Régua do ramo: o aluguel deve ficar entre ${v.percentualSaudavel}% e ${v.percentualTeto}% do faturamento. ` +
+      `Com o aluguel pedido, o negócio precisa faturar no mínimo R$ ${Number(v.faturamentoMinimo).toLocaleString('pt-BR')}/mês ` +
+      `(R$ ${Number(v.faturamentoSaudavel).toLocaleString('pt-BR')} para respirar).` +
+      (v.mercado ? ` O pedido está ${v.mercado.desvioPct > 0 ? v.mercado.desvioPct + '% ACIMA' : Math.abs(v.mercado.desvioPct) + '% abaixo'} do aluguel de mercado do bairro.` : '');
+    resumo.INSTRUCAO_CRITICA = 'A régua acima já está calculada e é a verdade. NÃO recalcule percentuais nem conclua que o aluguel "cabe" se o faturamento estimado for menor que o mínimo indicado. Se não couber, diga com todas as letras.';
+  }
   try {
-    const r = await client.chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages: [
+    const r = await completarLLM({ forte: false, maxTokens: 300, messages: [
         { role: 'system', content: 'Você é um consultor sênior de pontos comerciais de uma imobiliária corporativa em Anápolis-GO. Escreva pareceres objetivos, profissionais e diretos, sem enrolação.' },
         { role: 'user', content: `Com base nestes dados de viabilidade comercial, escreva um parecer profissional (3 a 5 frases) recomendando ou não o ponto para o ramo: cite o principal motivo, relacione o potencial de faturamento com o custo do ponto comercial, sugira a melhor rua e dê uma orientação prática. Não repita os números crus, interprete-os. Dados:\n${JSON.stringify(resumo)}` }
-      ],
-      temperature: 0.5,
-      max_tokens: 300
-    });
+      ] });
     return r.choices[0].message.content.trim().replace(/^parecer:\s*/i, '');
   } catch (err) {
     console.warn('[Parecer IA] erro:', err.message);
@@ -659,14 +687,10 @@ async function gerarRespostaMelhorBairro(ramo, ranking) {
   }));
   if (!client) return null;
   try {
-    const r = await client.chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages: [
+    const r = await completarLLM({ forte: false, maxTokens: 400, messages: [
         { role: 'system', content: 'Você é um consultor que explica de forma MUITO SIMPLES, como se falasse com um cliente leigo que não entende de mercado. Use frases curtas, sem jargão técnico. Nada de "score", "fluxo" ou números crus — fale em "movimento", "concorrência", "quanto dá pra faturar".' },
         { role: 'user', content: `Um cliente quer abrir um(a) "${ramo}" em Anápolis e pergunta qual o melhor bairro. Com base nestes dados dos melhores bairros, escreva uma recomendação em linguagem SIMPLES (4-6 frases): diga claramente os 2-3 melhores bairros e POR QUÊ (em palavras simples: pouca/muita concorrência, movimento, público), cite o faturamento estimado quando houver, e dê uma dica prática de como se destacar. Dados:\n${JSON.stringify(top)}` }
-      ],
-      temperature: 0.5, max_tokens: 400
-    });
+      ] });
     return r.choices[0].message.content.trim();
   } catch (err) { console.warn('[MelhorBairro IA] erro:', err.message); return null; }
 }

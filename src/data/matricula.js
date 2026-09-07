@@ -1,3 +1,15 @@
+const { completar: completarLLM } = require('../agent/llm');
+
+/**
+ * O Claude nao tem `response_format: json_object`. O JSON vem por instrucao no
+ * prompt, e pode chegar dentro de cerca de codigo — limpar antes de parsear.
+ */
+function parseJSON(bruto) {
+  let t = String(bruto || '').trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+  const i = t.indexOf('{'), f = t.lastIndexOf('}');
+  if (i >= 0 && f > i) t = t.slice(i, f + 1);
+  return JSON.parse(t);
+}
 /**
  * AVALIAÇÃO POR AMOSTRAGEM A PARTIR DA MATRÍCULA + FOTOS
  * ─────────────────────────────────────────────────────────────────────
@@ -111,17 +123,16 @@ async function lerMatricula(paginas = []) {
   const content = [{ type: 'text', text: PROMPT_MATRICULA }];
   paginas.slice(0, 8).forEach((url) => content.push({ type: 'image_url', image_url: { url, detail: 'high' } }));
 
-  const r = await ai.chat.completions.create({
-    model: 'gpt-4o',
-    temperature: 0,
-    max_tokens: 3000,
-    response_format: { type: 'json_object' },
+  const r = await completarLLM({
+    forte: true,
+    maxTokens: 3000,
+    effort: 'low',
     messages: [
       { role: 'system', content: 'Você transcreve documentos registrais com precisão literal. Nunca inventa dado ausente.' },
       { role: 'user', content }
     ]
   });
-  const dados = JSON.parse(r.choices[0].message.content);
+  const dados = JSON.parse(r);
 
   // Rede de segurança do CÓDIGO (não da IA): matrícula sem averbação de
   // construção não pode sair com área construída, aconteça o que acontecer.
@@ -216,17 +227,16 @@ async function lerFotos(fotos = []) {
   const content = [{ type: 'text', text: PROMPT_FOTOS }];
   fotos.slice(0, 16).forEach((url) => content.push({ type: 'image_url', image_url: { url, detail: 'low' } }));
 
-  const r = await ai.chat.completions.create({
-    model: 'gpt-4o',
-    temperature: 0.1,
-    max_tokens: 2000,
-    response_format: { type: 'json_object' },
+  const r = await completarLLM({
+    forte: true,
+    maxTokens: 2000,
+    effort: 'low',
     messages: [
-      { role: 'system', content: 'Você descreve imóveis a partir de fotos, com honestidade técnica. Não inventa o que não está na imagem.' },
+      { role: 'system', content: 'Você descreve imóveis a partir de fotos, com honestidade técnica. Não inventa o que não está na imagem. Responda SOMENTE com JSON válido, sem markdown.' },
       { role: 'user', content }
     ]
   });
-  return JSON.parse(r.choices[0].message.content);
+  return parseJSON(r);
 }
 
 // ─────────────────────────────────────────────────────────────────────

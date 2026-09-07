@@ -440,7 +440,14 @@ router.post('/ponto-comercial', async (req, res) => {
     let perfilGuru = null;
     try { perfilGuru = await perfilarLocal(cidade, bairro, lat, lng); } catch {}
 
-    const analise = await analisarPontoComercial(lat, lng, ramo, { cidade, bairro, perfilGuru });
+    const analise = await analisarPontoComercial(lat, lng, ramo, {
+      cidade, bairro, perfilGuru,
+      // repassados para que a régua do aluguel seja calculada ANTES do parecer
+      aluguelPedido: Number(b.aluguelPedido) || 0,
+      metragem: Number(b.metragem) || 0,
+      ticketMedio: Number(b.ticketMedio) || 0,
+      faturamentoAtual: Number(b.faturamentoAtual) || 0,
+    });
 
     // Mapa fora do ar nao pode zerar a aba inteira. Concorrencia e fluxo sao o
     // que falta — mas a conta que mais importa para nao quebrar (o aluguel cabe

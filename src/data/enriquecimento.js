@@ -1,3 +1,4 @@
+const { completar: completarLLM } = require('../agent/llm');
 const OpenAI = require('openai');
 const { getAncora } = require('./baseAnapolis');
 
@@ -128,14 +129,10 @@ async function tendenciaBairro(cidade, bairro, valorM2) {
   const client = getOpenAI();
   if (!client) return null;
   try {
-    const resp = await client.chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages: [
+    const resp = await completarLLM({ forte: false, maxTokens: 120, messages: [
         { role: 'system', content: 'Você conhece o mercado imobiliário de Anápolis-GO. Responda em 1-2 frases curtas e simples, sem inventar números.' },
         { role: 'user', content: `O bairro ${bairro} em ${cidade}-GO tem valor de referência ~R$ ${Number(valorM2 || 0).toLocaleString('pt-BR')}/m². Em 1-2 frases, diga se é um bairro em valorização, estável ou de oportunidade, e por quê (perfil, localização, demanda). Sem números inventados.` },
-      ],
-      temperature: 0.4, max_tokens: 120,
-    });
+      ] });
     return resp.choices[0].message.content.trim();
   } catch (e) { console.warn('[Enriquecimento] tendência erro:', e.message); return null; }
 }

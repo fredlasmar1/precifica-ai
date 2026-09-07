@@ -1,3 +1,4 @@
+const { completar: completarLLM } = require('../agent/llm');
 const axios = require('axios');
 const { getSession, addMessage, clearSession, isReadyToEvaluate } = require('../agent/session');
 const { chat, extractPropertyData } = require('../agent/openai');
@@ -161,20 +162,10 @@ Se o usuário quiser avaliar um novo imóvel, oriente-o a digitar /novo.`;
 
       const history = addMessage(sessionId, 'user', texto);
 
-      const resposta = await axios.post('https://api.openai.com/v1/chat/completions', {
-        model: 'gpt-4o',
-        messages: [
+      const resposta = await completarLLM({ forte: true, maxTokens: 600, effort: 'low', messages: [
           { role: 'system', content: systemPostLaudo },
           ...history.slice(-10) // últimas 10 mensagens para contexto da conversa
-        ],
-        temperature: 0.7,
-        max_tokens: 600
-      }, {
-        headers: {
-          'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-          'Content-Type': 'application/json'
-        }
-      });
+        ] });
 
       const respostaTexto = resposta.data.choices[0].message.content;
       addMessage(sessionId, 'assistant', respostaTexto);

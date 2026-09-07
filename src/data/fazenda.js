@@ -1,3 +1,4 @@
+const { completar: completarLLM } = require('../agent/llm');
 // Avaliação de imóveis RURAIS no padrão profissional (referência ABNT NBR 14653-3):
 // valor = TERRA NUA (ponderada pela APTIDÃO: lavoura × pastagem × reserva) + BENFEITORIAS,
 // com R$/ha por uso puxado ao vivo (Scot/CEPEA/AgriFatto/INCRA via Perplexity) e base
@@ -145,14 +146,10 @@ async function gerarParecerFazenda(r) {
   if (!client) return null;
   try {
     const m = (v) => `R$ ${Number(v).toLocaleString('pt-BR')}`;
-    const resp = await client.chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages: [
+    const resp = await completarLLM({ forte: false, maxTokens: 340, messages: [
         { role: 'system', content: 'Você é avaliador de imóveis rurais (ref. NBR 14653-3). Escreve um parecer técnico curto e claro para corretor/investidor. Português do Brasil.' },
         { role: 'user', content: `Parecer de 3-5 frases sobre ${r.subtipo} de ${r.areaHa} ha (${r.areaAlq} alq) em ${r.cidade}-GO, ${r.aptidao.lavoura}% lavoura / ${r.aptidao.pastagem}% pastagem / ${r.aptidao.reserva}% reserva. Terra nua ${m(r.terraNuaAj)} + benfeitorias ${m(r.benfValor)} = ${m(r.total)} (${m(r.rHaFinal)}/ha). Valor por renda (arrendamento) ${m(r.valorRenda)}. Comente se o valor está coerente, o que mais pesa (aptidão/água/acesso), como o comparativo e a renda se relacionam, e 1 ressalva de documentação (matrícula/CAR/georreferenciamento/reserva legal). Não invente números.` },
-      ],
-      temperature: 0.5, max_tokens: 340,
-    });
+      ] });
     return resp.choices[0].message.content.trim();
   } catch (e) { console.warn('[Fazenda] parecer:', e.message); return null; }
 }
@@ -339,14 +336,10 @@ async function gerarParecerChacara(r) {
     const userPrompt = r.soValorDefinido
       ? `Parecer de 3-4 frases sobre a avaliação de um imóvel de recreio (chácara/fração) de ${r.areaM2.toLocaleString('pt-BR')} m² em ${r.cidade}-GO, avaliado em ${m(r.total)} (${m(r.precos.m2)}/m²). Benfeitorias: ${r.benfeitorias.join(', ') || 'sem benfeitorias relevantes'}. Escreva de forma profissional, adequado para entregar ao cliente, tratando ${m(r.total)} como O VALOR DE AVALIAÇÃO do imóvel. Comente características que sustentam o valor (área, localização, proximidade da cidade, benfeitorias se houver) e dê 1 recomendação (conferir documentação/registro; o que valoriza a revenda). Cite APENAS o valor ${m(r.total)} — NÃO invente nem cite nenhum outro número/valor de mercado.`
       : `Parecer de 3-4 frases sobre uma chácara de recreio de ${r.areaM2.toLocaleString('pt-BR')} m² em ${r.cidade}-GO. Terra ${m(r.terraNuaAj)} (${m(r.precos.m2)}/m²) + benfeitorias ${m(r.benfValor)} = ${m(r.total)}. Benfeitorias: ${r.benfeitorias.join(', ') || 'terreno'}. Comente se está coerente, que a CASA/benfeitorias e a proximidade da cidade pesam muito no valor de recreio, e 1 dica (conferir documentação/registro e o que valoriza revenda). Não invente números.`;
-    const resp = await client.chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages: [
+    const resp = await completarLLM({ forte: false, maxTokens: 280, messages: [
         { role: 'system', content: 'Você é avaliador imobiliário. Escreve parecer curto e claro sobre imóvel de recreio. Português do Brasil.' },
         { role: 'user', content: userPrompt },
-      ],
-      temperature: 0.5, max_tokens: 280,
-    });
+      ] });
     return resp.choices[0].message.content.trim();
   } catch (e) { console.warn('[Chacara] parecer:', e.message); return null; }
 }

@@ -1,30 +1,20 @@
-const OpenAI = require('openai');
+const { completar } = require('./llm');
 const { SYSTEM_PROMPT } = require('./prompt');
 
 // Inicializa de forma lazy para não quebrar na ausência da chave no boot
-let _openai = null;
-function getClient() {
-  if (!_openai) {
-    _openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-  }
-  return _openai;
-}
-
 /**
  * Envia histórico para o GPT-4o e retorna a resposta do agente
  */
 async function chat(history) {
-  const response = await getClient().chat.completions.create({
-    model: 'gpt-4o',
-    messages: [
-      { role: 'system', content: SYSTEM_PROMPT },
-      ...history
-    ],
-    temperature: 0.4, // Mais determinístico para dados financeiros
-    max_tokens: 1000
+  // Migrado do GPT-4o para o Claude Opus 5 (07/09/2026). O `temperature: 0.4`
+  // que estava aqui NAO existe mais no Opus 5 — passar devolve 400. O controle
+  // equivalente e `effort`, e para coleta de dados 'low' ja e deterministico.
+  return completar({
+    forte: true,
+    maxTokens: 1000,
+    effort: 'low',
+    messages: [{ role: 'system', content: SYSTEM_PROMPT }, ...history],
   });
-
-  return response.choices[0].message.content;
 }
 
 /**
@@ -38,8 +28,10 @@ async function extractPropertyData(history) {
   // Última mensagem do usuário — tem prioridade máxima para bairro e endereço
   const ultimaMsgUsuario = [...history].reverse().find(m => m.role === 'user')?.content || '';
 
-  const extraction = await getClient().chat.completions.create({
-    model: 'gpt-4o',
+  const bruto = await completar({
+    forte: true,
+    maxTokens: 2000,   // obrigatorio no Claude; o JSON tem ~20 campos
+    effort: 'low',     // extracao e tarefa deterministica, nao precisa raciocinar fundo
     messages: [
       {
         role: 'system',
@@ -77,13 +69,24 @@ Formato exato:
       },
       ...historyLimpo
     ],
-    temperature: 0,
-    response_format: { type: 'json_object' }
+    // `temperature: 0` e `response_format: json_object` sairam: o primeiro
+    // devolve 400 no Opus 5, o segundo nao existe na API do Claude. O JSON e
+    // garantido pela instrucao do prompt + a limpeza abaixo.
   });
 
   try {
-    return JSON.parse(extraction.choices[0].message.content);
-  } catch {
+    // O modelo pode devolver o JSON dentro de cerca de codigo. Limpa antes de
+    // parsear em vez de deixar o try engolir e devolver null — null aqui
+    // significa "nao consegui extrair nada", e um crase perdido viraria isso.
+    let txt = String(bruto || '').trim()
+      .replace(/^```(?:json)?\s*/i, '')
+      .replace(/\s*```$/, '')
+      .trim();
+    const i = txt.indexOf('{'), f = txt.lastIndexOf('}');
+    if (i >= 0 && f > i) txt = txt.slice(i, f + 1);
+    return JSON.parse(txt);
+  } catch (e) {
+    console.warn('[Extracao] JSON invalido:', e.message, '| inicio:', String(bruto || '').slice(0, 120));
     return null;
   }
 }

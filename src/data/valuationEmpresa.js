@@ -1,3 +1,4 @@
+const { completar: completarLLM } = require('../agent/llm');
 const OpenAI = require('openai');
 const { getBaseVenda } = require('./baseAnapolis');
 
@@ -80,14 +81,10 @@ async function gerarParecerEmpresa(r) {
   const client = getOpenAI();
   if (!client) return null;
   try {
-    const resp = await client.chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages: [
+    const resp = await completarLLM({ forte: false, maxTokens: 380, messages: [
         { role: 'system', content: 'Você é um consultor que explica de forma MUITO SIMPLES, pra um cliente leigo. Frases curtas, sem jargão. Português do Brasil.' },
         { role: 'user', content: `Explique em 4-6 frases simples o valor estimado de uma empresa "${r.ramo}" no bairro ${r.bairro}, ${r.cidade}-GO à venda. Dados: fatura R$${r.faturamentoMensal}/mês, lucro R$${r.lucroMensal}/mês (margem ${r.margem}%)${r.lucroEstimado ? ' (lucro estimado)' : ''}, dívidas R$${r.dividas}, ativos R$${r.ativos}. Valor sugerido R$${r.valorSugerido} (faixa R$${r.faixaMin} a R$${r.faixaMax}). Diga o valor de forma clara, explique em palavras simples como chegamos (lucro × tempo de retorno), dê 1-2 dicas práticas de negociação e 1 ressalva (conferir os números com contador).` },
-      ],
-      temperature: 0.5, max_tokens: 380,
-    });
+      ] });
     return resp.choices[0].message.content.trim();
   } catch (e) { console.warn('[ValuationEmpresa] parecer erro:', e.message); return null; }
 }
