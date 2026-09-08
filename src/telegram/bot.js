@@ -524,14 +524,20 @@ async function enviar(chatId, texto, teclado = null) {
   // Telegram tem limite de 4096 chars por mensagem
   const chunks = splitMessage(texto, 4000);
   for (let i = 0; i < chunks.length; i++) {
-    const corpo = { chat_id: chatId, text: chunks[i], parse_mode: 'Markdown' };
+    // O Telegram monta um card com FOTO GRANDE do ultimo link da mensagem. Num
+    // laudo, o ultimo link e um anuncio COMPARAVEL — e a foto aparece logo
+    // abaixo do preco, parecendo o imovel avaliado. Nao e.
+    const corpo = {
+      chat_id: chatId, text: chunks[i], parse_mode: 'Markdown',
+      link_preview_options: { is_disabled: true },
+    };
     // O teclado vai só na ÚLTIMA parte: repetido em cada pedaço, o Telegram
     // mostra o menu várias vezes no meio do laudo.
     if (teclado && i === chunks.length - 1) corpo.reply_markup = teclado;
     await axios.post(`${API()}/sendMessage`, corpo).catch(async (err) => {
       // Se falhar com Markdown, tenta sem formatação
       if (err.response?.data?.description?.includes('parse')) {
-        const cru = { chat_id: chatId, text: chunks[i] };
+        const cru = { chat_id: chatId, text: chunks[i], link_preview_options: { is_disabled: true } };
         if (corpo.reply_markup) cru.reply_markup = corpo.reply_markup;
         await axios.post(`${API()}/sendMessage`, cru);
       } else {

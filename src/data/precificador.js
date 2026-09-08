@@ -141,7 +141,13 @@ async function calcularPreco(dadosImovel) {
       comparativos: (comparativos.imoveis || []).map(i => ({
         area: i.area, preco: i.preco, precoM2: i.precoM2, quartos: i.quartos,
         bairro, fonte: i.fonte || comparativos.fonte,
-        detalhe: `${i.area || '?'}m²${i.quartos ? ` • ${i.quartos}q` : ''} — anúncio real em ${bairro}, ${cidade}`
+        // O LINK DE CADA ANUNCIO. O laudo ja sabia imprimir "🔗 url" por
+        // comparativo, mas a url nao era repassada aqui — entao a lista era
+        // "confie em mim". Com o link, cada comparativo e conferivel num toque.
+        url: i.url || null,
+        // E o detalhe sai: repetia a linha de cima ("140m² • 3q — anuncio real
+        // em Jundiai") e dobrava o tamanho da lista sem dizer nada novo.
+        detalhe: null
       })),
       confianca: confiancaFonte,
       raciocinio: `${n} anúncios reais coletados via scraping (${comparativos.fonte}); preço/m² pela MEDIANA dos anúncios.`,
