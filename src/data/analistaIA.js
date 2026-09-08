@@ -151,11 +151,10 @@ function filtrarRelevanciaApartamento(resultado, metragemRef, quartosRef, tipo =
     });
     if (filtradosRelaxados.length > 0) {
       const precosR = filtradosRelaxados.map(c => c.precoM2).filter(p => p > 0);
-      const somaR = precosR.reduce((a, b) => a + b, 0);
       return {
         ...resultado,
         comparativos: filtradosRelaxados,
-        precoMedioM2: Math.round(somaR / precosR.length),
+        precoMedioM2: medianaDe(precosR),
         faixaMinM2: Math.min(...precosR),
         faixaMaxM2: Math.max(...precosR),
         anunciosAnalisados: filtradosRelaxados.length,
@@ -167,8 +166,7 @@ function filtrarRelevanciaApartamento(resultado, metragemRef, quartosRef, tipo =
   }
 
   const precosValidos = filtrados.map(c => c.precoM2).filter(p => p > 0);
-  const soma = precosValidos.reduce((a, b) => a + b, 0);
-  const novaMedia = Math.round(soma / precosValidos.length);
+  const novaMedia = medianaDe(precosValidos);
 
   return {
     ...resultado,
@@ -279,6 +277,42 @@ function filtrarRelevanciaComercial(resultado, metragemRef) {
 // "alta" com 5 anuncios; o filtro so com 8) e a segunda sobrescrevia a
 // primeira, jogando fora ate o rebaixamento por contaminacao da amostra.
 const ORDEM_CONFIANCA = { baixa: 0, media: 1, alta: 2 };
+
+/**
+ * MEDIANA, NAO MEDIA.
+ *
+ * O laudo sempre disse "preco/m² pela mediana" e o codigo calculava media. Com
+ * a amostra do Jundiai (R$ 2.532/m² num apartamento de 79m² e R$ 11.232/m² num
+ * de 138m²) as duas nao se parecem: um anuncio fora da curva puxa a media e o
+ * valor do imovel muda 10% entre duas consultas do MESMO imovel.
+ */
+function medianaDe(nums) {
+  const v = (nums || []).map(Number).filter((n) => n > 0).sort((a, b) => a - b);
+  if (!v.length) return 0;
+  const meio = Math.floor(v.length / 2);
+  return Math.round(v.length % 2 ? v[meio] : (v[meio - 1] + v[meio]) / 2);
+}
+
+/**
+ * A amostra CONCORDA consigo mesma?
+ *
+ * Doze anuncios que vao de R$ 2.532 a R$ 11.232 o m² nao sustentam "confianca
+ * alta" — o tamanho da amostra diz que ha dados, a dispersao diz se eles falam
+ * a mesma coisa. Sem isto o laudo anunciava alta confianca sobre numeros que
+ * discordavam entre si em 4x.
+ *
+ * Usa a razao entre o 3o e o 1o quartil: robusta a um outlier isolado, ao
+ * contrario do min/max.
+ */
+function confiancaPorDispersao(precos) {
+  const v = (precos || []).map(Number).filter((n) => n > 0).sort((a, b) => a - b);
+  if (v.length < 4) return 'baixa';
+  const q = (f) => v[Math.min(v.length - 1, Math.floor(v.length * f))];
+  const razao = q(0.75) / (q(0.25) || 1);
+  if (razao <= 1.6) return 'alta';     // amostra apertada
+  if (razao <= 2.4) return 'media';
+  return 'baixa';                       // os anuncios discordam entre si
+}
 
 /** Confianca que o TAMANHO da amostra sustenta, sozinho. */
 function confiancaPorAmostra(n) {
@@ -1249,4 +1283,5 @@ RETORNE SOMENTE JSON válido:
 }
 
 module.exports = { estimarPrecoComIA, estimarPrecoPredio, filtrarComparativosPorBairro, dedupComparativos,
-                   filtrarRelevanciaApartamento, filtrarRelevanciaComercial, confiancaPorAmostra, maisConservadora };
+                   filtrarRelevanciaApartamento, filtrarRelevanciaComercial, confiancaPorAmostra,
+                   confiancaPorDispersao, medianaDe, maisConservadora };

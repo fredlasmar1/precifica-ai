@@ -176,7 +176,14 @@ async function calcularPreco(dadosImovel) {
 
     const nFinal = analiseIA.anunciosAnalisados || (analiseIA.comparativos || []).length;
     precoM2Base = analiseIA.precoMedioM2 || precoM2Base;
-    confiancaFonte = fil.confiancaPorAmostra(nFinal);
+
+    // O TAMANHO da amostra diz que ha dados; a DISPERSAO diz se eles falam a
+    // mesma coisa. Vale sempre o veredito mais conservador dos dois.
+    const precosM2 = (analiseIA.comparativos || []).map((c) => Number(c.precoM2)).filter((n) => n > 0);
+    confiancaFonte = fil.maisConservadora(
+      fil.confiancaPorAmostra(nFinal),
+      fil.confiancaPorDispersao(precosM2)
+    );
     analiseIA.confianca = confiancaFonte;
 
     // O texto foi escrito antes da limpeza e ficava dizendo "35 anuncios
