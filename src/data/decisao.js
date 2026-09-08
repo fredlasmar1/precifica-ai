@@ -24,6 +24,11 @@ async function analisarDecisao(input = {}) {
   if (valorImovel <= 0) return { erro: 'Informe o valor de mercado do imóvel.' };
   const taxas = await getTaxas();
 
+  // Sem o aluguel real, cai numa regra de bolso NACIONAL de 0,5% do valor — não
+  // é medição deste bairro. Num imóvel de R$ 1,6 milhão isso vira R$ 8.000/mês
+  // e a conta inteira (yield, patrimônio em 10 anos, veredito) sai dessa
+  // suposição. O laudo tem que dizer isso com todas as letras, senão o número
+  // chega ao cliente com cara de apurado.
   const aluguelMensal = Number(input.aluguelMensal) > 0 ? Number(input.aluguelMensal) : Math.round(valorImovel * 0.005);
   const aluguelEstimado = !(Number(input.aluguelMensal) > 0);
   const iptuAnual = Number(input.iptuAnual) >= 0 && input.iptuAnual !== '' && input.iptuAnual != null ? Number(input.iptuAnual) : Math.round(valorImovel * 0.007);
@@ -100,7 +105,11 @@ function formatarDecisao(r) {
   const A = r.cenarioA, B = r.cenarioB;
 
   let t = `⚖️ *ALUGAR × VENDER E INVESTIR*\n`;
-  t += `Imóvel: ${m(r.valorImovel)} · Aluguel: ${m(r.aluguelMensal)}/mês${r.aluguelEstimado ? ' _(estimado)_' : ''}\n`;
+  t += `Imóvel: ${m(r.valorImovel)} · Aluguel: ${m(r.aluguelMensal)}/mês\n`;
+  if (r.aluguelEstimado) {
+    t += `⚠️ _O aluguel acima NÃO foi medido: é a regra de bolso de 0,5% do valor do imóvel._\n`;
+    t += `_Toda a comparação sai dele — me diga por quanto ele aluga de verdade e a conta muda._\n`;
+  }
   t += `_Taxas de hoje: Selic ${r.taxas.selic}% · CDI ${r.taxas.cdi}% · IPCA ${r.taxas.ipca}% (${r.taxas.data})_\n`;
 
   t += `\n🏠 *CENÁRIO A — Manter alugado:*\n`;

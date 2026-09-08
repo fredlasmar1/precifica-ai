@@ -152,6 +152,8 @@ router.post('/avaliar', async (req, res) => {
   const bairro = String(b.bairro || '').trim();
   const metragem = b.metragem != null && b.metragem !== '' ? Number(b.metragem) : null;
   const areaLote = b.areaLote != null && b.areaLote !== '' ? Number(b.areaLote) : null;
+  // Quanto estão pedindo — opcional. Com ele o laudo diz se o preço se sustenta.
+  const valorPedido = Number(b.valorPedido ?? b.valorImovel) || null;
 
   const faltando = [];
   if (!tipo) faltando.push('tipo');
@@ -171,6 +173,7 @@ router.post('/avaliar', async (req, res) => {
     condominio: String(b.condominio || '').trim() || null,
     metragem,
     areaLote,
+    valorPedido,
     quartos: b.quartos != null && b.quartos !== '' ? Number(b.quartos) : null,
     vagas: b.vagas != null && b.vagas !== '' ? Number(b.vagas) : null,
     diferenciais: String(b.diferenciais || '').trim(),
@@ -1502,6 +1505,32 @@ function gerarLaudo(dados, resultado) {
   laudo += `• Mínimo: *${formatarReais(precoMinimo)}*\n`;
   laudo += `• Recomendado: *${formatarReais(precoRecomendado)}*\n`;
   laudo += `• Máximo: *${formatarReais(precoMaximo)}*\n\n`;
+
+  // ─── O PRECO PEDIDO SE SUSTENTA? ─────────────────────────────────────────
+  //
+  // Quem pergunta "vale a pena comprar por R$ 1,6 milhao?" quer ESTA linha, e
+  // ela nao existia no laudo urbano — a fazenda e o BTS ja traziam ("pedido do
+  // vendedor: +X% vs. avaliacao") e o imovel de cidade, que e o caso comum,
+  // nao. O comprador recebia a faixa e tinha que fazer a conta na cabeca.
+  const pedido = Number(dados.valorPedido) || 0;
+  if (pedido > 0 && precoRecomendado > 0) {
+    const dif = Math.round((pedido / precoRecomendado - 1) * 100);
+    const dentro = pedido >= precoMinimo && pedido <= precoMaximo;
+    laudo += `🏷️ *Pedido do vendedor:* ${formatarReais(pedido)} `;
+    laudo += `(${dif >= 0 ? '+' : ''}${dif}% vs. a avaliação)\n`;
+    if (dentro) {
+      laudo += `✅ *Está DENTRO da faixa de mercado* — o preço se sustenta.\n\n`;
+    } else if (pedido > precoMaximo) {
+      const acima = formatarReais(pedido - precoMaximo);
+      laudo += `🔴 *Está ACIMA do teto da faixa* — ${acima} acima do máximo que a amostra sustenta. `;
+      laudo += `Só compensa se houver algo que a amostra não vê (reforma recente, andar/vista, vaga extra). Peça o porquê por escrito.\n\n`;
+    } else {
+      const abaixo = formatarReais(precoMinimo - pedido);
+      laudo += `🟢 *Está ABAIXO do piso da faixa* — ${abaixo} abaixo do mínimo. `;
+      laudo += `Preço abaixo do mercado costuma ter motivo: confira matrícula (ônus, penhora), estado de conservação e dívida de condomínio antes de comemorar.\n\n`;
+    }
+  }
+
   laudo += `📊 *Preço por m²:*\n`;
   laudo += `• Referência de mercado: ${formatarReais(precoM2Mercado)}/m²\n`;
   laudo += `• Este imóvel (ajustado): ${formatarReais(precoM2Imovel)}/m²\n\n`;

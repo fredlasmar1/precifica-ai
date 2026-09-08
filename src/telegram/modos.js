@@ -29,11 +29,27 @@ const MODOS = {
     exemplo: 'casa 150m² no Centro de Anápolis',
     pergunta: 'Qual imóvel vai para locação? Me diga o *tipo*, a *metragem* e o *bairro*.',
   },
+  // ⚠️ ESTE BOTAO APONTAVA PARA /decisao — E OUTRA PERGUNTA.
+  //
+  // /decisao compara MANTER ALUGADO x VENDER E APLICAR: e para quem JA TEM o
+  // imovel. Quem clica em "comprar? vale a pena" nao tem o imovel — quer saber
+  // se o preco PEDIDO se sustenta. O bot recebeu "apartamento no Jundiai,
+  // 189m², por R$ 1.600.000" e devolveu um estudo de renda fixa, sem nunca
+  // dizer se 1,6 milhao era caro ou barato, e sem usar os 189m².
   comprar: {
-    rotulo: '🤔 COMPRAR? vale a pena', rota: '/decisao',
-    campos: ['tipo', 'cidade', 'bairro', 'metragem', 'valorImovel'],
+    rotulo: '🤔 COMPRAR? vale a pena', rota: '/avaliar',
+    fixos: { finalidade: 'venda' },
+    campos: ['tipo', 'cidade', 'bairro', 'metragem', 'valorPedido'],
     exemplo: 'apartamento 90m² Jundiaí Anápolis pedindo 600 mil',
     pergunta: 'Me diga o imóvel e *por quanto estão pedindo*. Eu comparo com o mercado e digo se o preço se sustenta.',
+  },
+
+  // A pergunta do DONO, que e o que a /decisao responde de verdade.
+  alugarOuVender: {
+    rotulo: '⚖️ TENHO UM: alugar ou vender?', rota: '/decisao',
+    campos: ['valorImovel'],
+    exemplo: 'meu apartamento vale 600 mil e aluga por 2.500',
+    pergunta: 'Quanto vale o imóvel hoje? Se souber por quanto ele aluga, mande junto — comparo manter alugado × vender e aplicar.',
   },
   ponto: {
     rotulo: '🏪 PONTO COMERCIAL', rota: '/ponto-comercial',
@@ -92,8 +108,8 @@ const MODOS = {
 };
 
 /** Ordem dos botões — os mais usados primeiro. */
-const ORDEM = ['venda', 'aluguel', 'comprar', 'ponto', 'cabe', 'terreno',
-               'bts', 'fazenda', 'predio', 'empresa', 'melhorBairro', 'rotatividade'];
+const ORDEM = ['venda', 'aluguel', 'comprar', 'alugarOuVender', 'ponto', 'cabe',
+               'terreno', 'bts', 'fazenda', 'predio', 'empresa', 'melhorBairro', 'rotatividade'];
 
 /** Teclado inline do Telegram, 2 por linha. */
 function tecladoMenu() {
