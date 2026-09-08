@@ -111,8 +111,27 @@ function filtrarRelevanciaApartamento(resultado, metragemRef, quartosRef, tipo =
             return false;
           }
         }
+      } else if (metragemRef > 120) {
+        // APARTAMENTO GRANDE: a regra simetrica abre demais para baixo.
+        //
+        // Num imovel de 189m², ±65% aceita ate 66m² — e a lista que o corretor
+        // mostra ao cliente vinha com 76m², 79m², 86m² e 89m². Nao e so feio:
+        // apartamento pequeno tem R$/m² estruturalmente MAIOR (o mesmo hall,
+        // a mesma vaga, diluidos em menos area), entao comparar um de 189m²
+        // com um de 76m² empurra o preco do grande para cima.
+        //
+        // Para baixo, no maximo metade da area; para cima pode o dobro, que
+        // e o lado onde a comparacao ainda faz sentido.
+        if (area < metragemRef * 0.5) {
+          descartados.push(`${area}m² descartado (menos da metade do avaliado, ${metragemRef}m² — outro produto)`);
+          return false;
+        }
+        if (area > metragemRef * 2) {
+          descartados.push(`${area}m² descartado (mais que o dobro do avaliado, ${metragemRef}m²)`);
+          return false;
+        }
       } else {
-        // Apartamento: ±65% simétrico (mais tolerante — amostra melhor)
+        // Apartamento comum: ±65% simétrico (mais tolerante — amostra melhor)
         const desvioArea = Math.abs(area - metragemRef) / metragemRef;
         if (desvioArea > 0.65) {
           descartados.push(`${area}m² descartado (desvia ${Math.round(desvioArea*100)}% da metragem de referência ${metragemRef}m²)`);

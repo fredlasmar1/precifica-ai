@@ -1574,7 +1574,16 @@ function gerarLaudo(dados, resultado) {
     laudo += '\n';
   }
 
-  if (comparativosEncontrados > 0) laudo += `🔍 Comparativos analisados: ${comparativosEncontrados} imóveis\n`;
+  // Este numero e o BRUTO coletado, e contradizia o do corpo do laudo:
+// "12 anuncios comparaveis" logo acima de "Comparativos analisados: 25".
+// Quem le fica com o 25 na cabeca. Agora os dois aparecem juntos, e o
+// que sustenta o preco vem primeiro.
+if (comparativosEncontrados > 0) {
+  const usados = analiseIA?.anunciosAnalisados || (analiseIA?.comparativos || []).length;
+  laudo += usados && comparativosEncontrados > usados
+    ? `🔍 Base do cálculo: ${usados} anúncio(s) de perfil compatível, de ${comparativosEncontrados} coletados\n`
+    : `🔍 Comparativos analisados: ${comparativosEncontrados} imóveis\n`;
+}
 
   if (perfilGuru?.infraestrutura) {
     const i = perfilGuru.infraestrutura;
