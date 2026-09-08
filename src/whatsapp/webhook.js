@@ -138,7 +138,13 @@ function gerarLaudo(dados, resultado) {
   laudo += `━━━━━━━━━━━━━━━━━━━━━\n`;
   laudo += `🏠 ${tipoLabel} • ${finalidadeLabel}\n`;
   laudo += endereco ? `📍 ${endereco}, ${bairro} - ${cidade}/GO\n` : `📍 ${bairro}, ${cidade} - GO\n`;
-  laudo += `📐 ${metragem}m² • ${quartos} quartos • ${vagas} vaga(s)\n\n`;
+  // Quarto e vaga sao opcionais. Concatenados sem checar, o laudo saia
+  // "189m² • null quartos • null vaga(s)" — o cliente le isso como sistema
+  // quebrado, no meio de um laudo que ele vai mostrar para o comprador.
+  laudo += `📐 ` + [`${metragem}m²`,
+    Number(quartos) > 0 ? `${quartos} quarto(s)` : null,
+    Number(vagas) > 0 ? `${vagas} vaga(s)` : null,
+  ].filter(Boolean).join(' • ') + `\n\n`;
 
   laudo += `💰 *Faixa de Preço Sugerida:*\n`;
   laudo += `• Mínimo: *${formatarReais(precoMinimo)}*\n`;

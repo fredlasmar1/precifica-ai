@@ -598,7 +598,13 @@ function gerarLaudo(dados, resultado) {
     if (Array.isArray(benfeitorias) && benfeitorias.length > 0) laudo += `🏗️ ${benfeitorias.join(', ')}\n`;
     laudo += '\n';
   } else {
-    laudo += `📐 ${areaLabel} • ${quartos} quartos • ${vagas} vaga(s)\n\n`;
+    // Quarto e vaga sao opcionais. Concatenados sem checar, o laudo saia
+    // "189m² • null quartos • null vaga(s)" — o cliente le isso como sistema
+    // quebrado, no meio de um laudo que ele vai mostrar para o comprador.
+    laudo += `📐 ` + [`${areaLabel}`,
+      Number(quartos) > 0 ? `${quartos} quarto(s)` : null,
+      Number(vagas) > 0 ? `${vagas} vaga(s)` : null,
+    ].filter(Boolean).join(' • ') + `\n\n`;
   }
 
   laudo += `💰 *Faixa de Preço Sugerida:*\n`;
