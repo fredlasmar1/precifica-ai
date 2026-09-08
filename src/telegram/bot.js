@@ -42,6 +42,52 @@ async function handleTelegram(req, res) {
       // Tira o "reloginho" do botao — sem isso ele fica girando na tela.
       await axios.post(`${API()}/answerCallbackQuery`, { callback_query_id: cq.id }).catch(() => {});
       const escolha = String(cq.data || '');
+
+      if (escolha === 'menu:abrir') {
+        modoAtivo.delete(sessionId);
+        await enviar(chatId, '*O que você precisa?*', tecladoMenu());
+        return;
+      }
+
+      if (escolha === 'laudo:completo') {
+        const guardado = laudoCache.get(sessionId);
+        if (!guardado?.texto) {
+          await enviar(chatId, 'Não tenho um laudo aberto. Faça uma avaliação primeiro.', tecladoMenu());
+        } else {
+          await enviar(chatId, guardado.texto, tecladoPosLaudo());
+        }
+        return;
+      }
+
+      if (escolha.startsWith('pdf:')) {
+        const versao = escolha.slice(4) === 'tecnico' ? 'tecnico' : 'cliente';
+        const guardado = laudoCache.get(sessionId);
+        if (!guardado?.dados || !guardado?.resultado) {
+          await enviar(chatId, 'Não tenho um laudo aberto para gerar o PDF. Faça uma avaliação primeiro.', tecladoMenu());
+          return;
+        }
+        await enviar(chatId, '📄 Montando o parecer...');
+        try {
+          const porta = process.env.PORT || 8080;
+          const r = await fetch(`http://127.0.0.1:${porta}/api/relatorio`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ dados: guardado.dados, resultado: guardado.resultado, versao }),
+          });
+          if (!r.ok) throw new Error(`relatorio ${r.status}`);
+          const pdf = Buffer.from(await r.arrayBuffer());
+          const slug = String(guardado.dados.bairro || 'imovel').toLowerCase()
+            .normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-');
+          await enviarDocumento(chatId, pdf, `parecer-${slug}-${versao}.pdf`,
+            versao === 'cliente'
+              ? '📄 *Parecer para o cliente* — timbrado, com os comparáveis e o link de cada anúncio. Pode encaminhar.'
+              : '📑 *Parecer técnico* — a versão completa, com metodologia e fontes.');
+        } catch (err) {
+          console.error('[PDF] erro:', err.message);
+          await enviar(chatId, '⚠️ Não consegui gerar o PDF agora. Tenta de novo?');
+        }
+        return;
+      }
+
       if (escolha.startsWith('modo:')) {
         const id = escolha.slice(5);
         clearSession(sessionId);
@@ -260,9 +306,14 @@ async function executarModo(chatId, sessionId, id, dados) {
       await enviar(chatId, 'Consegui os dados, mas não veio o relatório. Tenta de novo?', tecladoMenu());
       return;
     }
-    // Guarda o laudo para as perguntas seguintes ("por que esse preço?").
+    // Guarda o laudo para as perguntas seguintes ("por que esse preço?"),
+    // para o "ver completo" e para o PDF.
     if (data.dados && data.resultado) {
       laudoCache.set(sessionId, { texto, dados: data.dados, resultado: data.resultado });
+      await enviar(chatId, resumoExecutivo(data.dados, data.resultado));
+      await new Promise((r) => setTimeout(r, 400));
+      await enviar(chatId, '_Pergunte o que quiser sobre este imóvel — ou:_', tecladoPosLaudo());
+      return;
     }
     await enviar(chatId, texto);
     await new Promise((r) => setTimeout(r, 600));
@@ -488,6 +539,82 @@ async function enviar(chatId, texto, teclado = null) {
       }
     });
   }
+}
+
+/**
+ * Manda um PDF. O sistema ja gerava o parecer timbrado da Bens — com a tabela
+ * de comparaveis, o link de cada anuncio, a assinatura do corretor e as
+ * ressalvas tecnicas — e o bot nunca usou. O corretor recebia uma parede de
+ * texto que ele nao pode encaminhar para o cliente.
+ */
+async function enviarDocumento(chatId, buffer, nomeArquivo, legenda) {
+  const form = new FormData();
+  form.append('chat_id', String(chatId));
+  form.append('document', new Blob([buffer], { type: 'application/pdf' }), nomeArquivo);
+  if (legenda) { form.append('caption', legenda); form.append('parse_mode', 'Markdown'); }
+  const r = await fetch(`${API()}/sendDocument`, { method: 'POST', body: form });
+  if (!r.ok) throw new Error(`sendDocument ${r.status}: ${(await r.text()).slice(0, 200)}`);
+}
+
+/** Ações que fazem sentido DEPOIS de um laudo pronto. */
+function tecladoPosLaudo() {
+  return { inline_keyboard: [
+    [{ text: '📄 PDF para o cliente', callback_data: 'pdf:cliente' },
+     { text: '📑 PDF técnico',        callback_data: 'pdf:tecnico' }],
+    [{ text: '🔍 Ver laudo completo', callback_data: 'laudo:completo' }],
+    [{ text: '💰 Fechou? registrar',  callback_data: 'modo:fechou' },
+     { text: '📋 Menu',               callback_data: 'menu:abrir' }],
+  ] };
+}
+
+const real = (n) => 'R$ ' + Number(n || 0).toLocaleString('pt-BR', { maximumFractionDigits: 0 });
+
+/**
+ * O QUE O CORRETOR LÊ EM TRÊS SEGUNDOS.
+ *
+ * O laudo inteiro tem ~5.000 caracteres e chega como duas paredes de texto no
+ * celular — o número que decide fica soterrado entre infraestrutura, IBGE e
+ * metodologia. Aqui vem só o que muda a conversa com o cliente; o resto está a
+ * um toque, e o PDF timbrado a outro.
+ */
+function resumoExecutivo(dados, resultado) {
+  const d = dados || {}, r = resultado || {};
+  const tipo = String(d.tipo || 'imóvel');
+  const titulo = tipo.charAt(0).toUpperCase() + tipo.slice(1);
+  const area = Number(d.metragem) || Number(d.areaLote) || 0;
+
+  let t = `*${titulo}${area ? ` · ${area}m²` : ''}*\n`;
+  t += `📍 ${[d.bairro, d.cidade].filter(Boolean).join(', ')}\n\n`;
+  t += `💰 *${real(r.precoRecomendado)}*`;
+  if (d.finalidade === 'aluguel') t += '/mês';
+  t += `\n`;
+  if (r.precoMinimo && r.precoMaximo) {
+    t += `_faixa de negociação: ${real(r.precoMinimo)} a ${real(r.precoMaximo)}_\n`;
+  }
+
+  // O veredito sobre o preço PEDIDO é o motivo de a pessoa ter perguntado.
+  const pedido = Number(d.valorPedido) || 0;
+  if (pedido > 0 && r.precoRecomendado > 0) {
+    const dif = Math.round((pedido / r.precoRecomendado - 1) * 100);
+    t += `\n🏷️ Pedem *${real(pedido)}* — ${dif >= 0 ? `${dif}% acima` : `${Math.abs(dif)}% abaixo`} da avaliação\n`;
+    if (pedido > r.precoMaximo)      t += `🔴 *Acima do teto da faixa* (${real(pedido - r.precoMaximo)} a mais)\n`;
+    else if (pedido < r.precoMinimo) t += `🟢 *Abaixo do piso* — confira matrícula e conservação\n`;
+    else                             t += `✅ *Dentro da faixa* — o preço se sustenta\n`;
+  }
+
+  const n = r.analiseIA?.anunciosAnalisados || r.comparativosEncontrados || 0;
+  const conf = r.analiseIA?.confianca;
+  if (n) {
+    const luz = conf === 'alta' ? '🟢' : conf === 'media' ? '🟡' : '🔴';
+    t += `\n${luz} Base: *${n} anúncio(s)* comparáveis · confiança ${conf || 'baixa'}\n`;
+  }
+  // O indiceLiquidez ja vem com emoji proprio ("🔴 Liquidez baixa"); prefixar
+  // outro deixa "⚡ 🔴" colado.
+  if (r.indiceLiquidez) {
+    const li = String(r.indiceLiquidez).trim();
+    t += (/^[\p{Emoji}]/u.test(li) ? '' : '⚡ ') + li + '\n';
+  }
+  return t;
 }
 
 function splitMessage(text, maxLen) {
