@@ -168,13 +168,21 @@ async function extrairCampos(modo, texto) {
   //    "maracana": a lista do sistema (177 grafias só de Anápolis) dá a grafia
   //    certa, que é a que o filtro de comparativos usa depois.
   {
-    const { extrairBairro } = require('./fechou');
-    const achado = extrairBairro(texto, j.cidade || 'Anápolis');
-    if (achado) j.bairro = achado;
+    const { bairroComCidade } = require('./fechou');
+    const achado = bairroComCidade(texto);
+    if (achado) {
+      j.bairro = achado.bairro;
+      // 2. CIDADE. Numa frase sem cidade ("apartamento no Jundiaí, 189m², por
+      //    R$ 1.600.000") o modelo respondia cidade="Jundiaí" — o BAIRRO no
+      //    lugar da cidade. O laudo saía "Jundiaí - Jundiaí/GO" e avaliava o
+      //    imóvel R$ 217 mil mais barato, porque cidade errada troca a base de
+      //    preço inteira. A tabela sabe em que cidade aquele bairro fica; ela
+      //    manda, não o modelo.
+      j.cidade = achado.cidade;
+    }
   }
 
-  // 2. CIDADE. O sistema é de Anápolis; ninguém escreve a cidade toda vez.
-  //    Sem isto o bot travava em "faltou a cidade" numa frase completa.
+  // O sistema é de Anápolis; ninguém escreve a cidade toda vez.
   if (!j.cidade) j.cidade = 'Anápolis';
 
   // 3. TIPO. A rota espera o nome inteiro; o corretor escreve "apto".

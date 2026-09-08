@@ -191,4 +191,21 @@ function textoConfirmacao(d) {
   return t;
 }
 
-module.exports = { interpretarFechamento, textoConfirmacao, extrairValor, extrairBairro, brl };
+/**
+ * Procura o bairro em TODAS as cidades da tabela e devolve em qual ele existe.
+ *
+ * "Apartamento no Jundiaí, 189m², por R$ 1.600.000" não diz a cidade — e o
+ * modelo respondeu cidade="Jundiaí", bairro="Jundiaí". O laudo saiu
+ * "Jundiaí - Jundiaí/GO" e avaliou o imóvel R$ 217 mil mais barato, porque a
+ * cidade errada leva a outra base de preço. O bairro, porém, é conhecido: ele
+ * está na tabela de Anápolis, e é a tabela que sabe disso.
+ */
+function bairroComCidade(texto) {
+  for (const cidade of ['Anápolis', 'Goiânia']) {
+    const b = extrairBairro(texto, cidade);
+    if (b) return { bairro: b, cidade };
+  }
+  return null;
+}
+
+module.exports = { interpretarFechamento, textoConfirmacao, extrairValor, extrairBairro, bairroComCidade, brl };
