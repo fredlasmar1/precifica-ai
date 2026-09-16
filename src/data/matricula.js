@@ -54,7 +54,7 @@ const GANHO_REGULARIZACAO = 0.03;// efeito do habite-se + averbação sobre liqu
 const MARGEM_ANUNCIO = 0.08;     // desconto médio entre pedido e fechado
 const VENDA_RAPIDA = 0.87;       // 90 dias
 const YIELD_LOCACAO = 0.0040;    // aluguel mensal ≈ 0,40% do valor
-const ITBI_ALIQUOTA = 0.02;      // Anápolis — conferir na Prefeitura
+const ITBI_ALIQUOTA = 0.015;     // Anápolis: 1,5% (CTRMA). O 'Desengaveta' a 0,75% (LC 596/2026) acabou em 24/06/2026
 
 // Descontos por situação documental (cumulativos, teto de 20%)
 const DESC_SEM_AVERBACAO = 0.08; // não financiável, escritura exige regularizar antes
@@ -758,7 +758,7 @@ function avaliar(p) {
 
   // ── Custos de transmissão ──────────────────────────────────────────
   const custos = [
-    { item: 'ITBI', min: Math.round(valor * ITBI_ALIQUOTA), max: Math.round(valor * ITBI_ALIQUOTA), obs: `${ITBI_ALIQUOTA * 100}% sobre o valor. Alíquota e base de cálculo a confirmar na Prefeitura, que pode adotar valor venal de referência superior.` },
+    { item: 'ITBI', min: Math.round(valor * ITBI_ALIQUOTA), max: Math.round(valor * ITBI_ALIQUOTA), obs: `${(ITBI_ALIQUOTA * 100).toLocaleString('pt-BR')}% sobre o valor (Anápolis, CTRMA). A Prefeitura pode adotar valor venal de referência superior.` },
     { item: 'Escritura pública', min: Math.round(valor * 0.010), max: Math.round(valor * 0.014), obs: 'Tabela de emolumentos do Estado de Goiás, faixa do valor do negócio.' },
     { item: 'Registro do título', min: Math.round(valor * 0.0065), max: Math.round(valor * 0.010), obs: 'Emolumentos de registro no RI competente.' },
     { item: 'Certidões e diligências', min: 400, max: 800, obs: 'Certidões pessoais, protestos, distribuidores e certidão municipal.' }

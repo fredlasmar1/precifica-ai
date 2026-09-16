@@ -326,6 +326,78 @@
     .uso-chip b { color: var(--ink); font-weight: 600; }
     .uso-chip.alerta b { color: var(--warn); }
 
+
+    /* ---------------- Parecer por matrícula (estruturado) ---------------- */
+    .px { flex: 1; overflow-y: auto; padding: 22px 26px 30px; font-size: 13.5px; line-height: 1.5; color: #1e293b; }
+    .px-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+    .px-top .px-doc { font-size: 12.5px; color: var(--muted); }
+    .px-top .px-doc b { color: var(--ink); font-weight: 700; }
+    .px-hero { background: linear-gradient(135deg, var(--blue) 0%, #0a2bb8 100%); color: #fff; border-radius: 18px; padding: 22px 24px; box-shadow: 0 16px 36px -16px rgba(1,62,248,.55); }
+    .px-hero .lbl { font-size: 11.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; opacity: .85; }
+    .px-hero .val { font-size: 40px; font-weight: 800; letter-spacing: -1.5px; line-height: 1.05; margin-top: 4px; }
+    .px-hero .rng { margin-top: 6px; font-size: 13px; opacity: .9; }
+    .px-hero .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+    .px-hero .grid2 .val { font-size: 30px; }
+    .px-hero .grid2 > div:last-child { border-left: 1px solid rgba(255,255,255,.25); padding-left: 18px; }
+    .px-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+    .px-chips span { font-size: 12px; font-weight: 600; background: rgba(255,255,255,.14); border: 1px solid rgba(255,255,255,.22); padding: 5px 10px; border-radius: 100px; }
+    .px-aviso { margin-top: 14px; background: #fffbeb; border: 1px solid #fde68a; color: #78350f; border-radius: 14px; padding: 12px 14px; font-size: 13px; }
+    .px-aviso b { display: block; margin-bottom: 3px; font-size: 13.5px; }
+    .px-sec { margin-top: 22px; }
+    .px-sec > h3 { font-size: 12px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
+    .px-sec > h3 .n { margin-left: auto; font-weight: 600; letter-spacing: 0; text-transform: none; color: var(--muted2); }
+    .px-steps { display: flex; flex-direction: column; gap: 0; border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+    .px-step { display: flex; gap: 12px; padding: 11px 14px; border-bottom: 1px solid var(--line); background: #fff; }
+    .px-step:last-child { border-bottom: 0; }
+    .px-step .k { flex: 0 0 26px; height: 26px; border-radius: 50%; background: var(--blue-tint); color: var(--blue); font-weight: 800; font-size: 12.5px; display: flex; align-items: center; justify-content: center; }
+    .px-step .t { font-size: 13px; }
+    .px-al { display: flex; flex-direction: column; gap: 6px; }
+    .px-al details { border: 1px solid var(--line); border-radius: 12px; background: #fff; }
+    .px-al summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 10px; padding: 9px 12px; font-weight: 700; font-size: 13px; }
+    .px-al summary::-webkit-details-marker { display: none; }
+    .px-al summary .dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+    .px-al .alto summary .dot { background: var(--danger); } .px-al .medio summary .dot { background: var(--warn); } .px-al .bom summary .dot { background: var(--ok); }
+    .px-al summary .lv { margin-left: auto; font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted2); }
+    .px-al .body { padding: 0 12px 11px 31px; font-size: 12.8px; color: #475569; }
+    .px-tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .px-tbl th { text-align: left; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted2); font-weight: 700; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+    .px-tbl td { padding: 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+    .px-tbl td.r, .px-tbl th.r { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .px-tbl td b { color: var(--ink); }
+    .px-tbl tr.tot td { font-weight: 700; border-bottom: 0; }
+    .px-tbl a { color: var(--blue); text-decoration: none; }
+    .px-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+    .px-tile { background: #f8faff; border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; }
+    .px-tile .l { font-size: 11.5px; color: var(--muted); font-weight: 600; }
+    .px-tile .v { font-size: 18px; font-weight: 800; letter-spacing: -.4px; color: var(--ink); margin-top: 3px; }
+    .px-tile.main { background: var(--blue-tint); border-color: var(--blue-tint2); } .px-tile.main .v { color: var(--blue); }
+    .px-two { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    .px-list { margin: 0; padding-left: 18px; font-size: 12.8px; color: #334155; }
+    .px-list li { margin-bottom: 5px; }
+    .px-more { margin-top: 8px; }
+    .px-more summary { cursor: pointer; font-size: 12.5px; font-weight: 700; color: var(--blue); list-style: none; }
+    .px-more summary::-webkit-details-marker { display: none; }
+    .px-more summary::before { content: '+ '; }
+    .px-more[open] summary::before { content: '− '; }
+    .px-more .in { margin-top: 8px; }
+    .px-note { font-size: 12px; color: var(--muted); margin-top: 8px; }
+    @media (max-width: 700px) { .px-two, .px-hero .grid2 { grid-template-columns: 1fr; } .px-hero .grid2 > div:last-child { border-left: 0; padding-left: 0; border-top: 1px solid rgba(255,255,255,.25); padding-top: 12px; } .px-hero .val { font-size: 32px; } }
+
+    /* formulário da matrícula em grupos + entrada de arquivo decente */
+    .mt-grp { border: 1px solid var(--line); border-radius: 14px; margin-bottom: 12px; background: #fff; }
+    .mt-grp > summary { list-style: none; cursor: pointer; padding: 11px 14px; font-weight: 700; font-size: 13.5px; display: flex; align-items: center; gap: 8px; }
+    .mt-grp > summary::-webkit-details-marker { display: none; }
+    .mt-grp > summary .s { font-weight: 500; color: var(--muted); font-size: 12px; margin-left: auto; }
+    .mt-grp > summary::after { content: '›'; font-size: 18px; color: var(--muted2); margin-left: 8px; transition: transform .15s; }
+    .mt-grp[open] > summary::after { transform: rotate(90deg); }
+    .mt-grp > .in { padding: 4px 14px 2px; border-top: 1px solid var(--line); }
+    #pane-matricula input[type=file] { width: 100%; font-size: 12.5px; color: var(--muted); border: 1.5px dashed var(--line2); border-radius: 12px; padding: 10px; background: #fafbff; cursor: pointer; }
+    #pane-matricula input[type=file]::file-selector-button { font: inherit; font-weight: 700; color: var(--blue); background: var(--blue-tint); border: 0; border-radius: 8px; padding: 7px 12px; margin-right: 10px; cursor: pointer; }
+    #pane-matricula input[type=file]:hover { border-color: var(--blue); }
+    .mt-achado.compact { padding: 8px 12px; }
+    .mt-achado.compact details summary { list-style: none; cursor: pointer; font-weight: 700; }
+    .mt-achado.compact details summary::-webkit-details-marker { display: none; }
+    .mt-achado.compact details .tx { margin-top: 4px; }
     /* ---------------- Responsive ---------------- */
     @media (max-width: 940px) {
       .wrap, .wrap.has-result { grid-template-columns: 1fr; padding: 18px; }
@@ -523,6 +595,7 @@
             </div>
           </div>
           <div id="mt-achados"></div>
+          <details class="mt-grp" open><summary>📍 Imóvel e matrícula<span class="s">o que a IA leu</span></summary><div class="in">
           <div class="row">
             <div class="field">
               <label>Matrícula nº <span class="opt">(confira no documento)</span></label>
@@ -547,6 +620,8 @@
             <label>Endereço</label>
             <input id="mt-endereco" placeholder="Rua, quadra, lote" />
           </div>
+          </div></details>
+          <details class="mt-grp" open><summary>📐 Áreas, padrão e conservação<span class="s">manda no valor</span></summary><div class="in">
           <div class="row">
             <div class="field">
               <label>Área do terreno (m²)</label>
@@ -588,6 +663,8 @@
               </select>
             </div>
           </div>
+          </div></details>
+          <details class="mt-grp"><summary>🧮 Avaliação anterior e unitários<span class="s">opcional</span></summary><div class="in">
           <div class="row">
             <div class="field">
               <label>Avaliação anterior (R$) <span class="opt">(opcional — vira o 3º método)</span></label>
@@ -611,6 +688,8 @@
               <input id="mt-vendam2" type="number" min="0" placeholder="automático" />
             </div>
           </div>
+          </div></details>
+          <details class="mt-grp"><summary>✍️ Quem pede e quem assina<span class="s">vai no PDF</span></summary><div class="in">
           <div class="field">
             <label>Solicitante <span class="opt">(aparece no PDF)</span></label>
             <input id="mt-solicitante" placeholder="Nome do cliente" />
@@ -625,6 +704,7 @@
               <input id="mt-oab" value="CRECI-F 41.009" />
             </div>
           </div>
+          </div></details>
           <div class="field">
             <label><input type="checkbox" id="mt-pesquisar" checked /> Pesquisar o mercado agora (preenche o Anexo I com anúncios reais)</label>
           </div>
@@ -1929,6 +2009,8 @@
         } else if (data.kind === 'bts') {
           showLaudo(data.response);
           btsAtual = data.resultado; mostrarAcoesPdfBts();
+        } else if (data.kind === 'matricula' && data.resultado && data.resultado.metodos) {
+          matriculaAtual = data.resultado; showParecerMatricula(data.resultado);
         } else {
           showLaudo(data.response);
           avaliacaoAtual = { dados: data.dados, resultado: data.resultado, laudoTexto: data.response }; mostrarAcoesPdf();
@@ -2809,7 +2891,7 @@
       }
       const box = document.getElementById('mt-achados');
       box.innerHTML = (m.alertas || []).map(a =>
-        `<div class="mt-achado mt-${a.nivel}"><div><b>${a.titulo}</b>${a.texto}</div></div>`
+        `<div class="mt-achado compact mt-${a.nivel}"><details${a.nivel === 'alto' ? ' open' : ''}><summary>${a.nivel === 'alto' ? '🔴' : a.nivel === 'medio' ? '🟡' : '🟢'} ${a.titulo}</summary><div class="tx">${a.texto}</div></details></div>`
       ).join('');
       document.getElementById('mt-conferencia').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
@@ -2869,7 +2951,7 @@
         });
         const data = await res.json();
         if (data.error) { showError(data.error); matriculaAtual = null; }
-        else { showLaudo(data.response); matriculaAtual = data.resultado; mostrarAcoesPdfMatricula(); }
+        else { matriculaAtual = data.resultado; showParecerMatricula(data.resultado); }
       } catch (err) {
         showError('Erro de conexão. Tente novamente.');
       } finally {
@@ -2878,6 +2960,117 @@
       }
     }
 
+
+    // ── Parecer por matrícula: renderização estruturada (não é texto de WhatsApp) ──
+    const brlx = (v) => (v == null || isNaN(Number(v)) ? '—' : Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }));
+    const numx = (v) => (v == null || v === '' ? '—' : Number(v).toLocaleString('pt-BR'));
+    const esc = (t) => String(t == null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+    function renderParecerMatricula(r) {
+      const m = r.matricula || {}, i = m.imovel || {}, dg = r.diligencias || {}, mk = r.mercado || {};
+      const local = [i.loteamento, i.lote ? 'Lote ' + i.lote : null, i.quadra ? 'Quadra ' + i.quadra : null].filter(Boolean).join(', ');
+      const nivelTxt = { alto: 'atenção', medio: 'conferir', bom: 'ok' };
+      let h = '';
+      h += `<div class="px-top"><div class="px-doc"><b>Matrícula nº ${esc(m.numero || '—')}</b> · ${esc(m.cartorio || '')}<br>${esc(local || i.descricao || '')}${i.endereco ? ' · ' + esc(i.endereco) : ''} · data-base ${esc(r.dataBase || '')}</div>
+        <button class="btn-pdf" onclick="baixarMatriculaPdf(this)">📄 Baixar parecer (PDF)</button></div>`;
+
+      // hero
+      const chips = [`Terreno ${numx(r.areaTerreno)} m²${m.medidas && m.medidas.frente ? ' · frente ' + esc(m.medidas.frente) : ''}`,
+        r.areaConstruida ? `Construção ${numx(r.areaConstruida)} m²${m.construcaoAverbada ? ' (averbada)' : ' (informada)'}` : 'Construção sem metragem',
+        r.bairro ? esc(r.bairro) : null, mk.n > 0 ? `${mk.n} anúncios no bairro · ${esc(mk.grau)}` : 'sem amostra de mercado'].filter(Boolean);
+      const faixa = `Faixa técnica ${brlx(r.faixaMin)} a ${brlx(r.faixaMax)} (±${r.amplitude}%)`;
+      if ((r.descontos || []).length) {
+        h += `<div class="px-hero"><div class="grid2">
+          <div><div class="lbl">Valor de mercado${r.soTerreno ? ' — somente o terreno' : ' — regularizada'}</div><div class="val">${brlx(r.valorBruto)}</div><div class="rng">é quanto vale ${r.soTerreno ? 'o terreno' : 'a casa em si'}</div></div>
+          <div><div class="lbl">No estado documental atual</div><div class="val">${brlx(r.valor)}</div><div class="rng">${faixa} · ajuste de −${r.descontoTotal}%</div></div>
+        </div><div class="px-chips">${chips.map((c) => `<span>${c}</span>`).join('')}</div></div>`;
+      } else {
+        h += `<div class="px-hero"><div class="lbl">Valor de mercado estimado${r.soTerreno ? ' — somente o terreno' : ''}</div><div class="val">${brlx(r.valor)}</div><div class="rng">${faixa}${r.valorM2Resultante ? ` · ${brlx(r.valorM2Resultante)}/m² construído` : ''}</div>
+          <div class="px-chips">${chips.map((c) => `<span>${c}</span>`).join('')}</div></div>`;
+      }
+      if (r.aviso) h += `<div class="px-aviso"><b>⚠️ ${esc(r.aviso.titulo)}</b>${esc(r.aviso.texto)}</div>`;
+
+      // roteiro
+      if ((dg.roteiro || []).length) {
+        h += `<div class="px-sec"><h3>O que falta para vender — na ordem</h3><div class="px-steps">`;
+        dg.roteiro.forEach((x, k) => { h += `<div class="px-step"><div class="k">${k + 1}</div><div class="t">${esc(String(x).replace(/^\d+\.\s*/, ''))}</div></div>`; });
+        h += `</div><details class="px-more"><summary>Lista completa de diligências</summary><div class="in px-two">
+          <div><b>Sobre o imóvel</b><ul class="px-list">${(dg.imovel || []).map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>
+          <div><b>Sobre o vendedor</b><ul class="px-list">${(dg.vendedor || []).map((x) => `<li>${esc(x)}</li>`).join('')}</ul>
+          <b>Na contratação</b><ul class="px-list">${(dg.contratacao || []).map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div></div></details></div>`;
+      }
+
+      // situação registral
+      const al = m.alertas || [];
+      if (al.length) {
+        h += `<div class="px-sec"><h3>Situação registral <span class="n">${al.filter((a) => a.nivel === 'alto').length} grave(s) · ${al.filter((a) => a.nivel === 'medio').length} a conferir</span></h3><div class="px-al">`;
+        al.forEach((a) => { h += `<details class="${esc(a.nivel)}"${a.nivel === 'alto' ? ' open' : ''}><summary><span class="dot"></span>${esc(a.titulo)}<span class="lv">${nivelTxt[a.nivel] || ''}</span></summary><div class="body">${esc(a.texto)}</div></details>`; });
+        h += `</div></div>`;
+      }
+
+      // apuração
+      h += `<div class="px-sec"><h3>Como chegamos ao valor <span class="n">${(r.metodos || []).length} método(s)</span></h3><table class="px-tbl"><thead><tr><th>Método</th><th class="r">Resultado</th></tr></thead><tbody>`;
+      (r.metodos || []).forEach((mt) => { h += `<tr><td>${esc(mt.nome)}</td><td class="r"><b>${brlx(mt.valor)}</b></td></tr>`; });
+      if (r.dispersao != null) h += `<tr class="tot"><td>Média · dispersão ${r.dispersao}% ${r.dispersao <= 10 ? '(boa convergência)' : r.dispersao <= 25 ? '(razoável)' : '(alta — conferir premissas)'}</td><td class="r">${brlx(r.media)}</td></tr>`;
+      h += `</tbody></table>`;
+      if ((r.descontos || []).length) h += `<div class="px-note">Ajuste documental de −${r.descontoTotal}%: ${r.descontos.map((d) => `${esc(d.motivo)} (−${Math.round(d.pct * 100)}%)`).join('; ')}.</div>`;
+      if ((r.premissas || []).length) h += `<details class="px-more"><summary>Premissas adotadas</summary><div class="in"><table class="px-tbl"><thead><tr><th>Item</th><th>Adotado</th><th>Faixa</th><th>Origem</th></tr></thead><tbody>${r.premissas.map((p) => `<tr><td>${esc(p.item)}</td><td><b>${esc(p.adotado)}</b></td><td>${esc(p.faixa)}</td><td>${esc(p.obs)}</td></tr>`).join('')}</tbody></table></div></details>`;
+      if (r.sensibilidade) h += `<details class="px-more"><summary>E se a metragem for outra?</summary><div class="in"><table class="px-tbl"><thead><tr><th>Área</th><th class="r">Valor</th><th class="r">Faixa</th></tr></thead><tbody>${r.sensibilidade.map((l) => `<tr><td>${l.atual ? '▶ ' : ''}${numx(l.area)} m²</td><td class="r"><b>${brlx(l.valor)}</b></td><td class="r">${brlx(l.faixaMin)} – ${brlx(l.faixaMax)}</td></tr>`).join('')}</tbody></table></div></details>`;
+      h += `</div>`;
+
+      // negociação
+      if ((r.negociacao || []).length) {
+        h += `<div class="px-sec"><h3>Referências para a negociação</h3><div class="px-tiles">`;
+        r.negociacao.forEach((n) => { h += `<div class="px-tile${/Valor de mercado/.test(n.ref) ? ' main' : ''}" title="${esc(n.racional || '')}"><div class="l">${esc(n.ref)}</div><div class="v">${brlx(n.valor)}${n.mensal ? '<small>/mês</small>' : ''}</div></div>`; });
+        h += `</div></div>`;
+      }
+
+      // custos
+      if ((r.custos || []).length) {
+        h += `<div class="px-sec"><h3>Custos da transmissão</h3><table class="px-tbl"><thead><tr><th>Item</th><th class="r">De</th><th class="r">Até</th></tr></thead><tbody>`;
+        r.custos.forEach((c) => { h += `<tr><td>${esc(c.item)}<div class="px-note" style="margin-top:2px">${esc(c.obs || '')}</div></td><td class="r">${brlx(c.min)}</td><td class="r">${brlx(c.max)}</td></tr>`; });
+        h += `<tr class="tot"><td>Total estimado (${Math.round((r.custoMin / r.valor) * 100)}% a ${Math.round((r.custoMax / r.valor) * 100)}% do valor)</td><td class="r">${brlx(r.custoMin)}</td><td class="r">${brlx(r.custoMax)}</td></tr></tbody></table></div>`;
+      }
+
+      // rende / financia
+      const mb = r.metricas || {}, enr = mb.enriquecimento || {};
+      if (enr.rentabilidade || enr.financiamento || mb.fipeVenda) {
+        h += `<div class="px-sec"><h3>O que rende e quanto custa financiar</h3><div class="px-tiles">`;
+        if (enr.rentabilidade) h += `<div class="px-tile"><div class="l">Aluguel estimado</div><div class="v">${brlx(enr.rentabilidade.aluguelMensal)}<small>/mês</small></div><div class="px-note">${enr.rentabilidade.yieldAnual}% a.a. · payback ~${enr.rentabilidade.paybackAnos} anos</div></div>`;
+        if (enr.financiamento) h += `<div class="px-tile"><div class="l">Financiamento</div><div class="v">${brlx(enr.financiamento.parcela)}<small>/mês</small></div><div class="px-note">entrada ${brlx(enr.financiamento.entrada)} (${enr.financiamento.entradaPct}%) · renda ~${brlx(enr.financiamento.rendaNecessaria)}</div></div>`;
+        if (mb.fipeVenda) h += `<div class="px-tile"><div class="l">FIPE da região</div><div class="v">${brlx(mb.fipeVenda.m2)}<small>/m²</small></div><div class="px-note">aluguel R$ ${esc(mb.fipeAluguel && mb.fipeAluguel.m2)}/m²·mês</div></div>`;
+        h += `</div>${enr.tendencia ? `<div class="px-note">Tendência do bairro: ${esc(String(enr.tendencia).replace(/\*\*/g, ''))}</div>` : ''}</div>`;
+      }
+
+      // mercado
+      h += `<div class="px-sec"><h3>Anexo I — pesquisa de mercado <span class="n">${mk.n > 0 ? `${mk.n} anúncio(s) · ${esc(mk.grau)}` : 'sem amostra'}</span></h3>`;
+      if (mk.n > 0) {
+        const linhas = [...(mk.casas || []).slice(0, 8).map((c) => ({ ...c, t: 'casa' })), ...(mk.lotes || []).slice(0, 6).map((l) => ({ ...l, t: 'lote' }))];
+        const totalAn = (mk.casas || []).length + (mk.lotes || []).length;
+        h += `<table class="px-tbl"><thead><tr><th>#</th><th>Tipo</th><th class="r">Área</th><th class="r">Preço pedido</th><th class="r">R$/m²</th><th>Fonte</th></tr></thead><tbody>`;
+        linhas.forEach((c, k) => { h += `<tr><td>${k + 1}</td><td>${c.t}</td><td class="r">${c.area ? numx(c.area) + ' m²' : '—'}</td><td class="r"><b>${brlx(c.preco)}</b></td><td class="r">${c.precoM2 ? brlx(Math.round(c.precoM2)) : (c.area && c.preco ? brlx(Math.round(c.preco / c.area)) : '—')}</td><td>${c.url ? `<a href="${esc(c.url)}" target="_blank" rel="noopener">${esc(c.fonte || 'abrir')}</a>` : esc(c.fonte || '—')}</td></tr>`; });
+        h += `</tbody></table>${totalAn > linhas.length ? `<div class="px-note">+ ${totalAn - linhas.length} anúncio(s) no PDF.</div>` : ''}`;
+      } else {
+        h += `<div class="px-aviso">Nenhum anúncio encontrado no bairro nesta consulta — as premissas vieram das bases de referência (PGV/EBM). Confirme com 2 ou 3 imóveis à venda antes de fechar negócio.</div>`;
+      }
+      h += `</div>`;
+
+      h += `<details class="px-more" style="margin-top:18px"><summary>Limitações e validade</summary><div class="in"><ul class="px-list">
+        <li>Não houve vistoria presencial — padrão e conservação ${r.leituraFotos ? 'foram avaliados pelas fotografias fornecidas' : 'não foram avaliados (sem fotos)'}.</li>
+        <li>Não houve medição no local; as áreas são ${m.construcaoAverbada ? 'as constantes da matrícula' : 'as informadas — a matrícula não traz área construída'}.</li>
+        <li>Não foram examinadas instalações hidráulicas, elétricas, estruturais nem vícios ocultos.</li>
+        <li>Parecer técnico de valor por amostragem, emitido por corretor inscrito no CRECI. Não é laudo NBR 14.653 nem substitui laudo de engenheiro/arquiteto com ART/RRT ou avaliação com CNAI. Validade recomendada: 180 dias.</li></ul></div></details>`;
+      return h;
+    }
+    function showParecerMatricula(r) {
+      usarResultado();
+      document.getElementById('result-tag').textContent = '✓ concluído';
+      const div = document.createElement('div');
+      div.className = 'px';
+      div.innerHTML = renderParecerMatricula(r);
+      const body = document.getElementById('result-body');
+      body.innerHTML = '';
+      body.appendChild(div);
+    }
     function mostrarAcoesPdfMatricula() {
       const laudo = document.querySelector('#result-body .laudo');
       if (!laudo) return;
