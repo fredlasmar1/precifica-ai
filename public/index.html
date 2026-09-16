@@ -978,6 +978,12 @@
       <!-- Terrenos / Lotes -->
       <div class="pane" id="pane-terreno">
         <form onsubmit="analisarTerreno(event)">
+          <div class="field full">
+            <label>Fotos do lote e medição do Google <span class="opt">(opcional — foto da rua, satélite ou a tela "Medir área"; a IA lê e preenche)</span></label>
+            <input id="t-fotos" type="file" accept="image/*" multiple onchange="tFotos()" />
+            <div class="mt-info" id="t-fotos-info"></div>
+            <div id="t-achados" style="margin-top:8px"></div>
+          </div>
           <div class="row">
             <div class="field">
               <label>Bairro</label>
@@ -2462,6 +2468,38 @@
 
     // ── Terrenos / Lotes ──
     function t_zonaInfo() { /* placeholder p/ futura dica de CA por zona */ }
+
+    // ── Terreno: fotos + medição do Google → a IA lê, o dono confere ──
+    let tLeitura = null, tFotosData = [];
+    async function tFotos() {
+      const input = document.getElementById('t-fotos'), info = document.getElementById('t-fotos-info'), box = document.getElementById('t-achados');
+      const files = Array.from(input.files || []).slice(0, 10);
+      if (!files.length) return;
+      tLeitura = null; box.innerHTML = '';
+      info.textContent = 'preparando…';
+      try {
+        tFotosData = [];
+        for (const f of files) tFotosData.push(await mtEncolher(f, 1600, 0.85));
+        info.textContent = `Lendo ${tFotosData.length} imagem(ns)…`;
+        const res = await fetch('/api/terreno/ler', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fotos: tFotosData }) });
+        const data = await res.json();
+        if (data.error) { info.textContent = data.error; return; }
+        tLeitura = data.leitura || null;
+        const L = tLeitura || {};
+        const areaEl = document.getElementById('t-area');
+        if (L.areaGoogle > 0 && !(Number(areaEl.value) > 0)) areaEl.value = Math.round(L.areaGoogle);
+        info.textContent = `${tFotosData.length} imagem(ns) lidas${L.areaGoogle ? ` · área do Google: ${Math.round(L.areaGoogle)} m²${Number(areaEl.value) === Math.round(L.areaGoogle) ? ' (preenchida)' : ''}` : ''}. Confira e ajuste antes de avaliar.`;
+        const car = [L.esquina === true ? 'esquina' : null, L.topografia, L.formato ? `formato ${L.formato}` : null, L.murado === true ? 'murado' : null, L.pavimentacao ? `rua de ${L.pavimentacao}` : null, L.entorno ? `entorno ${L.entorno}` : null].filter(Boolean);
+        let h = '';
+        if (car.length) h += `<div class="mt-achado compact mt-bom"><details open><summary>🟢 O que a IA viu: ${car.join(' · ')}</summary><div class="tx">${(L.pontosFortes || []).join(' · ') || '—'}</div></details></div>`;
+        if (L.edificacao) h += `<div class="mt-achado compact mt-medio"><details open><summary>🟡 Construção sobre o lote</summary><div class="tx">${L.edificacao}</div></details></div>`;
+        (L.riscos || []).forEach((r) => { h += `<div class="mt-achado compact mt-alto"><details open><summary>🔴 Risco: ${r}</summary><div class="tx">Entra como desconto no valor.</div></details></div>`; });
+        const aj = (L.ajustes || {}).itens || [];
+        if (aj.length) h += `<div class="mt-achado compact mt-medio"><details><summary>📐 Ajustes que entram na conta: ${(L.ajustes.total > 0 ? '+' : '') + Math.round(L.ajustes.total * 100)}%</summary><div class="tx">${aj.map((a) => `${a.pct > 0 ? '+' : ''}${Math.round(a.pct * 100)}% — ${a.motivo}`).join('<br>')}</div></details></div>`;
+        (L.avisos || []).slice(0, 2).forEach((x) => { h += `<div class="mt-info">${x}</div>`; });
+        box.innerHTML = h;
+      } catch (e) { info.textContent = 'Não consegui ler as imagens. Tente novamente.'; }
+    }
     async function analisarTerreno(e) {
       e.preventDefault();
       if (busy) return;
@@ -2475,7 +2513,8 @@
         padrao: document.getElementById('t-padrao').value,
         areaUnidade: document.getElementById('t-unidade').value,
         prazoMeses: document.getElementById('t-prazo').value,
-        valorPedido: document.getElementById('t-pedido').value
+        valorPedido: document.getElementById('t-pedido').value,
+        leitura: tLeitura || undefined
       };
       if (!payload.bairro || !(Number(payload.area) > 0)) {
         showError('Informe o *bairro* e a *área do terreno* (m²).');

@@ -43,6 +43,74 @@ const PRAZO_PADRAO = 24;          // meses (obra + vendas) quando não informado
  * Estudo de viabilidade de um terreno/lote.
  * input: { cidade, bairro, endereco, area, zona, ca, to, padrao, areaUnidade, valorPedido }
  */
+
+// ─────────────────────────────────────────────────────────────────────
+// LEITURA DE FOTOS E MEDIÇÃO DO GOOGLE (visão) — a IA descreve, o código ajusta
+// ─────────────────────────────────────────────────────────────────────
+// O dono manda a foto da rua, a vista de satélite e/ou a captura do
+// "Medir área" do Google Maps. A IA transcreve o que vê (área do polígono,
+// esquina, aclive, muro, construção em cima); NENHUM valor sai dela — os
+// ajustes de preço são regra de código, com linha própria no laudo.
+
+const PROMPT_FOTOS_TERRENO = `Você é um avaliador imobiliário descrevendo um TERRENO/LOTE a partir de imagens: fotos da rua, vista de satélite e/ou capturas de tela do "Medir distância/área" do Google Maps.
+
+REGRAS:
+- Descreva SOMENTE o que está nas imagens. Nunca invente medida, área ou característica.
+- Se houver uma captura do Google Maps com "Área: X m²" ou "Perímetro: Y m", transcreva os números EXATAMENTE em "areaGoogle"/"perimetroGoogle". Se não houver, null.
+- Se a captura mostra o polígono e a escala, estime "frenteEstimada" (metros na rua) só se for possível ler; senão null.
+- "esquina": true só se o lote claramente faz esquina com duas ruas.
+- "topografia": "plano", "aclive" (sobe da rua), "declive" (desce da rua) ou null se não dá para ver.
+- "edificacao": descreva construção existente sobre o lote (casa, barracão, ruína) ou null se vazio.
+- "riscos": rede de alta tensão, córrego/APP, encosta, lixo, ocupação — só se visível.
+
+Responda SOMENTE com JSON válido:
+{
+  "areaGoogle": number|null, "perimetroGoogle": number|null, "frenteEstimada": number|null,
+  "formato": "regular|irregular|null", "esquina": true|false|null, "topografia": "plano|aclive|declive|null",
+  "murado": true|false|null, "calcada": true|false|null, "pavimentacao": "asfalto|bloquete|terra|null",
+  "edificacao": "string|null", "vegetacao": "limpo|mato|arvores|null",
+  "entorno": "residencial|comercial|misto|industrial|rural|null", "padraoEntorno": "popular|medio|alto|null",
+  "riscos": ["string"], "pontosFortes": ["string"], "pontosAtencao": ["string"], "avisos": ["string"]
+}`;
+
+function parseJSON(bruto) {
+  let t = String(bruto || '').trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+  const i = t.indexOf('{'), f = t.lastIndexOf('}');
+  if (i >= 0 && f > i) t = t.slice(i, f + 1);
+  return JSON.parse(t);
+}
+
+async function lerFotosTerreno(fotos = []) {
+  if (!fotos.length) return null;
+  const content = [{ type: 'text', text: PROMPT_FOTOS_TERRENO }];
+  fotos.slice(0, 10).forEach((url) => content.push({ type: 'image_url', image_url: { url, detail: 'high' } }));
+  const r = await completarLLM({
+    forte: true, maxTokens: 1500, effort: 'low',
+    messages: [
+      { role: 'system', content: 'Você descreve terrenos a partir de imagens com honestidade técnica. Não inventa o que não está na imagem. Responda SOMENTE com JSON válido, sem markdown.' },
+      { role: 'user', content }
+    ]
+  });
+  const d = parseJSON(r);
+  d.ajustes = ajustesPorLeitura(d);
+  return d;
+}
+
+/** Fatores que o mercado cobra ou paga — regra de código, não palpite de IA. */
+function ajustesPorLeitura(l = {}) {
+  const a = [];
+  if (l.esquina === true) a.push({ motivo: 'Lote de esquina (duas testadas, uso comercial possível)', pct: +0.08 });
+  if (l.topografia === 'aclive') a.push({ motivo: 'Aclive em relação à rua (contenção e movimentação de terra)', pct: -0.08 });
+  if (l.topografia === 'declive') a.push({ motivo: 'Declive em relação à rua (fundação e drenagem mais caras)', pct: -0.12 });
+  if (l.formato === 'irregular') a.push({ motivo: 'Formato irregular (aproveitamento menor do projeto)', pct: -0.05 });
+  if (l.edificacao) a.push({ motivo: `Construção existente a demolir/aproveitar: ${l.edificacao}`, pct: -0.04 });
+  if (l.pavimentacao === 'terra') a.push({ motivo: 'Rua sem pavimentação', pct: -0.06 });
+  if ((l.riscos || []).some((r) => /alta tens|córrego|corrego|APP|encosta|alag/i.test(r))) a.push({ motivo: `Risco visível: ${(l.riscos || []).join('; ')}`, pct: -0.10 });
+  if (l.murado === true) a.push({ motivo: 'Lote murado', pct: +0.02 });
+  const total = Math.max(-0.30, Math.min(0.15, a.reduce((s, x) => s + x.pct, 0)));
+  return { itens: a, total: Math.round(total * 100) / 100 };
+}
+
 async function analisarTerreno(input = {}) {
   const cidade = String(input.cidade || 'Anápolis').trim();
   const bairro = String(input.bairro || '').trim();
@@ -67,6 +135,12 @@ async function analisarTerreno(input = {}) {
     valorTerreno = Math.round(lote.m2 * area);
     fontesPreco = [lote.fonte];
   }
+  // Leitura de fotos/medição (se veio): ajusta o valor de mercado com linha própria.
+  const leitura = input.leitura && typeof input.leitura === 'object' ? input.leitura : null;
+  const ajustes = leitura ? (leitura.ajustes || ajustesPorLeitura(leitura)) : null;
+  const valorTerrenoBase = valorTerreno;
+  if (ajustes && ajustes.total) valorTerreno = Math.round(valorTerreno * (1 + ajustes.total) / 1000) * 1000;
+
   const valorPedido = Number(input.valorPedido) > 0 ? Number(input.valorPedido) : null;
   // Para o estudo do incorporador, o custo do terreno é o que ele PAGA: o pedido (se informado) ou o de mercado.
   const custoTerreno = valorPedido || valorTerreno;
@@ -113,7 +187,8 @@ async function analisarTerreno(input = {}) {
 
   const resultado = {
     cidade, bairro, endereco, area,
-    valorTerreno, precoM2Terreno, valorPedido, custoTerreno, confianca, fontesPreco,
+    valorTerreno, valorTerrenoBase, precoM2Terreno, valorPedido, custoTerreno, confianca, fontesPreco,
+    leitura, ajustes,
     zonaKey, zonaLabel: zona.label, gabarito: zona.gabarito, ca, to,
     areaConstruivel, areaProjecao, areaPrivativa,
     precoVendaM2, precoVendaRealizavel, fatorRealizacao: FATOR_REALIZACAO,
@@ -154,10 +229,29 @@ function formatarTerreno(r) {
   if (r.parecer) t += `💬 *Parecer:*\n${r.parecer}\n\n`;
 
   t += `📐 *Valor do terreno (mercado):*\n`;
-  t += `• ${m(r.valorTerreno)} (${m(r.precoM2Terreno)}/m²) — confiança ${r.confianca}\n`;
+  if (r.ajustes && r.ajustes.itens && r.ajustes.itens.length) {
+    t += `• Pela amostra do bairro: ${m(r.valorTerrenoBase)} (${m(r.precoM2Terreno)}/m²) — confiança ${r.confianca}\n`;
+    r.ajustes.itens.forEach((a) => { t += `• ${a.pct > 0 ? '+' : ''}${Math.round(a.pct * 100)}% — ${a.motivo}\n`; });
+    t += `• *Ajustado pelo que as fotos mostram: ${m(r.valorTerreno)}* (${r.ajustes.total > 0 ? '+' : ''}${Math.round(r.ajustes.total * 100)}%)\n`;
+  } else {
+    t += `• ${m(r.valorTerreno)} (${m(r.precoM2Terreno)}/m²) — confiança ${r.confianca}\n`;
+  }
   if (r.valorPedido) t += `• Pedido do vendedor: *${m(r.valorPedido)}* (usado no estudo)\n`;
   t += `\n`;
 
+  const L = r.leitura;
+  if (L) {
+    t += `📷 *O que as fotos e a medição mostram:*\n`;
+    if (L.areaGoogle) t += `• Área medida no Google: ${n(L.areaGoogle)} m²${L.perimetroGoogle ? ` · perímetro ${n(L.perimetroGoogle)} m` : ''}${Math.abs(L.areaGoogle - r.area) / r.area > 0.05 ? ` — ⚠️ difere ${Math.round(Math.abs(L.areaGoogle - r.area) / r.area * 100)}% da área informada (${n(r.area)} m²)` : ' — bate com a área informada'}\n`;
+    if (L.frenteEstimada) t += `• Frente estimada: ${n(L.frenteEstimada)} m\n`;
+    const car = [L.esquina === true ? 'esquina' : null, L.topografia, L.formato ? `formato ${L.formato}` : null, L.murado === true ? 'murado' : L.murado === false ? 'sem muro' : null, L.pavimentacao ? `rua de ${L.pavimentacao}` : null, L.vegetacao, L.entorno ? `entorno ${L.entorno}${L.padraoEntorno ? ' ' + L.padraoEntorno : ''}` : null].filter(Boolean);
+    if (car.length) t += `• Características: ${car.join(' · ')}\n`;
+    if (L.edificacao) t += `• Construção sobre o lote: ${L.edificacao}\n`;
+    (L.riscos || []).forEach((x) => { t += `• 🔴 Risco: ${x}\n`; });
+    (L.pontosAtencao || []).slice(0, 4).forEach((x) => { t += `• 🟡 ${x}\n`; });
+    (L.avisos || []).slice(0, 2).forEach((x) => { t += `   – _${x}_\n`; });
+    t += `\n`;
+  }
   t += `🏗️ *Potencial construtivo:*\n`;
   t += `• Zona: ${r.zonaLabel} (${r.gabarito})\n`;
   t += `• Coef. de aproveitamento: *${r.ca}*${r.caEstimado ? ' (estimado)' : ''} → constrói até *${n(r.areaConstruivel)} m²*\n`;
@@ -195,4 +289,4 @@ function formatarTerreno(r) {
   return t;
 }
 
-module.exports = { analisarTerreno, formatarTerreno, ZONAS, CUB };
+module.exports = { analisarTerreno, formatarTerreno, lerFotosTerreno, ajustesPorLeitura, ZONAS, CUB };

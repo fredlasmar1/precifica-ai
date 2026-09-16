@@ -1001,6 +1001,24 @@ router.get('/fipe', (req, res) => {
 /**
  * POST /api/terreno — Estudo de viabilidade de terreno/lote (potencial construtivo).
  */
+/**
+ * POST /api/terreno/ler — a IA descreve fotos do lote e capturas do "Medir área"
+ * do Google. Não avalia: devolve a leitura para o usuário conferir na tela.
+ * Corpo: { fotos: [dataURL] }
+ */
+router.post('/terreno/ler', async (req, res) => {
+  const fotos = Array.isArray((req.body || {}).fotos) ? req.body.fotos : [];
+  if (!fotos.length) return res.status(400).json({ error: 'Envie ao menos uma foto ou captura do Google.' });
+  try {
+    const { lerFotosTerreno } = require('../data/terreno');
+    const leitura = await lerFotosTerreno(fotos);
+    return res.json({ type: 'terreno-leitura', leitura });
+  } catch (err) {
+    console.error('[Terreno API] Erro na leitura:', err);
+    return res.status(500).json({ error: `⚠️ Não consegui ler as imagens: ${err.message}` });
+  }
+});
+
 router.post('/terreno', async (req, res) => {
   const b = req.body || {};
   if (!b.bairro || !(Number(b.area) > 0)) {
