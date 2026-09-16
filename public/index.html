@@ -410,6 +410,92 @@
       .chat-thread { height: 340px; }
       .brand img { height: 40px; }
     }
+
+    /* ======================================================================
+       DESIGN SYSTEM v2 — uma escala só: botão, campo, card, navegação.
+       Sobrescreve as regras acima; as classes antigas continuam válidas.
+       ====================================================================== */
+    :root { --r-sm: 10px; --r-md: 14px; --r-lg: 18px; --h-ctl: 42px;
+      --shadow: 0 1px 2px rgba(16,23,41,.04), 0 8px 24px -12px rgba(16,23,41,.12);
+      --bg: #f4f6fb; }
+    body { background: var(--bg); }
+    /* nav */
+    .nav { padding: 10px 28px; min-height: 60px; background: rgba(255,255,255,.9); }
+    .brand .titles h1 { font-size: 18px; }
+    .brand .titles .by { margin-top: 2px; font-size: 11.5px; }
+    .nav .pill { font-size: 12px; padding: 6px 12px; background: #fff; border-color: var(--line); color: var(--muted); }
+    /* cabeçalho de página (ex-hero) */
+    .hero { padding: 26px 28px 4px; max-width: 1400px; }
+    .hero h2 { font-size: 24px; font-weight: 800; letter-spacing: -.6px; line-height: 1.1; }
+    .hero p { margin-top: 5px; font-size: 13.5px; max-width: 720px; }
+    /* grade: trilho | entrada | resultado */
+    .wrap { max-width: 1400px; padding: 18px 28px 48px; gap: 20px;
+      grid-template-columns: 196px minmax(380px, 440px) 1fr; }
+    .wrap:not(.has-result) { max-width: 1400px; grid-template-columns: 196px 1fr; }
+    .side { position: sticky; top: 74px; }
+    .tabs { display: flex; flex-direction: column; gap: 2px; padding: 6px; background: transparent; border: 0; }
+    .tabs-grp { font-size: 10.5px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--muted2); padding: 12px 10px 4px; }
+    .tabs-grp:first-child { padding-top: 2px; }
+    .tab { justify-content: flex-start; gap: 10px; padding: 9px 10px; border-radius: var(--r-sm); border: 1px solid transparent;
+      background: transparent; color: var(--ink); font-weight: 600; font-size: 13.5px; box-shadow: none; }
+    .tab svg { width: 17px; height: 17px; color: var(--muted); stroke-width: 1.9; }
+    .tab:hover { background: #fff; border-color: var(--line); color: var(--ink); }
+    .tab.active { background: var(--blue); color: #fff; border-color: var(--blue); box-shadow: 0 6px 16px -8px rgba(1,62,248,.6); }
+    .tab.active svg { color: #fff; }
+    /* cards */
+    .card, .result { border-radius: var(--r-lg); box-shadow: var(--shadow); }
+    .result-head { padding: 14px 22px; background: #fff; }
+    .result-head h2 { font-size: 14.5px; }
+    .result-head .tag { font-size: 11px; }
+    .pane { padding: 18px 18px 6px; }
+    .wrap:not(.has-result) .pane { padding: 22px 22px 8px; }
+    /* campos */
+    label { font-size: 12.5px; margin-bottom: 6px; }
+    input, select, textarea { min-height: var(--h-ctl); padding: 9px 12px; border-radius: var(--r-sm); font-size: 14px; border-width: 1px; background: #fff; }
+    input[type=checkbox] { min-height: 0; width: auto; vertical-align: -2px; margin-right: 6px; accent-color: var(--blue); }
+    .field { margin-bottom: 13px; }
+    .row { gap: 12px; }
+    /* ── BOTÃO: uma peça só ── */
+    .btn, .btn-primary, .btn-pdf, .btn-search, .bts-sub-btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+      height: var(--h-ctl); padding: 0 16px; border-radius: var(--r-sm);
+      font: 700 13.5px/1 'Inter', inherit; letter-spacing: -.1px; cursor: pointer; white-space: nowrap;
+      border: 1px solid transparent; transition: background .15s, border-color .15s, box-shadow .15s, transform .05s;
+      box-shadow: none; text-decoration: none; margin: 0;
+    }
+    .btn svg, .btn-primary svg, .btn-pdf svg { width: 16px; height: 16px; }
+    .btn-primary, .btn.btn-pri, .btn-pdf, .btn-search { background: var(--blue); color: #fff; box-shadow: 0 6px 14px -8px rgba(1,62,248,.6); }
+    .btn-primary:hover, .btn.btn-pri:hover, .btn-pdf:hover, .btn-search:hover { background: var(--blue-d); }
+    .btn-primary { width: 100%; margin-top: 6px; height: 46px; font-size: 14.5px; }
+    .btn.btn-sec, .btn-pdf.alt, .bts-sub-btn { background: #fff; color: var(--ink); border-color: var(--line2); }
+    .btn.btn-sec:hover, .btn-pdf.alt:hover, .bts-sub-btn:hover { border-color: var(--blue); color: var(--blue); background: var(--blue-tint); }
+    .bts-sub-btn.active { background: var(--blue); color: #fff; border-color: var(--blue); }
+    .btn.btn-ghost { background: transparent; color: var(--muted); }
+    .btn.btn-ghost:hover { background: #fff; border-color: var(--line); color: var(--ink); }
+    .btn.btn-ghost.danger:hover { color: var(--danger); border-color: #f3c1c1; }
+    .btn-pdf.rep { background: #0e9f6e; box-shadow: 0 6px 14px -8px rgba(14,159,110,.6); }
+    .btn-sm, .btn.btn-sm { height: 34px; padding: 0 12px; font-size: 12.5px; }
+    .btn:active, .btn-primary:active, .btn-pdf:active { transform: translateY(1px); }
+    .btn:disabled, .btn-primary:disabled, .btn-pdf:disabled, .btn-search:disabled { background: var(--line2); color: var(--muted); box-shadow: none; cursor: not-allowed; border-color: transparent; }
+    .pdf-bar { gap: 8px; margin-bottom: 14px; }
+    /* histórico */
+    .hist-row { border-radius: var(--r-md); }
+    /* parecer da matrícula */
+    .px-hero { border-radius: var(--r-lg); }
+    .px-top .btn-pdf { height: 38px; }
+    .foot { padding: 18px; font-size: 11.5px; }
+    /* responsivo */
+    @media (max-width: 1180px) {
+      .wrap, .wrap:not(.has-result) { grid-template-columns: 1fr; }
+      .side { position: static; }
+      .tabs { flex-direction: row; overflow-x: auto; gap: 6px; padding: 2px 0 8px; scrollbar-width: none; }
+      .tabs::-webkit-scrollbar { display: none; }
+      .tabs-grp { display: none; }
+      .tab { flex: 0 0 auto; background: #fff; border-color: var(--line); padding: 8px 12px; }
+    }
+    @media (min-width: 1181px) and (max-width: 1400px) {
+      .wrap.has-result { grid-template-columns: 180px minmax(360px, 400px) 1fr; }
+    }
   </style>
 </head>
 <body>
@@ -427,19 +513,15 @@
 
   <!-- HERO -->
   <section class="hero">
-    <h2>Avalie qualquer imóvel em segundos com <span class="accent">dados reais de mercado</span>.</h2>
-    <p>Preencha o formulário ou converse com o agente. Cruzamos anúncios reais, dados do IBGE e mapeamento de bairro para entregar uma faixa de preço fundamentada.</p>
-    <div class="trust">
-      <span class="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 21l-4.35-4.35"/><circle cx="11" cy="11" r="7"/></svg> Pesquisa de mercado ao vivo</span>
-      <span class="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21V7l8-4v18M19 21V11l-6-4"/></svg> Base IBGE + perfil do bairro</span>
-      <span class="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3 7h7l-5.5 4.5L18 21l-6-4-6 4 1.5-7.5L2 9h7z"/></svg> Faixa, liquidez e comparativos</span>
-    </div>
+    <h2 id="page-h">Avaliar imóvel</h2>
+    <p id="page-p">Anúncios reais, IBGE e base do bairro cruzados para uma faixa de preço fundamentada.</p>
   </section>
 
   <div class="wrap">
     <!-- ESQUERDA: entrada -->
-    <div class="card">
+    <aside class="side">
       <div class="tabs">
+        <div class="tabs-grp">Avaliar</div>
         <button class="tab active" id="tab-form" onclick="switchTab('form')"><svg viewBox="0 0 24 24"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 13l2 2 4-4"/></svg>Avaliar</button>
         <button class="tab" id="tab-matricula" onclick="switchTab('matricula')"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h5"/></svg>Matrícula</button>
         <button class="tab" id="tab-comercial" onclick="switchTab('comercial')"><svg viewBox="0 0 24 24"><path d="M4 9V20h16V9"/><path d="M2 9l2-5h16l2 5a3 3 0 0 1-6 0 3 3 0 0 1-6 0 3 3 0 0 1-6 0z"/><path d="M9 20v-5h6v5"/></svg>Comercial</button>
@@ -447,12 +529,15 @@
         <button class="tab" id="tab-terreno" onclick="switchTab('terreno')"><svg viewBox="0 0 24 24"><path d="M3 20h18"/><path d="M5 20V9l7-5 7 5v11"/><path d="M9 20v-5h6v5"/></svg>Terrenos</button>
         <button class="tab" id="tab-bts" onclick="switchTab('bts')"><svg viewBox="0 0 24 24"><rect x="3" y="8" width="8" height="12" rx="1"/><rect x="13" y="4" width="8" height="16" rx="1"/><path d="M6 12h2M6 16h2M16 8h2M16 12h2M16 16h2"/><path d="M2 20h20"/></svg>BTS</button>
         <button class="tab" id="tab-fazenda" onclick="switchTab('fazenda')"><svg viewBox="0 0 24 24"><path d="M3 21h18"/><path d="M5 21v-8l4-3 4 3v8"/><path d="M13 21v-5h4v5"/><path d="M17 10V5l3 2v4"/></svg>Fazendas</button>
-        <button class="tab" id="tab-fipe" onclick="switchTab('fipe')"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><rect x="7" y="11" width="3" height="7" rx="1"/><rect x="12" y="7" width="3" height="11" rx="1"/><rect x="17" y="4" width="3" height="14" rx="1"/></svg>FIPE</button>
         <button class="tab" id="tab-empresa" onclick="switchTab('empresa')"><svg viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M3 13h18"/></svg>Empresa</button>
+        <div class="tabs-grp">Ferramentas</div>
+        <button class="tab" id="tab-fipe" onclick="switchTab('fipe')"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><rect x="7" y="11" width="3" height="7" rx="1"/><rect x="12" y="7" width="3" height="11" rx="1"/><rect x="17" y="4" width="3" height="14" rx="1"/></svg>FIPE</button>
         <button class="tab" id="tab-decisao" onclick="switchTab('decisao')"><svg viewBox="0 0 24 24"><path d="M12 3v18"/><path d="M5 7h14"/><path d="M5 7l-2.5 6a3.5 3.5 0 0 0 5 0z"/><path d="M19 7l-2.5 6a3.5 3.5 0 0 0 5 0z"/><path d="M8 21h8"/></svg>Alugar/Vender</button>
-        <button class="tab" id="tab-historico" onclick="switchTab('historico')"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Histórico</button>
         <button class="tab" id="tab-chat" onclick="switchTab('chat')"><svg viewBox="0 0 24 24"><path d="M21 11.5a8.38 8.38 0 0 1-8.5 8.5 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 17 0z"/></svg>Conversar</button>
+        <button class="tab" id="tab-historico" onclick="switchTab('historico')"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Histórico</button>
       </div>
+    </aside>
+    <div class="card">
 
       <!-- Formulário -->
       <div class="pane active" id="pane-form">
@@ -1376,8 +1461,8 @@
         <div style="display:flex; align-items:center; justify-content:space-between; padding: 4px 2px 12px;">
           <div style="font-size:13px; font-weight:700; color:var(--ink);">📁 Avaliações salvas</div>
           <div style="display:flex; gap:8px;">
-            <button type="button" class="btn-search" style="padding:7px 12px; font-size:12.5px;" onclick="carregarHistorico()">🔄 Atualizar</button>
-            <button type="button" class="btn-search" style="padding:7px 12px; font-size:12.5px; color:#c0392b; border-color:#e5b3ab;" onclick="limparHistorico()">🗑️ Limpar</button>
+            <button type="button" class="btn btn-sec btn-sm" onclick="carregarHistorico()">Atualizar</button>
+            <button type="button" class="btn btn-ghost btn-sm danger" onclick="limparHistorico()">Limpar</button>
           </div>
         </div>
         <div id="hist-folders" style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:12px;"></div>
@@ -1578,6 +1663,24 @@
         document.getElementById('tab-' + t).classList.toggle('active', which === t);
         document.getElementById('pane-' + t).classList.toggle('active', which === t);
       }
+      const PAGE = {
+        form: ['Avaliar imóvel', 'Anúncios reais, IBGE e base do bairro cruzados para uma faixa de preço fundamentada.'],
+        matricula: ['Matrícula', 'A certidão e as fotos entram, a IA transcreve, você confere — e sai o parecer com o que falta para vender.'],
+        comercial: ['Ponto comercial', 'Fluxo, concorrência e perfil do entorno para decidir onde instalar.'],
+        predio: ['Prédios', 'Ficha do edifício com as unidades à venda no mesmo prédio.'],
+        terreno: ['Terrenos', 'Viabilidade: o que pode ser construído e quanto vale o potencial.'],
+        bts: ['Build to Suit', 'Estudo de BTS: aluguel, retorno e prazo para o investidor.'],
+        fazenda: ['Fazendas', 'Avaliação rural por aptidão, benfeitorias e mercado regional.'],
+        fipe: ['FIPE Anápolis', 'Índice de venda e aluguel por m², bairro a bairro.'],
+        empresa: ['Empresas', 'Valuation para trespasse por comparação com anúncios.'],
+        decisao: ['Alugar × Vender', 'A conta de alugar, vender ou investir, lado a lado.'],
+        historico: ['Histórico', 'Tudo o que já foi avaliado — abre atualizado com o motor atual.'],
+        chat: ['Conversar', 'Descreva o imóvel em linguagem natural e o agente monta o laudo.']
+      };
+      const pg = PAGE[which] || PAGE.form;
+      const ph = document.getElementById('page-h'), pp = document.getElementById('page-p');
+      if (ph) ph.textContent = pg[0];
+      if (pp) pp.textContent = pg[1];
       const head = document.getElementById('result-title');
       if (head) head.textContent = which === 'matricula' ? 'Parecer por Amostragem — Matrícula'
         : which === 'comercial' ? 'Análise de Ponto Comercial'
