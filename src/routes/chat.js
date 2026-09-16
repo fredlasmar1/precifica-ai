@@ -1062,7 +1062,11 @@ router.post('/matricula/avaliar', async (req, res) => {
     return res.status(400).json({ error: 'Informe a área do terreno e/ou a área construída.' });
   }
   try {
-    const { pesquisarMercado, metricasBens, avaliar, diligencias, formatar } = require('../data/matricula');
+    const { pesquisarMercado, metricasBens, avaliar, diligencias, formatar, alertasRegistrais } = require('../data/matricula');
+    // Os alertas são regra de código sobre o documento CONFERIDO: recalcular
+    // aqui, e não confiar no que veio da leitura (que pode ser de antes de
+    // uma correção na tela — ou de antes de um deploy).
+    m.alertas = alertasRegistrais(m);
 
     let mercado = { n: 0, casas: [], lotes: [], grau: 'Sem amostra' };
     if (p.pesquisarMercado !== false && p.bairro) {
