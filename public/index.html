@@ -568,6 +568,12 @@
       <!-- Formulário -->
       <div class="pane active" id="pane-form">
         <form onsubmit="avaliarForm(event)">
+          <div class="field full">
+            <label>Fotos do imóvel <span class="opt">(opcional — fachada, ambientes, ou a tela "Medir área" do Google se for terreno; a IA lê e preenche)</span></label>
+            <input id="f-fotos" type="file" accept="image/*" multiple onchange="fFotos()" />
+            <div class="mt-info" id="f-fotos-info"></div>
+            <div id="f-achados" style="margin-top:8px"></div>
+          </div>
           <div class="row">
             <div class="field">
               <label>Tipo do imóvel</label>
@@ -1887,7 +1893,8 @@
         quartos: document.getElementById('f-quartos').value,
         vagas: document.getElementById('f-vagas').value,
         diferenciais: document.getElementById('f-diferenciais').value.trim(),
-        valorPedido: document.getElementById('f-pedido').value
+        valorPedido: document.getElementById('f-pedido').value,
+        leituraFotos: fLeitura || undefined
       };
       if (!payload.bairro || !payload.metragem) {
         showError('Preencha pelo menos *bairro* e *metragem*.');
@@ -1990,7 +1997,7 @@
       try {
         const res = await fetch('/api/relatorio', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ...avaliacaoAtual, versao, solicitante })
+          body: JSON.stringify({ ...avaliacaoAtual, versao, solicitante, fotos: fFotosData.slice(0, 4) })
         });
         if (!res.ok) { alert('Não foi possível gerar o PDF. Tente de novo.'); return; }
         const blob = await res.blob();
@@ -2473,6 +2480,51 @@
 
     // ── Terrenos / Lotes ──
     function t_zonaInfo() { /* placeholder p/ futura dica de CA por zona */ }
+
+    // ── Avaliar: fotos do imóvel → a IA lê, preenche, o dono confere ──
+    let fLeitura = null, fFotosData = [];
+    async function fFotos() {
+      const input = document.getElementById('f-fotos'), info = document.getElementById('f-fotos-info'), box = document.getElementById('f-achados');
+      const files = Array.from(input.files || []).slice(0, 12);
+      if (!files.length) return;
+      fLeitura = null; box.innerHTML = '';
+      const tipo = document.getElementById('f-tipo').value;
+      info.textContent = 'preparando…';
+      try {
+        fFotosData = [];
+        for (const f of files) fFotosData.push(await mtEncolher(f, 1400, 0.8));
+        info.textContent = `Lendo ${fFotosData.length} foto(s)…`;
+        const res = await fetch('/api/avaliar/ler-fotos', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tipo, fotos: fFotosData }) });
+        const data = await res.json();
+        if (data.error) { info.textContent = data.error; return; }
+        fLeitura = data.leitura || null;
+        const L = fLeitura || {};
+        const setIfEmpty = (id, v) => { const el = document.getElementById(id); if (el && v != null && v !== '' && !(String(el.value).trim())) el.value = v; };
+        const preenchidos = [];
+        if (data.modo === 'terreno') {
+          if (L.areaGoogle > 0) { setIfEmpty('f-metragem', Math.round(L.areaGoogle)); setIfEmpty('f-arealote', Math.round(L.areaGoogle)); preenchidos.push(`área ${Math.round(L.areaGoogle)} m²`); }
+        } else {
+          if (L.areaConstruidaEstimada > 0) { setIfEmpty('f-metragem', Math.round(L.areaConstruidaEstimada)); preenchidos.push(`área ~${Math.round(L.areaConstruidaEstimada)} m² (estimada)`); }
+          if (L.quartosVisiveis > 0) { setIfEmpty('f-quartos', L.quartosVisiveis); preenchidos.push(`${L.quartosVisiveis} quarto(s)`); }
+          if (L.vagasVisiveis > 0) { setIfEmpty('f-vagas', L.vagasVisiveis); preenchidos.push(`${L.vagasVisiveis} vaga(s)`); }
+          const mapaCons = { novo: 'novo', otimo: 'bom', bom: 'bom', regular: 'regular', ruim: 'reformar' };
+          if (L.conservacao && mapaCons[L.conservacao]) { document.getElementById('f-conservacao').value = mapaCons[L.conservacao]; preenchidos.push(`conservação ${L.conservacao}`); }
+          if ((L.pontosFortes || []).length) { const d = document.getElementById('f-diferenciais'); if (!d.value.trim()) d.value = L.pontosFortes.slice(0, 3).join('; '); }
+        }
+        info.textContent = `${fFotosData.length} foto(s) lidas${preenchidos.length ? ` · preenchi: ${preenchidos.join(', ')}` : ''}. Confira e ajuste antes de avaliar.`;
+        let h = '';
+        const car = data.modo === 'terreno'
+          ? [L.esquina === true ? 'esquina' : null, L.topografia, L.formato ? `formato ${L.formato}` : null, L.murado === true ? 'murado' : null, L.pavimentacao ? `rua de ${L.pavimentacao}` : null, L.entorno ? `entorno ${L.entorno}` : null].filter(Boolean)
+          : [L.padrao ? `padrão ${L.padrao}` : null, L.conservacao ? `conservação ${L.conservacao}` : null, L.idadeAparente, L.pavimentos ? `${L.pavimentos} pavimento(s)` : null].filter(Boolean);
+        if (car.length) h += `<div class="mt-achado compact mt-bom"><details open><summary>🟢 O que a IA viu: ${car.join(' · ')}</summary><div class="tx">${L.padraoJustificativa || (L.pontosFortes || []).join(' · ') || '—'}</div></details></div>`;
+        if (L.edificacao) h += `<div class="mt-achado compact mt-medio"><details open><summary>🟡 Construção sobre o lote</summary><div class="tx">${L.edificacao}</div></details></div>`;
+        if ((L.pontosAtencao || []).length) h += `<div class="mt-achado compact mt-medio"><details><summary>🟡 Pontos de atenção (${L.pontosAtencao.length})</summary><div class="tx">${L.pontosAtencao.join('<br>')}</div></details></div>`;
+        const aj = (L.ajustes || {}).itens || [];
+        if (aj.length) h += `<div class="mt-achado compact mt-medio"><details><summary>📐 Ajustes que entram na conta: ${(L.ajustes.total > 0 ? '+' : '') + Math.round(L.ajustes.total * 100)}%</summary><div class="tx">${aj.map((a) => `${a.pct > 0 ? '+' : ''}${Math.round(a.pct * 100)}% — ${a.motivo}`).join('<br>')}</div></details></div>`;
+        (L.avisos || []).slice(0, 2).forEach((x) => { h += `<div class="mt-info">${x}</div>`; });
+        box.innerHTML = h;
+      } catch (e) { info.textContent = 'Não consegui ler as fotos. Tente novamente.'; }
+    }
 
     // ── Terreno: fotos + medição do Google → a IA lê, o dono confere ──
     let tLeitura = null, tFotosData = [];

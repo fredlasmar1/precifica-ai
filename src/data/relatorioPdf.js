@@ -272,6 +272,28 @@ function gerarRelatorioPdf(dados, resultado, opts = {}) {
         comps.slice(0, 8).forEach((c, i) => sampleRow(i, c));
         y += 8;
       }
+      const F = resultado.leituraFotos;
+      if (F && (F.padrao || F.conservacao || F.areaGoogle || (F.pontosAtencao || []).length)) {
+        band('O QUE AS FOTOS MOSTRAM');
+        const linhas = [];
+        if (F.areaGoogle) linhas.push(`Área medida no Google: ${Number(F.areaGoogle).toLocaleString('pt-BR')} m²${F.perimetroGoogle ? ` · perímetro ${Number(F.perimetroGoogle).toLocaleString('pt-BR')} m` : ''} (traçado em mapa, não medição em campo).`);
+        if (F.padrao) linhas.push(`Padrão ${F.padrao}${F.padraoJustificativa ? ` — ${F.padraoJustificativa}` : ''}.`);
+        if (F.conservacao) linhas.push(`Conservação ${F.conservacao}${F.idadeAparente ? ` · ${F.idadeAparente}` : ''}.`);
+        const car = [F.esquina === true ? 'esquina' : null, F.topografia, F.formato ? `formato ${F.formato}` : null, F.murado === true ? 'murado' : null, F.pavimentacao ? `rua de ${F.pavimentacao}` : null, F.entorno ? `entorno ${F.entorno}${F.padraoEntorno ? ' ' + F.padraoEntorno : ''}` : null].filter(Boolean);
+        if (car.length) linhas.push(`Características: ${car.join(' · ')}.`);
+        if (F.edificacao) linhas.push(`Construção sobre o lote: ${F.edificacao}.`);
+        if ((F.pontosFortes || []).length) linhas.push(`Pontos fortes: ${F.pontosFortes.slice(0, 3).join('; ')}.`);
+        if ((F.pontosAtencao || []).length) linhas.push(`Pontos de atenção: ${F.pontosAtencao.slice(0, 4).join('; ')}.`);
+        if (resultado.ajustesFotos && resultado.ajustesFotos.itens.length) linhas.push(`Ajustes aplicados ao valor: ${resultado.ajustesFotos.itens.map((a) => `${a.pct > 0 ? '+' : ''}${Math.round(a.pct * 100)}% ${a.motivo}`).join('; ')} — de ${brl(resultado.precoSemFotos)} para ${brl(resultado.precoRecomendado)}.`);
+        paragraph(linhas.join(' '));
+        if (opts.fotos && opts.fotos.length) {
+          // miniaturas das fotos (até 4) — o cliente vê do que se está falando
+          ensure(96);
+          const gw = (W - 3 * 8) / 4;
+          opts.fotos.slice(0, 4).forEach((uri, i) => { try { doc.image(Buffer.from(String(uri).split(',')[1] || '', 'base64'), LX + i * (gw + 8), y, { fit: [gw, 84], align: 'center', valign: 'center' }); } catch {} });
+          y += 92;
+        }
+      }
       band('RESUMO');
       paragraph(
         `Pela análise de mercado, o valor sugerido para anúncio é de ${brl(resultado.precoMaximo)}, com faixa de ` +

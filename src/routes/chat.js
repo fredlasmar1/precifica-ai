@@ -143,6 +143,27 @@ router.delete('/chat/:sessionId', (req, res) => {
  * Pula a coleta conversacional do LLM e chama o MESMO motor (calcularPreco)
  * e o MESMO laudo formatado usados pelo chat e pelo Telegram.
  */
+/**
+ * POST /api/avaliar/ler-fotos — a IA descreve as fotos do imóvel (ou a medição
+ * do Google, se for terreno). Não avalia: devolve a leitura para preencher o
+ * formulário e o usuário conferir. Corpo: { tipo, fotos: [dataURL] }
+ */
+router.post('/avaliar/ler-fotos', async (req, res) => {
+  const b = req.body || {};
+  const fotos = Array.isArray(b.fotos) ? b.fotos : [];
+  if (!fotos.length) return res.status(400).json({ error: 'Envie ao menos uma foto.' });
+  try {
+    const ehTerreno = /terreno|lote/i.test(String(b.tipo || ''));
+    const leitura = ehTerreno
+      ? await require('../data/terreno').lerFotosTerreno(fotos)
+      : await require('../data/matricula').lerFotos(fotos);
+    return res.json({ type: 'fotos-leitura', modo: ehTerreno ? 'terreno' : 'imovel', leitura });
+  } catch (err) {
+    console.error('[Avaliar API] Erro na leitura de fotos:', err);
+    return res.status(500).json({ error: `⚠️ Não consegui ler as fotos: ${err.message}` });
+  }
+});
+
 router.post('/avaliar', async (req, res) => {
   const b = req.body || {};
 
@@ -206,6 +227,20 @@ router.post('/avaliar', async (req, res) => {
       } catch (e) { console.warn('[Avaliar] rentabilidade pelo mercado:', e.message); }
     }
 
+    // Leitura das fotos (se veio): vai no resultado (PDF/histórico) e no laudo.
+    if (b.leituraFotos && typeof b.leituraFotos === 'object') {
+      resultado.leituraFotos = b.leituraFotos;
+      // Terreno: os ajustes por regra (esquina, aclive, construção...) mexem na faixa, com linha própria.
+      const aj = b.leituraFotos.ajustes;
+      if (/terreno|lote/i.test(dadosImovel.tipo) && aj && aj.total && resultado.precoRecomendado > 0) {
+        const f = 1 + aj.total;
+        resultado.precoSemFotos = resultado.precoRecomendado;
+        resultado.precoMinimo = Math.round(resultado.precoMinimo * f);
+        resultado.precoRecomendado = Math.round(resultado.precoRecomendado * f);
+        resultado.precoMaximo = Math.round(resultado.precoMaximo * f);
+        resultado.ajustesFotos = aj;
+      }
+    }
     let laudo = gerarLaudo(dadosImovel, resultado);
     if (rOutra && !rOutra.erro && rOutra.precoRecomendado > 0) {
       const fmt = (v) => 'R$ ' + Number(v).toLocaleString('pt-BR');
@@ -1409,11 +1444,11 @@ router.get('/uso', async (req, res) => {
  * Body: { dados, resultado, versao: 'tecnica'|'cliente', solicitante }
  */
 router.post('/relatorio', async (req, res) => {
-  const { dados, resultado, versao, solicitante } = req.body || {};
+  const { dados, resultado, versao, solicitante, fotos } = req.body || {};
   if (!dados || !resultado) return res.status(400).json({ error: 'Faça uma avaliação primeiro.' });
   try {
     const { gerarRelatorioPdf } = require('../data/relatorioPdf');
-    const pdf = await gerarRelatorioPdf(dados, resultado, { versao, solicitante });
+    const pdf = await gerarRelatorioPdf(dados, resultado, { versao, solicitante, fotos: Array.isArray(fotos) ? fotos : null });
     const slug = String(dados.bairro || 'imovel').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-');
     const nome = `parecer-${slug}-${versao === 'cliente' ? 'cliente' : 'tecnico'}.pdf`;
     res.setHeader('Content-Type', 'application/pdf');
@@ -1608,6 +1643,26 @@ if (comparativosEncontrados > 0) {
     ? `🔍 Base do cálculo: ${usados} anúncio(s) de perfil compatível, de ${comparativosEncontrados} coletados\n`
     : `🔍 Comparativos analisados: ${comparativosEncontrados} imóveis\n`;
 }
+
+  const F = resultado.leituraFotos;
+  if (F) {
+    laudo += `📷 *O que as fotos mostram:*\n`;
+    if (F.areaGoogle) laudo += `• Área medida no Google: ${Number(F.areaGoogle).toLocaleString('pt-BR')} m²${F.perimetroGoogle ? ` · perímetro ${Number(F.perimetroGoogle).toLocaleString('pt-BR')} m` : ''}\n`;
+    if (F.padrao) laudo += `• Padrão: ${F.padrao}${F.padraoJustificativa ? ` — ${F.padraoJustificativa}` : ''}\n`;
+    if (F.conservacao) laudo += `• Conservação: ${F.conservacao}${F.idadeAparente ? ` · ${F.idadeAparente}` : ''}\n`;
+    const car = [F.esquina === true ? 'esquina' : null, F.topografia, F.formato ? `formato ${F.formato}` : null, F.murado === true ? 'murado' : null, F.pavimentacao ? `rua de ${F.pavimentacao}` : null, F.entorno ? `entorno ${F.entorno}${F.padraoEntorno ? ' ' + F.padraoEntorno : ''}` : null].filter(Boolean);
+    if (car.length) laudo += `• Características: ${car.join(' · ')}\n`;
+    if (F.edificacao) laudo += `• Construção sobre o lote: ${F.edificacao}\n`;
+    if (F.quartosVisiveis || F.vagasVisiveis) laudo += `• Visível nas fotos: ${[F.quartosVisiveis ? `${F.quartosVisiveis} quarto(s)` : null, F.vagasVisiveis ? `${F.vagasVisiveis} vaga(s)` : null].filter(Boolean).join(', ')}\n`;
+    (F.pontosFortes || []).slice(0, 3).forEach((x) => { laudo += `• 🟢 ${x}\n`; });
+    (F.pontosAtencao || []).slice(0, 4).forEach((x) => { laudo += `• 🟡 ${x}\n`; });
+    if (resultado.ajustesFotos && resultado.ajustesFotos.itens.length) {
+      resultado.ajustesFotos.itens.forEach((a) => { laudo += `• ${a.pct > 0 ? '+' : ''}${Math.round(a.pct * 100)}% no valor — ${a.motivo}\n`; });
+      laudo += `• Valor pela amostra ${formatarReais(resultado.precoSemFotos)} → ajustado pelas fotos *${formatarReais(resultado.precoRecomendado)}* (${resultado.ajustesFotos.total > 0 ? '+' : ''}${Math.round(resultado.ajustesFotos.total * 100)}%)\n`;
+    }
+    (F.avisos || []).slice(0, 2).forEach((x) => { laudo += `   – _${x}_\n`; });
+    laudo += `\n`;
+  }
 
   if (perfilGuru?.infraestrutura) {
     const i = perfilGuru.infraestrutura;
