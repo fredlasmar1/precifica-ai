@@ -1508,7 +1508,8 @@ function gerarMatriculaPdf(r, opts = {}) {
     // ── 14. Diligências ───────────────────────────────────────────────
     band('14. Diligências recomendadas antes de fechar negócio');
     const dg = r.diligencias || {};
-    if ((dg.imovel || []).length) { doc.font('Helvetica-Bold').fontSize(8).fillColor(NAVY).text('Sobre o imóvel', LX, y); y = doc.y + 4; dg.imovel.forEach(bullet); }
+    if ((dg.roteiro || []).length) { ensure(60); doc.font('Helvetica-Bold').fontSize(8).fillColor(NAVY).text('Na ordem — o que destrava o quê', LX, y); y = doc.y + 4; dg.roteiro.forEach(bullet); }
+    if ((dg.imovel || []).length) { ensure(30); doc.font('Helvetica-Bold').fontSize(8).fillColor(NAVY).text('Sobre o imóvel', LX, y); y = doc.y + 4; dg.imovel.forEach(bullet); }
     if ((dg.vendedor || []).length) { ensure(30); doc.font('Helvetica-Bold').fontSize(8).fillColor(NAVY).text('Sobre o vendedor', LX, y); y = doc.y + 4; dg.vendedor.forEach(bullet); }
     if ((dg.contratacao || []).length) { ensure(30); doc.font('Helvetica-Bold').fontSize(8).fillColor(NAVY).text('Sobre a contratação', LX, y); y = doc.y + 4; dg.contratacao.forEach(bullet); }
 

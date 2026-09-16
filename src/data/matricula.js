@@ -211,6 +211,59 @@ function alertasRegistrais(m) {
       texto: 'Não há hipoteca, penhora, alienação fiduciária, usufruto ou indisponibilidade registrada até a data da certidão.'
     });
   }
+  // ── O que a matrícula 8.554 (1979) ensinou: uma página velha diz muito
+  // sobre o passado e nada sobre hoje. Cada regra abaixo é derivada da
+  // DATA e do TEXTO do documento, nunca de palpite.
+  const anoAtual = new Date().getFullYear();
+  const anoDe = (d) => { const mt = String(d || '').match(/(\d{4})/); return mt ? Number(mt[1]) : null; };
+  const anosAtos = (m.atos || []).map((x) => anoDe(x.data)).filter(Boolean);
+  const anoUltimoAto = anosAtos.length ? Math.max(...anosAtos) : anoDe(m.dataAbertura);
+  const anoCertidao = anoDe(m.dataCertidao);
+  const ultimaTransmissao = [...(m.atos || [])].reverse().find((x) => /compra|venda|transmi|adjudica|partilha|doa|arremat/i.test(x.resumo || ''));
+  const anoTitular = anoDe(ultimaTransmissao?.data) || anoUltimoAto;
+
+  if (!anoCertidao && anoUltimoAto && anoAtual - anoUltimoAto >= 5) {
+    a.push({
+      nivel: 'alto',
+      titulo: `Certidão desatualizada — retrato de ${anoUltimoAto}`,
+      texto: `O último ato registrado é de ${anoUltimoAto} e o documento não traz data de emissão recente: o que se lê aqui é a situação registral daquela época, ${anoAtual - anoUltimoAto} anos atrás. Dono, ônus, penhoras e averbações podem ter mudado desde então. Nada neste parecer sobre titularidade ou ônus vale para fechar negócio sem certidão de inteiro teor com menos de 30 dias.`
+    });
+  }
+  if (anoTitular && anoAtual - anoTitular >= 30) {
+    const dono = (m.proprietarios || [])[0]?.nome || 'o proprietário registral';
+    a.push({
+      nivel: 'medio',
+      titulo: `Titular há ${anoAtual - anoTitular} anos — confirmar se está vivo`,
+      texto: `${dono} adquiriu em ${anoTitular}. Se faleceu, quem vende são os herdeiros, e só depois do inventário (formal de partilha ou escritura pública de inventário) registrado na matrícula. Herdeiro não pode escriturar antes disso; o que se faz antes é cessão de direitos hereditários, que não transfere a propriedade.`
+    });
+  }
+  // Um alerta só, mesmo que os dois cônjuges estejam listados como donos.
+  const casado = (m.proprietarios || []).find((p) => /casad/i.test(p.estadoCivil || '') && !/separa[çc][aã]o (total|absoluta|convencional)/i.test(p.estadoCivil || ''));
+  if (casado) {
+    const ec = casado.estadoCivil || '';
+    const conj = (ec.match(/com\s+([A-ZÀ-Ú][A-ZÀ-Ú\s]+)/) || [])[1]
+      || (m.proprietarios || []).find((p) => p !== casado && /casad/i.test(p.estadoCivil || ''))?.nome;
+    a.push({
+      nivel: 'medio',
+      titulo: 'Venda exige a assinatura do cônjuge',
+      texto: `${casado.nome} consta "${ec}". ${conj ? `${conj.trim()} assina a escritura junto (outorga conjugal)` : 'O cônjuge assina a escritura junto (outorga conjugal)'} — sem isso a venda é anulável (art. 1.647 do Código Civil). Pedir certidão de casamento atualizada (90 dias), que também revela divórcio ou óbito.`
+    });
+  }
+  const descLote = `${m.imovel?.descricao || ''} ${m.imovel?.lote || ''}`;
+  if (/parte do lote|fra[çc][aã]o|desmembr|remanescente/i.test(descLote)) {
+    a.push({
+      nivel: 'medio',
+      titulo: 'Fração de lote — conferir o cadastro da Prefeitura',
+      texto: `A matrícula descreve PARTE do lote${m.medidas?.frente ? ` (${m.medidas.frente} de frente)` : ''}. Confirmar que a inscrição do IPTU corresponde a essa fração e que o desmembramento está aprovado no município; divergência de área entre cartório e cadastro municipal trava a escritura e o ITBI.`
+    });
+  }
+  if (m.imovel?.endereco && !/\d/.test(m.imovel.endereco)) {
+    a.push({
+      nivel: 'medio',
+      titulo: 'Endereço sem número',
+      texto: `A matrícula dá só a rua (${m.imovel.endereco}). O número e a inscrição do IPTU são necessários para as certidões municipais e para localizar os comparáveis certos.`
+    });
+  }
   (m.proprietarios || []).forEach((p) => {
     if (/solteir/i.test(p.estadoCivil || '')) {
       a.push({
@@ -556,7 +609,9 @@ function avaliar(p) {
     || mediana((mercado.lotes || []).map((l) => l.area))
     || Number(p.lotePadrao) || 250;
 
-  if (precoMedianoComp > 0) {
+  // Sem metragem da construção NÃO existe casa para comparar: com fator de
+  // área = 1 o barracão de 1979 sairia valendo a casa mediana do bairro.
+  if (precoMedianoComp > 0 && areaConstruida > 0) {
     // Os expoentes saem da PRÓPRIA amostra, não de um palpite. No Residencial
     // Alphaville a elasticidade medida entre pares de anúncios foi 0,08 para
     // área construída e 0,33 para terreno — ou seja, casa de 89 m² sai a R$
@@ -628,6 +683,20 @@ function avaliar(p) {
     });
   }
 
+  // ── Sem construção medida: o que se avalia é o LOTE ────────────────
+  let soTerreno = null;
+  if (!(areaConstruida > 0) && valorTerreno > 0) {
+    soTerreno = {
+      nome: 'Valor do terreno (construção sem metragem)',
+      valor: valorTerreno,
+      memoria: [
+        ['Terreno', `${num(areaTerreno)} m² × ${brl(terrenoM2Ajustado)}/m² (${terrenoFonte})`, valorTerreno],
+        ['Construção', 'sem área averbada nem informada — não entra no número', 0]
+      ]
+    };
+    metodos.push(soTerreno);
+  }
+
   if (!metodos.length) {
     return { erro: 'Sem dados suficientes: informe ao menos a área do terreno e a área construída (ou uma avaliação anterior).' };
   }
@@ -647,7 +716,10 @@ function avaliar(p) {
   const divergente = dispersao != null && dispersao > 60;
   const base = divergente ? Math.min(...valores) : media;
   const valorBruto = Math.round(base / 5000) * 5000;
-  const aviso = divergente ? {
+  const aviso = soTerreno ? {
+    titulo: 'Este valor é o do TERRENO — a construção não foi medida',
+    texto: `A matrícula não averba área construída e nenhuma metragem foi informada, então o parecer vale o lote de ${num(areaTerreno)} m²${(mercado.lotes || []).length ? ` (unitário medido em ${mercado.lotes.length} lote(s) à venda no bairro)` : ''}. Sem averbação é também isso que a escritura transmite. Para valorar a casa: medir no local, informar a área construída, a idade e o padrão na tela — e o método evolutivo (terreno + construção depreciada) entra no cálculo.`
+  } : divergente ? {
     titulo: 'Métodos divergentes — valor a confirmar',
     texto: `Os métodos aplicados chegaram a resultados muito distantes entre si (${dispersao}% de diferença): ${metodos.map((mt) => `${mt.nome.split('(')[0].trim()} ${brl(mt.valor)}`).join(' × ')}. Isso quase sempre significa falta de amostra de mercado no bairro ou premissa de metragem/padrão fora da realidade. Adotou-se o resultado mais conservador, e o número NÃO deve ser usado antes de confirmar as premissas da seção 9 com dois ou três imóveis à venda na região.`
   } : null;
@@ -661,7 +733,8 @@ function avaliar(p) {
   let descTotal = 0;
   const aplicarDesc = p.aplicarDescontoDocumental !== false;
   if (aplicarDesc) {
-    if (p.semAverbacao) { descontos.push({ motivo: 'Construção não averbada na matrícula (imóvel não financiável)', pct: DESC_SEM_AVERBACAO }); descTotal += DESC_SEM_AVERBACAO; }
+    // Só terreno já é o preço "sem a casa": descontar a não-averbação de novo seria cobrar duas vezes.
+    if (p.semAverbacao && !soTerreno) { descontos.push({ motivo: 'Construção não averbada na matrícula (imóvel não financiável)', pct: DESC_SEM_AVERBACAO }); descTotal += DESC_SEM_AVERBACAO; }
     if (p.semTitulo) { descontos.push({ motivo: 'Vendedor não é o proprietário registral (cessão de direitos)', pct: DESC_SEM_TITULO }); descTotal += DESC_SEM_TITULO; }
     if (p.comOnus) { descontos.push({ motivo: 'Ônus real registrado na matrícula', pct: DESC_ONUS }); descTotal += DESC_ONUS; }
   }
@@ -700,7 +773,7 @@ function avaliar(p) {
     cidade, bairro, padrao, conservacao, idade,
     areaTerreno, areaConstruida, areaSecundaria, areaEquivalente,
     terrenoM2: terrenoM2Ajustado, vendaM2, cub, fc,
-    metodos, evolutivo, comparativo, ancora,
+    metodos, evolutivo, comparativo, ancora, soTerreno: !!soTerreno,
     media, dispersao, divergente, aviso, valorBruto, descontos, descontoTotal: Math.round(descTotal * 100),
     valor, faixaMin, faixaMax, amplitude: Math.round(amplitude * 100),
     valorM2Resultante: areaConstruida > 0 ? Math.round(valor / areaConstruida) : null,
@@ -758,12 +831,36 @@ function diligencias(m = {}, r = {}) {
   if (m.promessa?.existe) {
     vendedor.push(`Termo de quitação do compromisso de compra e venda e outorga da escritura definitiva por ${(m.proprietarios || [])[0]?.nome || 'o proprietário registral'} — sem isso, o que se transfere é posse e direitos, não a propriedade.`);
   }
+  const alertas = m.alertas || [];
+  const tem = (re) => alertas.some((a) => re.test(a.titulo || ''));
+  if (tem(/assinatura do c[oô]njuge/i)) {
+    vendedor.unshift('Certidão de casamento atualizada (90 dias) do proprietário e comparecimento do cônjuge na escritura (outorga conjugal) — ou pacto antenupcial registrado, se o regime for de separação.');
+  }
+  if (tem(/confirmar se est[aá] vivo/i)) {
+    vendedor.unshift('Confirmar se o proprietário registral é vivo (documento de identidade atual). Se falecido: inventário concluído e registrado na matrícula (formal de partilha ou escritura pública de inventário) antes de qualquer escritura.');
+  }
+  if (tem(/fra[çc][aã]o de lote/i)) {
+    imovel.push('Inscrição do IPTU e planta/croqui do cadastro municipal desta fração do lote, conferindo frente e área com a matrícula; se divergirem, retificação de área (art. 213 da Lei 6.015/73) antes da escritura.');
+  }
+  if (!m.construcaoAverbada) {
+    imovel.push('Medição da construção no local (área coberta por pavimento) para a avaliação e para o projeto de regularização — a metragem não existe em documento nenhum.');
+  }
+  // Ordem em que as coisas destravam — o que fazer primeiro.
+  const roteiro = [
+    `1. Certidão de inteiro teor atualizada da matrícula nº ${m.numero || '—'} — tudo o mais depende de saber quem é o dono e o que pesa sobre o imóvel HOJE.`,
+    tem(/confirmar se est[aá] vivo/i) ? '2. Confirmar se o titular é vivo; se não, inventário registrado antes de vender.' : '2. Documentos pessoais e certidão de casamento atualizada do(s) proprietário(s).',
+    m.construcaoAverbada
+      ? '3. Conferir se a área construída no local bate com a averbada.'
+      : '3. Decidir: regularizar a construção (projeto na Prefeitura + habite-se + CND INSS + averbação) e vender como casa financiável, ou vender como está — valor de terreno, comprador à vista.',
+    '4. Certidões do vendedor (distribuidores, protestos, fiscais, trabalhista) — a boa-fé do comprador se prova por elas.',
+    '5. Contrato com retenção de parcela até a averbação da transmissão; escritura e registro.'
+  ];
   const contratacao = [
     'Vincular o pagamento, no contrato, à apresentação de todas as certidões, retendo parcela do preço até a averbação da transmissão na matrícula.',
     'Vistoria técnica no imóvel antes da assinatura, com registro fotográfico datado anexado ao contrato.',
     'Cláusula expressa de responsabilidade do vendedor por vícios ocultos e por débitos anteriores à imissão na posse.'
   ];
-  return { imovel, vendedor, contratacao };
+  return { roteiro, imovel, vendedor, contratacao };
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -781,10 +878,10 @@ function formatar(m, fotos, r) {
 
   if (r.aviso) t += `⚠️ *${r.aviso.titulo}*\n${r.aviso.texto}\n\n`;
   if (r.descontos.length) {
-    t += `💰 *VALOR DE MERCADO DO IMÓVEL*\n*${brl(r.valorBruto)}* — é quanto vale a casa em si, regularizada\n`;
+    t += `💰 *VALOR DE MERCADO DO IMÓVEL*\n*${brl(r.valorBruto)}* — é quanto vale ${r.soTerreno ? 'o terreno' : 'a casa em si, regularizada'}\n`;
     t += `💰 *NO ESTADO DOCUMENTAL ATUAL*\n*${brl(r.valor)}* (${brl(r.faixaMin)} a ${brl(r.faixaMax)}) — depois do ajuste de −${r.descontoTotal}%\n`;
   } else {
-    t += `💰 *VALOR DE MERCADO ESTIMADO*\n*${brl(r.valor)}*\n`;
+    t += `💰 *VALOR DE MERCADO ESTIMADO${r.soTerreno ? ' — SOMENTE O TERRENO' : ''}*\n*${brl(r.valor)}*\n`;
     t += `Faixa técnica: ${brl(r.faixaMin)} a ${brl(r.faixaMax)} (±${r.amplitude}%)\n`;
   }
   if (r.valorM2Resultante) t += `Valor unitário resultante: ${brl(r.valorM2Resultante)}/m² de área construída\n`;
@@ -792,8 +889,8 @@ function formatar(m, fotos, r) {
 
   t += `📐 *O IMÓVEL*\n`;
   t += `• Terreno: ${num(r.areaTerreno)} m²${m.medidas?.frente ? ` (frente de ${m.medidas.frente})` : ''}\n`;
-  t += `• Construção: ${r.areaConstruida ? num(r.areaConstruida) + ' m²' : 'não averbada'}`;
-  t += m.construcaoAverbada ? ' (averbada na matrícula)\n' : ' — área informada/estimada, NÃO consta da matrícula\n';
+  t += `• Construção: ${r.areaConstruida ? num(r.areaConstruida) + ' m²' : 'sem metragem'}`;
+  t += m.construcaoAverbada ? ' (averbada na matrícula)\n' : r.areaConstruida ? ' — área informada/estimada, NÃO consta da matrícula\n' : ' — não averbada e não medida; fora do valor\n';
   if (fotos) {
     t += `• Padrão: ${fotos.padrao} — ${fotos.padraoJustificativa || ''}\n`;
     t += `• Conservação: ${fotos.conservacao}${fotos.idadeAparente ? ` · ${fotos.idadeAparente}` : ''}\n`;
@@ -806,6 +903,17 @@ function formatar(m, fotos, r) {
     t += `${ico} *${a.titulo}* — ${a.texto}\n`;
   });
   t += `\n`;
+
+  const dg = r.diligencias || {};
+  if ((dg.roteiro || []).length) {
+    t += `🗂️ *O QUE FALTA PARA VENDER — NA ORDEM*\n`;
+    dg.roteiro.forEach((x) => { t += `${x}\n`; });
+    t += `\n*Sobre o imóvel:*\n`;
+    (dg.imovel || []).forEach((x) => { t += `• ${x}\n`; });
+    t += `*Sobre o vendedor:*\n`;
+    (dg.vendedor || []).forEach((x) => { t += `• ${x}\n`; });
+    t += `\n`;
+  }
 
   t += `🧮 *APURAÇÃO — ${r.metodos.length} MÉTODO(S) INDEPENDENTE(S)*\n`;
   r.metodos.forEach((mt) => { t += `• ${mt.nome}: *${brl(mt.valor)}*\n`; });
@@ -882,6 +990,6 @@ function formatar(m, fotos, r) {
 }
 
 module.exports = {
-  lerMatricula, lerFotos, pesquisarMercado, metricasBens, avaliar, diligencias, formatar,
+  lerMatricula, lerFotos, pesquisarMercado, metricasBens, avaliar, diligencias, formatar, alertasRegistrais,
   alertasRegistrais, CUB_PADRAO, FATOR_PADRAO
 };
