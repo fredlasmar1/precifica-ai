@@ -62,6 +62,7 @@ function num(v) { if (v == null || v === '') return '—'; const n = Number(v); 
 function clean(s) {
   return String(s == null ? '' : s)
     .replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{FE00}-\u{FE0F}\u{200D}\u{2190}-\u{21FF}]/gu, '')
+    .replace(/\*\*/g, '') // markdown da IA não vira asterisco no papel
     .replace(/\s{2,}/g, ' ').trim();
 }
 function txt(v) { if (v == null || v === '') return '—'; return clean(v) || '—'; }
