@@ -497,6 +497,31 @@
     @media (min-width: 1181px) and (max-width: 1400px) {
       .wrap.has-result { grid-template-columns: 180px minmax(360px, 400px) 1fr; }
     }
+
+    /* laudos em texto renderizados como página */
+    .laudo.lx { white-space: normal; padding: 22px 26px 30px; font-size: 13.5px; }
+    .laudo.lx strong, .laudo.lx b { color: var(--ink); }
+    .lx-head { margin-bottom: 14px; }
+    .lx-title { font-size: 11.5px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+    .lx-meta { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 6px; font-size: 13px; color: var(--ink); }
+    .lx-meta span { display: inline-flex; align-items: center; }
+    .lx-meta span + span::before { content: ''; width: 4px; height: 4px; border-radius: 50%; background: var(--line2); margin-right: 14px; display: none; }
+    .lx-sec h3 .lx-ic { font-size: 13px; }
+    .lx-kv { display: grid; grid-template-columns: minmax(140px, 38%) 1fr; gap: 0; border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden; }
+    .lx-kv .l, .lx-kv .v { padding: 8px 12px; border-bottom: 1px solid var(--line); font-size: 13px; }
+    .lx-kv .l { color: var(--muted); background: #fafbff; }
+    .lx-kv .v { font-weight: 600; color: var(--ink); }
+    .lx-kv .l:nth-last-child(2), .lx-kv .v:last-child { border-bottom: 0; }
+    .lx-kv + .px-list, .lx-kv + .px-steps, .lx-kv + div { margin-top: 10px; }
+    .lx-h4 { font-weight: 800; font-size: 13.5px; margin: 12px 0 4px; color: var(--ink); }
+    .lx-p { margin: 4px 0 8px; color: #334155; line-height: 1.55; }
+    .px-list li.sub { list-style: circle; margin-left: 14px; color: var(--muted); }
+    .laudo.lx .pdf-bar { margin-bottom: 14px; }
+    .laudo.lx .fechou-box { margin-top: 22px; }
+    .lx-verd { display: inline-block; padding: 9px 14px; border-radius: var(--r-md); font-weight: 700; font-size: 13.5px; margin-bottom: 14px; border: 1px solid; }
+    .lx-verd.alto { background: #fef2f2; border-color: #fecaca; color: #7f1d1d; }
+    .lx-verd.medio { background: #fffbeb; border-color: #fde68a; color: #78350f; }
+    .lx-verd.bom { background: #f0fdf4; border-color: #bbf7d0; color: #14532d; }
   </style>
 </head>
 <body>
@@ -1715,12 +1740,115 @@
       document.getElementById('result-body').innerHTML =
         '<div class="spinner"><div class="ring"></div><div><div class="s-ttl">Consultando o mercado…</div><div style="margin-top:6px">' + (msg || '') + '</div></div></div>';
     }
+
+    // ── Laudos em texto → página estruturada ─────────────────────────────
+    // Todos os motores escrevem no mesmo dialeto (emoji + *título*, bullets
+    // "rótulo: valor", comparativos numerados com _Fonte_, parecer da IA em
+    // markdown). Em vez de reescrever sete motores, o painel entende o dialeto.
+    const LX_EMOJI = /^[\p{Extended_Pictographic}☀-➿️‍\s]+/u;
+    function lxInline(t) {
+      return esc(t)
+        .replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener">$1</a>')
+        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\*(.+?)\*/g, '<strong>$1</strong>')
+        .replace(/(^|[\s(])_(.+?)_(?=[\s).,;:!?]|$)/g, '$1<em>$2</em>');
+    }
+    function lxParse(text) {
+      const lines = String(text || '').replace(/\r/g, '').split('\n').filter((l) => !/^[━─—=]{5,}\s*$/.test(l));
+      const doc = { titulo: '', meta: [], secoes: [] };
+      let cur = null, first = true;
+      const isTitle = (l) => { const m = l.match(/^\s*([\p{Extended_Pictographic}☀-➿️‍]+)?\s*\*([^*]+)\*\s*(.*)$/u); if (!m) return null; const rest = (m[3] || '').trim(); if (/^[—–-]/.test(rest)) return null; return { icon: (m[1] || '').trim(), title: m[2].trim().replace(/:$/, ''), rest }; };
+      const push = (item) => { if (!cur) { cur = { icon: '', title: '', items: [] }; doc.secoes.push(cur); } cur.items.push(item); };
+      for (const raw of lines) {
+        const l = raw.replace(/\s+$/, '');
+        if (first && l.trim()) { first = false; const t = isTitle(l); doc.titulo = t ? t.title : l.replace(LX_EMOJI, '').replace(/\*/g, ''); doc.icon = t ? t.icon : ''; if (t && t.rest) doc.meta.push(t.rest); continue; }
+        if (!l.trim()) { if (cur) push({ k: 'br' }); continue; }
+        const t = isTitle(l);
+        if (t) { cur = { icon: t.icon, title: t.title, rest: t.rest, items: [] }; doc.secoes.push(cur); continue; }
+        let m;
+        if (!cur) { const vm = l.match(/^\s*(🔴|🟡|🟢)\s*(.*)$/u); if (vm) doc.veredito = { lv: vm[1], x: vm[2] }; else doc.meta.push(l.replace(LX_EMOJI, '').trim()); continue; }
+        if ((m = l.match(/^\s*(🔴|🟡|🟢|⚠️|✅|❌)\s*\*([^*]+)\*\s*[—–-]?\s*(.*)$/u))) { push({ k: 'alert', lv: m[1], t: m[2], x: m[3] }); continue; }
+        if ((m = l.match(/^\s*_Fonte:\s*(.+?)_\s*$/))) { const last = [...cur.items].reverse().find((i) => i.k === 'num'); if (last) last.fonte = m[1]; continue; }
+        if ((m = l.match(/^\s*(\d+)\.\s+(.*)$/))) { push({ k: 'num', n: m[1], x: m[2] }); continue; }
+        if ((m = l.match(/^\s{2,}[–-]\s+(.*)$/))) { push({ k: 'sub', x: m[1] }); continue; }
+        if ((m = l.match(/^\s*[•▪◦]\s+(.*)$/)) || (m = l.match(/^\s*-\s+(.*)$/))) {
+          const b = m[1]; const kv = b.match(/^([^:*_]{2,48}):\s+(.+)$/);
+          if (kv && !/^\d/.test(kv[1])) push({ k: 'kv', l: kv[1].trim(), v: kv[2].trim() }); else push({ k: 'li', x: b }); continue;
+        }
+        if ((m = l.match(/^#+\s+(.*)$/))) { push({ k: 'h', x: m[1] }); continue; }
+        if ((m = l.match(/^\s*_(.+)_\s*$/))) { push({ k: 'note', x: m[1] }); continue; }
+        push({ k: 'p', x: l.trim() });
+      }
+      return doc;
+    }
+    function lxHero(doc) {
+      // a seção de valor vira o destaque: "Faixa de preço" (mín/rec/máx),
+      // "*VALOR ...: R$ X*" ou "*Valor sugerido: R$ X*"
+      const idx = doc.secoes.findIndex((s) => /faixa de pre|valor de mercado|valor sugerido|valor estimado|^valor\b/i.test(s.title) || /R\$/.test(s.title));
+      if (idx < 0) return null;
+      const s = doc.secoes[idx];
+      const kv = (re) => (s.items.find((i) => i.k === 'kv' && re.test(i.l)) || {}).v;
+      let main = kv(/recomendado|provável|sugerido/i), lbl = s.title.replace(/:.*$/, '');
+      const inTitle = s.title.match(/R\$\s?[\d.,]+(?:\s*(?:mil|milh[õo]es))?/i);
+      if (!main && inTitle) { main = inTitle[0]; lbl = s.title.split(':')[0]; }
+      if (!main) { const firstMoney = s.items.find((i) => (i.k === 'p' || i.k === 'kv') && /R\$/.test(i.x || i.v)); if (firstMoney) main = ((firstMoney.x || firstMoney.v).match(/R\$\s?[\d.,]+/) || [])[0]; }
+      if (!main) return null;
+      const min = kv(/m[íi]nimo|piso/i), max = kv(/m[áa]ximo|teto/i);
+      let faixa = min && max ? `Faixa ${min.replace(/\*/g, '')} a ${max.replace(/\*/g, '')}` : '';
+      if (!faixa) { const f = s.items.find((i) => (i.k === 'note' || i.k === 'p' || i.k === 'kv') && /faixa/i.test(i.x || i.l || '')); if (f) faixa = (f.x || `${f.l}: ${f.v}`).replace(/[()]/g, ''); }
+      const extras = s.items.filter((i) => i.k === 'kv' && !/recomendado|provável|sugerido|m[íi]nimo|m[áa]ximo|piso|teto/i.test(i.l));
+      const rest = s.items.filter((i) => i.k === 'li' || i.k === 'p').map((i) => i.x).filter(Boolean);
+      doc.secoes.splice(idx, 1);
+      return { lbl, main: main.replace(/\*/g, ''), faixa, extras, rest };
+    }
+    function lxSection(s) {
+      let h = '';
+      const items = s.items.filter((i) => i.k !== 'br');
+      if (!items.length && !s.rest) return '';
+      const kvs = items.filter((i) => i.k === 'kv'), nums = items.filter((i) => i.k === 'num'), alerts = items.filter((i) => i.k === 'alert');
+      const rows = items.filter((i) => ['li', 'sub', 'p', 'h', 'note'].includes(i.k));
+      h += `<div class="px-sec lx-sec"><h3>${s.icon ? `<span class="lx-ic">${s.icon}</span>` : ''}${esc(s.title)}${s.rest ? `<span class="n">${lxInline(s.rest)}</span>` : ''}</h3>`;
+      if (alerts.length) { h += `<div class="px-al">${alerts.map((a) => { const lv = /🔴|❌/.test(a.lv) ? 'alto' : /🟡|⚠️/.test(a.lv) ? 'medio' : 'bom'; return `<details class="${lv}"${lv === 'alto' ? ' open' : ''}><summary><span class="dot"></span>${lxInline(a.t)}</summary><div class="body">${lxInline(a.x)}</div></details>`; }).join('')}</div>`; }
+      if (kvs.length) { h += `<div class="lx-kv">${kvs.map((i) => `<div class="l">${lxInline(i.l)}</div><div class="v">${lxInline(i.v)}</div>`).join('')}</div>`; }
+      if (nums.length) {
+        const cells = nums.map((n) => n.x.split(/\s+•\s+/));
+        const ncol = Math.max(...cells.map((c) => c.length));
+        if (ncol >= 2) {
+          h += `<div style="overflow-x:auto"><table class="px-tbl"><tbody>${nums.map((n, k) => `<tr><td class="r" style="color:var(--muted2)">${n.n}</td>${cells[k].map((c, j) => `<td${j > 0 ? ' class="r"' : ''}>${lxInline(c)}</td>`).join('')}${nums.some((x) => x.fonte) ? `<td>${n.fonte ? lxInline(n.fonte) : ''}</td>` : ''}</tr>`).join('')}</tbody></table></div>`;
+        } else {
+          h += `<div class="px-steps">${nums.map((n) => `<div class="px-step"><div class="k">${n.n}</div><div class="t">${lxInline(n.x)}${n.fonte ? `<div class="px-note">${lxInline(n.fonte)}</div>` : ''}</div></div>`).join('')}</div>`;
+        }
+      }
+      if (rows.length) {
+        let open = false; let buf = '';
+        rows.forEach((i) => {
+          if (i.k === 'li' || i.k === 'sub') { if (!open) { buf += '<ul class="px-list">'; open = true; } buf += `<li${i.k === 'sub' ? ' class="sub"' : ''}>${lxInline(i.x)}</li>`; }
+          else { if (open) { buf += '</ul>'; open = false; } buf += i.k === 'h' ? `<div class="lx-h4">${lxInline(i.x)}</div>` : i.k === 'note' ? `<div class="px-note">${lxInline(i.x)}</div>` : `<p class="lx-p">${lxInline(i.x)}</p>`; }
+        });
+        if (open) buf += '</ul>';
+        h += buf;
+      }
+      return h + '</div>';
+    }
+    function renderLaudoTexto(text) {
+      const doc = lxParse(text);
+      if (doc.secoes.length < 2) return null;
+      const hero = lxHero(doc);
+      let h = `<div class="lx-head"><div class="lx-title">${esc(doc.titulo)}</div>${doc.meta.length ? `<div class="lx-meta">${doc.meta.map((m) => `<span>${lxInline(m)}</span>`).join('')}</div>` : ''}</div>`;
+      if (doc.veredito) { const lv = doc.veredito.lv === '🔴' ? 'alto' : doc.veredito.lv === '🟡' ? 'medio' : 'bom'; h += `<div class="lx-verd ${lv}">${lxInline(doc.veredito.x)}</div>`; }
+      if (hero) {
+        h += `<div class="px-hero"><div class="lbl">${esc(hero.lbl)}</div><div class="val">${esc(hero.main)}</div>${hero.faixa ? `<div class="rng">${lxInline(hero.faixa)}</div>` : ''}${hero.extras.length ? `<div class="px-chips">${hero.extras.map((e) => `<span>${lxInline(e.l)}: ${lxInline(e.v)}</span>`).join('')}</div>` : ''}${hero.rest.length ? `<div class="rng" style="margin-top:8px">${hero.rest.map(lxInline).join('<br>')}</div>` : ''}</div>`;
+      }
+      h += doc.secoes.map(lxSection).join('');
+      return h;
+    }
     function showLaudo(text, mapUrl) {
       usarResultado();
       document.getElementById('result-tag').textContent = '✓ concluído';
       const div = document.createElement('div');
-      div.className = 'laudo';
-      div.innerHTML = (mapUrl ? `<img class="laudo-map" src="${mapUrl}" alt="Mapa dos concorrentes">` : '') + fmt(text);
+      const estruturado = renderLaudoTexto(text);
+      div.className = estruturado ? 'laudo lx' : 'laudo';
+      div.innerHTML = (mapUrl ? `<img class="laudo-map" src="${mapUrl}" alt="Mapa dos concorrentes">` : '') + (estruturado || fmt(text));
       const body = document.getElementById('result-body');
       body.innerHTML = '';
       body.appendChild(div);
