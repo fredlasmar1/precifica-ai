@@ -92,6 +92,8 @@ REGRAS ABSOLUTAS:
 - Se o proprietário registral for diferente de quem consta como comprador em compromisso/promessa de compra e venda, registre os dois.
 - NÚMEROS EXIGEM DOBRO DE ATENÇÃO. Número de lote, quadra, matrícula, CPF/CNPJ, área e valor são o que mais se lê errado em documento digitalizado. Releia cada um antes de responder e confira a coerência interna: as confrontações costumam citar os lotes vizinhos, então o lote do imóvel NÃO pode ser igual a nenhum dos confrontantes.
 - Se um número estiver ilegível ou você ficar em dúvida, devolva null naquele campo em vez de arriscar. Campo vazio o usuário preenche; campo errado ele não percebe.
+- MEDIDAS: matrícula antiga escreve "X metros de largura na frente e nos fundos, por Y metros de um lado e Z metros do outro". Isso é frente = X, fundos = X, ladoDireito = Y, ladoEsquerdo = Z. Não repita a mesma medida nos dois lados se o texto dá dois números diferentes. "areaTerreno" só recebe número se a área estiver ESCRITA (ex.: "com a área de 360,00 m²"); se só houver medidas, deixe null — o código calcula.
+- PROPRIETÁRIOS: liste apenas os titulares ATUAIS do domínio — quem adquiriu no ÚLTIMO registro de transmissão (R-) da cadeia, e o cônjuge se o regime for de comunhão. Quem vendeu (transmitente) fica só em "atos", nunca em "proprietarios". Se a certidão tem uma página só e o último ato é uma compra e venda, o proprietário é o adquirente desse ato.
 
 Responda SOMENTE com JSON válido nesta forma:
 {
@@ -141,18 +143,50 @@ async function lerMatricula(paginas = []) {
   // Rede de segurança do CÓDIGO (não da IA): matrícula sem averbação de
   // construção não pode sair com área construída, aconteça o que acontecer.
   if (!dados.construcaoAverbada) dados.areaConstruida = null;
+  // Matrícula antiga não escreve a área — só as medidas. Sem isso o
+  // evolutivo não roda e a tela pede pra digitar o que já está no papel.
+  if (!(Number(dados.areaTerreno) > 0)) {
+    const calc = areaPelasMedidas(dados.medidas);
+    if (calc) {
+      dados.areaTerreno = calc;
+      dados.areaTerrenoCalculada = true;
+      dados.observacoes = [...(dados.observacoes || []),
+        `Área do terreno não consta na matrícula: ${calc} m² calculados pelas medidas (média das larguras × média dos lados). Conferir com o cadastro municipal.`];
+    }
+  }
   dados.alertas = alertasRegistrais(dados);
   return dados;
+}
+
+/** "11,00 metros" → 11; "18,13m" → 18.13; texto sem número → null. */
+function metros(txt) {
+  const m = String(txt || '').replace(/\./g, '').replace(',', '.').match(/\d+(?:\.\d+)?/);
+  const n = m ? Number(m[0]) : NaN;
+  return n > 0 && n < 5000 ? n : null;
+}
+
+/** Área aproximada pelas 4 medidas (trapézio: larguras médias × lados médios). */
+function areaPelasMedidas(md = {}) {
+  const frente = metros(md.frente), fundos = metros(md.fundos) ?? frente;
+  const d = metros(md.ladoDireito), e = metros(md.ladoEsquerdo) ?? d;
+  if (!frente || !d) return null;
+  return Math.round(((frente + fundos) / 2) * ((d + e) / 2) * 100) / 100;
 }
 
 /** Achados que mudam valor e liquidez — derivados por regra, não por LLM. */
 function alertasRegistrais(m) {
   const a = [];
   if (!m.construcaoAverbada) {
+    // Matrícula antiga costuma DESCREVER a casa no corpo ("barracão com 7
+    // cômodos") sem averbar área nenhuma — não é "só terreno", mas para o
+    // banco dá no mesmo.
+    const descreveCasa = /barrac|casa|edific|c[oô]modo|sobrado|pr[eé]dio|constru/i.test(m.imovel?.descricao || '');
     a.push({
       nivel: 'alto',
-      titulo: 'Construção não averbada',
-      texto: 'A matrícula descreve apenas o terreno. Sem averbação da construção o imóvel não é financiável por banco e a escritura definitiva exige regularização prévia (habite-se, CND da obra e averbação).'
+      titulo: descreveCasa ? 'Construção descrita, mas sem área averbada' : 'Construção não averbada',
+      texto: descreveCasa
+        ? 'A matrícula menciona a edificação na descrição do imóvel, mas não há averbação com área construída, habite-se ou CND. Para o banco vale o que está averbado: o imóvel não é financiável e a escritura definitiva exige regularização prévia (habite-se, CND da obra e averbação).'
+        : 'A matrícula descreve apenas o terreno. Sem averbação da construção o imóvel não é financiável por banco e a escritura definitiva exige regularização prévia (habite-se, CND da obra e averbação).'
     });
   }
   const dono = (m.proprietarios || [])[0]?.nome || null;
