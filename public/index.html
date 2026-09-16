@@ -1900,6 +1900,11 @@
         showError('Preencha pelo menos *bairro* e *metragem*.');
         return;
       }
+      if (fLendo) { showSpinner('Terminando de ler as fotos…'); try { await fLendo; } catch {} payload.leituraFotos = fLeitura || undefined; }
+      if (fFotosData.length && !fLeitura) {
+        const seguir = confirm(`As fotos foram escolhidas mas a leitura ${fLeituraErro ? 'falhou (' + fLeituraErro + ')' : 'não terminou'}. Avaliar SEM as fotos?`);
+        if (!seguir) return;
+      }
       busy = true;
       document.getElementById('btn-avaliar').disabled = true;
       showSpinner('Pesquisando anúncios reais, cruzando IBGE e mapa…');
@@ -2482,12 +2487,17 @@
     function t_zonaInfo() { /* placeholder p/ futura dica de CA por zona */ }
 
     // ── Avaliar: fotos do imóvel → a IA lê, preenche, o dono confere ──
-    let fLeitura = null, fFotosData = [];
+    let fLeitura = null, fFotosData = [], fLendo = null, fLeituraErro = null;
     async function fFotos() {
       const input = document.getElementById('f-fotos'), info = document.getElementById('f-fotos-info'), box = document.getElementById('f-achados');
       const files = Array.from(input.files || []).slice(0, 12);
       if (!files.length) return;
-      fLeitura = null; box.innerHTML = '';
+      fLendo = fFotosLer(files, info, box);
+      try { await fLendo; } finally { fLendo = null; }
+    }
+    async function fFotosLer(files, info, box) {
+      fLeitura = null; fLeituraErro = null; box.innerHTML = '';
+      const btn = document.getElementById('btn-avaliar'); if (btn) btn.disabled = true;
       const tipo = document.getElementById('f-tipo').value;
       info.textContent = 'preparando…';
       try {
@@ -2496,7 +2506,7 @@
         info.textContent = `Lendo ${fFotosData.length} foto(s)…`;
         const res = await fetch('/api/avaliar/ler-fotos', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tipo, fotos: fFotosData }) });
         const data = await res.json();
-        if (data.error) { info.textContent = data.error; return; }
+        if (data.error) { fLeituraErro = data.error; info.textContent = data.error; return; }
         fLeitura = data.leitura || null;
         const L = fLeitura || {};
         const setIfEmpty = (id, v) => { const el = document.getElementById(id); if (el && v != null && v !== '' && !(String(el.value).trim())) el.value = v; };
@@ -2523,7 +2533,8 @@
         if (aj.length) h += `<div class="mt-achado compact mt-medio"><details><summary>📐 Ajustes que entram na conta: ${(L.ajustes.total > 0 ? '+' : '') + Math.round(L.ajustes.total * 100)}%</summary><div class="tx">${aj.map((a) => `${a.pct > 0 ? '+' : ''}${Math.round(a.pct * 100)}% — ${a.motivo}`).join('<br>')}</div></details></div>`;
         (L.avisos || []).slice(0, 2).forEach((x) => { h += `<div class="mt-info">${x}</div>`; });
         box.innerHTML = h;
-      } catch (e) { info.textContent = 'Não consegui ler as fotos. Tente novamente.'; }
+      } catch (e) { fLeituraErro = e.message || 'erro'; info.textContent = 'Não consegui ler as fotos. Tente novamente ou avalie sem elas.'; }
+      finally { const btn = document.getElementById('btn-avaliar'); if (btn) btn.disabled = false; }
     }
 
     // ── Terreno: fotos + medição do Google → a IA lê, o dono confere ──

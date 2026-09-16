@@ -167,16 +167,26 @@ function gerarRelatorioPdf(dados, resultado, opts = {}) {
     const pedido = Number(dados.valorPedido) || 0;
     if (pedido > 0 && resultado.precoRecomendado > 0) {
       const dif = Math.round((pedido / resultado.precoRecomendado - 1) * 100);
-      const dentro = pedido >= resultado.precoMinimo && pedido <= resultado.precoMaximo;
+      const dentroFaixa = pedido >= resultado.precoMinimo && pedido <= resultado.precoMaximo;
       const acima = pedido > resultado.precoMaximo;
-      const cor = dentro ? '#0e9f6e' : acima ? '#c0392b' : '#0e9f6e';
-      const fundo = dentro ? '#ecfdf3' : acima ? '#fef2f2' : '#ecfdf3';
       const ehTerreno = /terreno|lote/i.test(String(dados.tipo || ''));
+      // amostra curta: confrontar com os concorrentes reais (mesma regra do laudo)
+      const compsP = comps.filter((c) => Number(c.preco) > 0);
+      const compsM2 = compsP.map((c) => Number(c.precoM2) || (Number(c.area) > 0 ? Number(c.preco) / Number(c.area) : 0)).filter((v) => v > 0);
+      const pedidoM2 = Number(dados.metragem) > 0 ? pedido / Number(dados.metragem) : 0;
+      const maisCaroM2 = compsM2.length ? Math.max(...compsM2) : 0;
+      const acimaDeTodos = dentroFaixa && compsP.length > 0 && compsP.length < 6 && pedidoM2 > maisCaroM2 * 1.02;
+      const dentro = dentroFaixa && !acimaDeTodos;
+      const cor = dentro ? '#0e9f6e' : acimaDeTodos ? '#b45309' : acima ? '#c0392b' : '#0e9f6e';
+      const fundo = dentro ? '#ecfdf3' : acimaDeTodos ? '#fffbeb' : acima ? '#fef2f2' : '#ecfdf3';
       const titulo = dentro ? 'O preço pedido está DENTRO da faixa de mercado'
+        : acimaDeTodos ? `Cabe na faixa técnica, mas é o mais caro entre os ${compsP.length} anúncios comparáveis`
         : acima ? 'O preço pedido está ACIMA do teto da faixa de mercado'
         : 'O preço pedido está ABAIXO do piso da faixa de mercado';
       const texto = dentro
         ? `${brl(pedido)} (${dif >= 0 ? '+' : ''}${dif}% sobre o valor provável) cabe entre ${brl(resultado.precoMinimo)} e ${brl(resultado.precoMaximo)}. O preço se sustenta diante do que o mercado está pedindo.`
+        : acimaDeTodos
+          ? `${brl(pedido)} (${dif >= 0 ? '+' : ''}${dif}% sobre o valor provável) cabe na faixa de ${brl(resultado.precoMinimo)} a ${brl(resultado.precoMaximo)} — mas a faixa foi alargada porque a amostra é pequena. Os concorrentes reais anunciados hoje são: ${compsP.slice(0, 4).map((c) => `${c.area ? Math.round(c.area) + ' m² por ' : ''}${brl(c.preco)}`).join(', ')}. A ${brl(Math.round(pedidoM2))}/m², este seria o lote mais caro do bairro (o mais caro anunciado está a ${brl(Math.round(maisCaroM2))}/m²). Quem pesquisa vê os concorrentes primeiro. Sugestão: anunciar em ${brl(Math.round(pedido / 1000) * 1000)} só se houver diferencial visível; caso contrário, alinhar a ${brl(Math.round(resultado.precoRecomendado / 1000) * 1000)}–${brl(Math.round(Math.max(...compsP.map((c) => Number(c.preco))) / 1000) * 1000)}.`
         : acima
           ? `${brl(pedido)} está ${dif >= 0 ? '+' : ''}${dif}% acima do valor provável (${brl(resultado.precoRecomendado)}) e ${brl(pedido - resultado.precoMaximo)} acima do máximo que a amostra de ${nAmostras} anúncios sustenta. Nesse patamar o imóvel tende a ficar parado: quem pesquisa vê os concorrentes mais baratos. ` +
             (ehTerreno ? 'Só se justifica com algo que a amostra não vê — esquina, frente maior, zoneamento comercial, documentação pronta para escritura.' : 'Só se justifica com algo que a amostra não vê — reforma recente, andar/vista, vaga extra, documentação pronta.') +

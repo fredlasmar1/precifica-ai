@@ -1579,9 +1579,22 @@ function gerarLaudo(dados, resultado) {
   if (pedido > 0 && precoRecomendado > 0) {
     const dif = Math.round((pedido / precoRecomendado - 1) * 100);
     const dentro = pedido >= precoMinimo && pedido <= precoMaximo;
+    // Amostra curta alarga a faixa por incerteza — e o pedido "cabe" nela sem
+    // caber no mercado. Com poucos anúncios, o confronto é contra os
+    // concorrentes reais: se o pedido passa de TODOS eles, é o mais caro do
+    // bairro, faixa alargada ou não.
+    const comps = (analiseIA?.comparativos || []).filter((c) => Number(c.preco) > 0);
+    const compsM2 = comps.map((c) => Number(c.precoM2) || (Number(c.area) > 0 ? Number(c.preco) / Number(c.area) : 0)).filter((v) => v > 0);
+    const pedidoM2 = Number(metragem) > 0 ? pedido / Number(metragem) : 0;
+    const maisCaroM2 = compsM2.length ? Math.max(...compsM2) : 0;
+    const acimaDeTodos = comps.length > 0 && comps.length < 6 && pedidoM2 > 0 && maisCaroM2 > 0 && pedidoM2 > maisCaroM2 * 1.02;
     laudo += `🏷️ *Pedido do vendedor:* ${formatarReais(pedido)} `;
     laudo += `(${dif >= 0 ? '+' : ''}${dif}% vs. a avaliação)\n`;
-    if (dentro) {
+    if (dentro && acimaDeTodos) {
+      const lista = comps.slice(0, 4).map((c) => `${c.area ? Math.round(c.area) + ' m² por ' : ''}${formatarReais(c.preco)}`).join(', ');
+      laudo += `🟡 *Cabe na faixa técnica, mas está ACIMA de todos os ${comps.length} anúncios comparáveis* (${lista}). `;
+      laudo += `A faixa foi alargada por amostra pequena — na prática, quem pesquisa o bairro vê ${comps.length === 1 ? 'um concorrente' : 'concorrentes'} mais barato${comps.length === 1 ? '' : 's'}: a ${formatarReais(Math.round(pedidoM2))}/m² este seria o mais caro do bairro (o mais caro anunciado está a ${formatarReais(Math.round(maisCaroM2))}/m²).\n\n`;
+    } else if (dentro) {
       laudo += `✅ *Está DENTRO da faixa de mercado* — o preço se sustenta.\n\n`;
     } else if (pedido > precoMaximo) {
       const acima = formatarReais(pedido - precoMaximo);
