@@ -1551,7 +1551,9 @@ function gerarLaudo(dados, resultado) {
     } else if (pedido > precoMaximo) {
       const acima = formatarReais(pedido - precoMaximo);
       laudo += `🔴 *Está ACIMA do teto da faixa* — ${acima} acima do máximo que a amostra sustenta. `;
-      laudo += `Só compensa se houver algo que a amostra não vê (reforma recente, andar/vista, vaga extra). Peça o porquê por escrito.\n\n`;
+      laudo += /terreno|lote/i.test(String(dados.tipo || ''))
+        ? `Só compensa se houver algo que a amostra não vê (esquina, frente maior, zoneamento comercial, documentação pronta). Peça o porquê por escrito.\n\n`
+        : `Só compensa se houver algo que a amostra não vê (reforma recente, andar/vista, vaga extra). Peça o porquê por escrito.\n\n`;
     } else {
       const abaixo = formatarReais(precoMinimo - pedido);
       laudo += `🟢 *Está ABAIXO do piso da faixa* — ${abaixo} abaixo do mínimo. `;

@@ -158,8 +158,43 @@ function gerarRelatorioPdf(dados, resultado, opts = {}) {
     doc.font('Helvetica-Bold').fontSize(10).fillColor(WHITE).text(`${brl(resultado.precoMinimo)} – ${brl(resultado.precoMaximo)}`, RX - 230, y + 22, { width: 125 });
     doc.font('Helvetica-Bold').fontSize(12).fillColor(WHITE).text(brl(resultado.precoM2Imovel != null ? resultado.precoM2Imovel : resultado.precoM2Mercado), RX - 100, y + 21, { width: 84 });
     doc.font('Helvetica').fontSize(7).fillColor('#cfe0ff')
-      .text(`Liquidez: ${txt(resultado.indiceLiquidez)}  ·  Tempo estimado: ${txt(resultado.tempoEstimadoDias)} dias  ·  Amostra: ${nAmostras} anúncios  ·  Fundamentação: ${grau}`, LX + 16, y + 44);
+      .text(`Liquidez: ${txt(resultado.indiceLiquidez).replace(/^liquidez\s+/i, '')}  ·  Tempo estimado: ${txt(resultado.tempoEstimadoDias)} dias  ·  Amostra: ${nAmostras} anúncios  ·  Fundamentação: ${grau}`, LX + 16, y + 44);
     y += 66;
+
+    // ── PREÇO PEDIDO × MERCADO — o que o cliente quer saber primeiro ──
+    // O laudo da tela já confrontava; o PDF entregue ao cliente não trazia.
+    const pedido = Number(dados.valorPedido) || 0;
+    if (pedido > 0 && resultado.precoRecomendado > 0) {
+      const dif = Math.round((pedido / resultado.precoRecomendado - 1) * 100);
+      const dentro = pedido >= resultado.precoMinimo && pedido <= resultado.precoMaximo;
+      const acima = pedido > resultado.precoMaximo;
+      const cor = dentro ? '#0e9f6e' : acima ? '#c0392b' : '#0e9f6e';
+      const fundo = dentro ? '#ecfdf3' : acima ? '#fef2f2' : '#ecfdf3';
+      const ehTerreno = /terreno|lote/i.test(String(dados.tipo || ''));
+      const titulo = dentro ? 'O preço pedido está DENTRO da faixa de mercado'
+        : acima ? 'O preço pedido está ACIMA do teto da faixa de mercado'
+        : 'O preço pedido está ABAIXO do piso da faixa de mercado';
+      const texto = dentro
+        ? `${brl(pedido)} (${dif >= 0 ? '+' : ''}${dif}% sobre o valor provável) cabe entre ${brl(resultado.precoMinimo)} e ${brl(resultado.precoMaximo)}. O preço se sustenta diante do que o mercado está pedindo.`
+        : acima
+          ? `${brl(pedido)} está ${dif >= 0 ? '+' : ''}${dif}% acima do valor provável (${brl(resultado.precoRecomendado)}) e ${brl(pedido - resultado.precoMaximo)} acima do máximo que a amostra de ${nAmostras} anúncios sustenta. Nesse patamar o imóvel tende a ficar parado: quem pesquisa vê os concorrentes mais baratos. ` +
+            (ehTerreno ? 'Só se justifica com algo que a amostra não vê — esquina, frente maior, zoneamento comercial, documentação pronta para escritura.' : 'Só se justifica com algo que a amostra não vê — reforma recente, andar/vista, vaga extra, documentação pronta.') +
+            ` Sugestão: anunciar em ${brl(Math.round(resultado.precoMaximo / 1000) * 1000)} e negociar em torno de ${brl(Math.round(resultado.precoRecomendado / 1000) * 1000)}.`
+          : `${brl(pedido)} está ${brl(resultado.precoMinimo - pedido)} abaixo do piso da faixa. Preço abaixo do mercado costuma ter motivo: conferir matrícula (ônus, penhora), documentação e estado antes de fechar.`;
+      ensure(70);
+      doc.roundedRect(LX, y, W, 8, 0); // espaçador
+      const boxTop = y;
+      doc.font('Helvetica-Bold').fontSize(9.5).fillColor(cor);
+      const hTit = doc.heightOfString(titulo, { width: W - 32 });
+      doc.font('Helvetica').fontSize(8.5);
+      const hTxt = doc.heightOfString(clean(texto), { width: W - 32, lineGap: 1.5 });
+      const hBox = 12 + hTit + 4 + hTxt + 12;
+      doc.roundedRect(LX, boxTop, W, hBox, 8).fillAndStroke(fundo, cor);
+      doc.font('Helvetica').fontSize(6.5).fillColor(cor).text('PREÇO PEDIDO × MERCADO', LX + 16, boxTop + 7, { lineBreak: false });
+      doc.font('Helvetica-Bold').fontSize(9.5).fillColor(cor).text(titulo, LX + 16, boxTop + 16, { width: W - 32 });
+      doc.font('Helvetica').fontSize(8.5).fillColor(INK).text(clean(texto), LX + 16, boxTop + 16 + hTit + 4, { width: W - 32, align: 'justify', lineGap: 1.5 });
+      y = boxTop + hBox + 10;
+    }
 
     if (versao === 'tecnica') {
       // ── METODOLOGIA ──

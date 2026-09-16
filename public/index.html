@@ -648,6 +648,10 @@
           </div>
 
           <div class="field full">
+            <label>Quanto estão pedindo (R$) <span class="opt">(opcional — o laudo diz se o preço se sustenta diante do mercado)</span></label>
+            <input id="f-pedido" type="number" min="0" placeholder="Ex: 265000" />
+          </div>
+          <div class="field full">
             <label>Diferenciais <span class="opt">(opcional)</span></label>
             <textarea id="f-diferenciais" placeholder="Ex: varanda gourmet, suíte, andar alto, vista livre..."></textarea>
           </div>
@@ -1882,7 +1886,8 @@
         conservacao: document.getElementById('f-conservacao').value,
         quartos: document.getElementById('f-quartos').value,
         vagas: document.getElementById('f-vagas').value,
-        diferenciais: document.getElementById('f-diferenciais').value.trim()
+        diferenciais: document.getElementById('f-diferenciais').value.trim(),
+        valorPedido: document.getElementById('f-pedido').value
       };
       if (!payload.bairro || !payload.metragem) {
         showError('Preencha pelo menos *bairro* e *metragem*.');
