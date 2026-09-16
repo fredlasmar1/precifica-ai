@@ -96,6 +96,10 @@ async function lerFotosTerreno(fotos = []) {
   return d;
 }
 
+/** Poste e fiação comum não são risco; a IA tende a listar. Só o que pesa no preço fica. */
+const RISCO_GRAVE = /alta tens|linh[ãa]o|c[óo]rrego|\bAPP\b|nascente|encosta|barranco|alag|inund|lix[ãa]o|ocupa[çc][ãa]o|invas|eros[ãa]o|torre de transmiss/i;
+function riscosRelevantes(l = {}) { return (l.riscos || []).filter((r) => RISCO_GRAVE.test(r)); }
+
 /** Fatores que o mercado cobra ou paga — regra de código, não palpite de IA. */
 function ajustesPorLeitura(l = {}) {
   const a = [];
@@ -105,7 +109,8 @@ function ajustesPorLeitura(l = {}) {
   if (l.formato === 'irregular') a.push({ motivo: 'Formato irregular (aproveitamento menor do projeto)', pct: -0.05 });
   if (l.edificacao) a.push({ motivo: `Construção existente a demolir/aproveitar: ${l.edificacao}`, pct: -0.04 });
   if (l.pavimentacao === 'terra') a.push({ motivo: 'Rua sem pavimentação', pct: -0.06 });
-  if ((l.riscos || []).some((r) => /alta tens|córrego|corrego|APP|encosta|alag/i.test(r))) a.push({ motivo: `Risco visível: ${(l.riscos || []).join('; ')}`, pct: -0.10 });
+  const graves = riscosRelevantes(l);
+  if (graves.length) a.push({ motivo: `Risco visível: ${graves.join('; ')}`, pct: -0.10 });
   if (l.murado === true) a.push({ motivo: 'Lote murado', pct: +0.02 });
   const total = Math.max(-0.30, Math.min(0.15, a.reduce((s, x) => s + x.pct, 0)));
   return { itens: a, total: Math.round(total * 100) / 100 };
@@ -247,7 +252,7 @@ function formatarTerreno(r) {
     const car = [L.esquina === true ? 'esquina' : null, L.topografia, L.formato ? `formato ${L.formato}` : null, L.murado === true ? 'murado' : L.murado === false ? 'sem muro' : null, L.pavimentacao ? `rua de ${L.pavimentacao}` : null, L.vegetacao, L.entorno ? `entorno ${L.entorno}${L.padraoEntorno ? ' ' + L.padraoEntorno : ''}` : null].filter(Boolean);
     if (car.length) t += `• Características: ${car.join(' · ')}\n`;
     if (L.edificacao) t += `• Construção sobre o lote: ${L.edificacao}\n`;
-    (L.riscos || []).forEach((x) => { t += `• 🔴 Risco: ${x}\n`; });
+    riscosRelevantes(L).forEach((x) => { t += `• 🔴 Risco: ${x}\n`; });
     (L.pontosAtencao || []).slice(0, 4).forEach((x) => { t += `• 🟡 ${x}\n`; });
     (L.avisos || []).slice(0, 2).forEach((x) => { t += `   – _${x}_\n`; });
     t += `\n`;

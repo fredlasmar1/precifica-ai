@@ -2493,7 +2493,7 @@
         let h = '';
         if (car.length) h += `<div class="mt-achado compact mt-bom"><details open><summary>🟢 O que a IA viu: ${car.join(' · ')}</summary><div class="tx">${(L.pontosFortes || []).join(' · ') || '—'}</div></details></div>`;
         if (L.edificacao) h += `<div class="mt-achado compact mt-medio"><details open><summary>🟡 Construção sobre o lote</summary><div class="tx">${L.edificacao}</div></details></div>`;
-        (L.riscos || []).forEach((r) => { h += `<div class="mt-achado compact mt-alto"><details open><summary>🔴 Risco: ${r}</summary><div class="tx">Entra como desconto no valor.</div></details></div>`; });
+        (L.riscos || []).filter((r) => /alta tens|linh[ãa]o|c[óo]rrego|\bAPP\b|nascente|encosta|barranco|alag|inund|lix[ãa]o|ocupa[çc][ãa]o|invas|eros[ãa]o|torre de transmiss/i.test(r)).forEach((r) => { h += `<div class="mt-achado compact mt-alto"><details open><summary>🔴 Risco: ${r}</summary><div class="tx">Entra como desconto no valor.</div></details></div>`; });
         const aj = (L.ajustes || {}).itens || [];
         if (aj.length) h += `<div class="mt-achado compact mt-medio"><details><summary>📐 Ajustes que entram na conta: ${(L.ajustes.total > 0 ? '+' : '') + Math.round(L.ajustes.total * 100)}%</summary><div class="tx">${aj.map((a) => `${a.pct > 0 ? '+' : ''}${Math.round(a.pct * 100)}% — ${a.motivo}`).join('<br>')}</div></details></div>`;
         (L.avisos || []).slice(0, 2).forEach((x) => { h += `<div class="mt-info">${x}</div>`; });
