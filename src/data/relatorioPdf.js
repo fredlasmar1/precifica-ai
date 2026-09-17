@@ -295,7 +295,11 @@ function gerarRelatorioPdf(dados, resultado, opts = {}) {
         R.itens.forEach((it, i) => {
           ensure(14);
           if (i % 2 === 1) doc.rect(LX, y, W, 13).fill('#f6f8fc');
-          const cells = [[clean(it.fonte), 0.40], [brl(it.m2), 0.12], [brl(it.valor), 0.18], [clean(it.detalhe || ''), 0.30]];
+          const baseCurta = it.chave === 'oficial' ? (it.venal ? `venal R$ ${it.venal}/m² × fator` : 'base oficial')
+            : it.chave === 'vizinho' ? `${it.n} anúncio(s) · ${brl(it.m2Bruto)}/m² × ${Number(it.fator).toFixed(2)}`
+            : it.chave === 'fechado' ? 'preço que fechou de fato'
+            : `${it.n} anúncio(s) · mediana`;
+          const cells = [[clean(it.fonte), 0.40], [brl(it.m2), 0.12], [brl(it.valor), 0.18], [clean(baseCurta), 0.30]];
           let x = LX; doc.font('Helvetica').fontSize(7.5).fillColor(INK);
           cells.forEach(([t, wp], j) => { if (j === 2) doc.font('Helvetica-Bold'); else doc.font('Helvetica'); doc.text(t, x + 4, y + 3, { width: W * wp - 6, lineBreak: false, ellipsis: true }); x += W * wp; });
           doc.moveTo(LX, y + 13).lineTo(RX, y + 13).lineWidth(0.3).strokeColor(LINE).stroke();
