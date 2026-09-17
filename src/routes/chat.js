@@ -241,6 +241,11 @@ router.post('/avaliar', async (req, res) => {
         resultado.ajustesFotos = aj;
       }
     }
+    // Quadro de referências do local (bairro + vizinhos + PGV + fechamentos) —
+    // best-effort: o laudo sai mesmo se um vizinho falhar.
+    try {
+      resultado.referencias = await require('../data/referencias').montarReferencias(dadosImovel, resultado);
+    } catch (e) { console.warn('[Avaliar] referências:', e.message); }
     let laudo = gerarLaudo(dadosImovel, resultado);
     if (rOutra && !rOutra.erro && rOutra.precoRecomendado > 0) {
       const fmt = (v) => 'R$ ' + Number(v).toLocaleString('pt-BR');
@@ -1657,10 +1662,26 @@ if (comparativosEncontrados > 0) {
     : `🔍 Comparativos analisados: ${comparativosEncontrados} imóveis\n`;
 }
 
+  const R = resultado.referencias;
+  if (R && R.itens.length) {
+    laudo += `📚 *Referências de valor para este local (${R.area.toLocaleString('pt-BR')} m²):*\n`;
+    R.itens.forEach((i) => { laudo += `• ${i.fonte}: ${formatarReais(i.m2)}/m² → *${formatarReais(i.valor)}*${i.detalhe ? ` — ${i.detalhe}` : ''}\n`; });
+    (R.vizinhos || []).forEach((v) => { (v.comps || []).forEach((c) => { laudo += `   – ${v.bairro}: ${c.area ? Math.round(c.area) + ' m² por ' : ''}${formatarReais(c.preco)}${c.precoM2 ? ` (${formatarReais(Math.round(c.precoM2))}/m²)` : ''}${c.fonte ? ` · ${c.fonte}` : ''}\n`; }); });
+    laudo += `• *Consolidado das referências: ${formatarReais(R.consolidado)}* (de ${formatarReais(R.faixaMin)} a ${formatarReais(R.faixaMax)})\n`;
+    if (R.pedidoM2) laudo += `• Pedido do vendedor: ${formatarReais(R.pedidoM2)}/m²\n`;
+    laudo += `• ${R.leitura}\n\n`;
+  }
+
   const F = resultado.leituraFotos;
   if (F) {
     laudo += `📷 *O que as fotos mostram:*\n`;
-    if (F.areaGoogle) laudo += `• Área medida no Google: ${Number(F.areaGoogle).toLocaleString('pt-BR')} m²${F.perimetroGoogle ? ` · perímetro ${Number(F.perimetroGoogle).toLocaleString('pt-BR')} m` : ''}\n`;
+    if (F.areaGoogle) {
+      const inf = Number(metragem) || 0; const g = Number(F.areaGoogle);
+      const dif = inf > 0 ? Math.round((g / inf - 1) * 100) : 0;
+      laudo += `• Área medida no Google: ${g.toLocaleString('pt-BR')} m²${F.perimetroGoogle ? ` · perímetro ${Number(F.perimetroGoogle).toLocaleString('pt-BR')} m` : ''}`;
+      if (inf > 0 && Math.abs(dif) >= 3) laudo += ` — ⚠️ *${Math.abs(dif)}% ${dif < 0 ? 'MENOR' : 'maior'} que os ${inf.toLocaleString('pt-BR')} m² informados*: a ${formatarReais(precoM2Imovel || precoM2Mercado)}/m² a diferença vale ${formatarReais(Math.round(Math.abs(g - inf) * (precoM2Imovel || precoM2Mercado)))}. Confirmar a área na matrícula antes de fechar preço.`;
+      laudo += `\n`;
+    }
     if (F.padrao) laudo += `• Padrão: ${F.padrao}${F.padraoJustificativa ? ` — ${F.padraoJustificativa}` : ''}\n`;
     if (F.conservacao) laudo += `• Conservação: ${F.conservacao}${F.idadeAparente ? ` · ${F.idadeAparente}` : ''}\n`;
     const car = [F.esquina === true ? 'esquina' : null, F.topografia, F.formato ? `formato ${F.formato}` : null, F.murado === true ? 'murado' : null, F.pavimentacao ? `rua de ${F.pavimentacao}` : null, F.entorno ? `entorno ${F.entorno}${F.padraoEntorno ? ' ' + F.padraoEntorno : ''}` : null].filter(Boolean);

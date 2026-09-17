@@ -282,11 +282,45 @@ function gerarRelatorioPdf(dados, resultado, opts = {}) {
         comps.slice(0, 8).forEach((c, i) => sampleRow(i, c));
         y += 8;
       }
+      const R = resultado.referencias;
+      if (R && R.itens && R.itens.length) {
+        band(`REFERÊNCIAS DE VALOR PARA ESTE LOCAL — ${num(R.area)} m²`);
+        paragraph(`Além dos anúncios do bairro, o valor foi confrontado com as outras fontes que o sistema mantém para ${dados.bairro}: bairros vizinhos (traduzidos pela razão entre as bases oficiais de cada bairro), a Planta Genérica de Valores da Prefeitura e os negócios fechados registrados. Cada linha mostra o R$/m² da fonte e o valor que ela implica para este imóvel.`, 8);
+        ensure(16);
+        doc.rect(LX, y, W, 14).fill(BAND);
+        const cols = [['Fonte', 0.40], ['R$/m²', 0.12], ['Valor p/ ' + num(R.area) + ' m²', 0.18], ['Base', 0.30]];
+        let cx = LX; doc.font('Helvetica-Bold').fontSize(6.5).fillColor(MUTED);
+        cols.forEach(([t, wp]) => { doc.text(String(t).toUpperCase(), cx + 4, y + 4, { width: W * wp - 6, lineBreak: false }); cx += W * wp; });
+        y += 14;
+        R.itens.forEach((it, i) => {
+          ensure(14);
+          if (i % 2 === 1) doc.rect(LX, y, W, 13).fill('#f6f8fc');
+          const cells = [[clean(it.fonte), 0.40], [brl(it.m2), 0.12], [brl(it.valor), 0.18], [clean(it.detalhe || ''), 0.30]];
+          let x = LX; doc.font('Helvetica').fontSize(7.5).fillColor(INK);
+          cells.forEach(([t, wp], j) => { if (j === 2) doc.font('Helvetica-Bold'); else doc.font('Helvetica'); doc.text(t, x + 4, y + 3, { width: W * wp - 6, lineBreak: false, ellipsis: true }); x += W * wp; });
+          doc.moveTo(LX, y + 13).lineTo(RX, y + 13).lineWidth(0.3).strokeColor(LINE).stroke();
+          y += 13;
+        });
+        ensure(14);
+        doc.rect(LX, y, W, 14).fill('#eef3ff');
+        doc.font('Helvetica-Bold').fontSize(7.5).fillColor(BLUE).text('CONSOLIDADO DAS REFERÊNCIAS', LX + 4, y + 4, { width: W * 0.52, lineBreak: false });
+        doc.font('Helvetica-Bold').fontSize(8).fillColor(BLUE).text(`${brl(R.consolidado)}  (${brl(R.faixaMin)} – ${brl(R.faixaMax)})`, LX + W * 0.52, y + 3, { width: W * 0.48 - 4, lineBreak: false });
+        y += 18;
+        if ((R.vizinhos || []).length) {
+          const linhas = R.vizinhos.map((v) => `${v.bairro}: ${v.comps.map((c) => `${c.area ? Math.round(c.area) + ' m² por ' : ''}${brl(c.preco)}`).join(', ')} (mediana ${brl(v.m2)}/m², fator ${v.fator})`).join('. ');
+          paragraph(`Anúncios usados nos vizinhos — ${linhas}.`, 7.5);
+        }
+        paragraph(R.leitura, 8.5);
+      }
+
       const F = resultado.leituraFotos;
       if (F && (F.padrao || F.conservacao || F.areaGoogle || (F.pontosAtencao || []).length)) {
         band('O QUE AS FOTOS MOSTRAM');
         const linhas = [];
-        if (F.areaGoogle) linhas.push(`Área medida no Google: ${Number(F.areaGoogle).toLocaleString('pt-BR')} m²${F.perimetroGoogle ? ` · perímetro ${Number(F.perimetroGoogle).toLocaleString('pt-BR')} m` : ''} (traçado em mapa, não medição em campo).`);
+        if (F.areaGoogle) {
+          const inf = Number(dados.metragem) || 0, g = Number(F.areaGoogle), dif = inf > 0 ? Math.round((g / inf - 1) * 100) : 0, m2 = Number(resultado.precoM2Imovel || resultado.precoM2Mercado) || 0;
+          linhas.push(`Área medida no Google: ${g.toLocaleString('pt-BR')} m²${F.perimetroGoogle ? ` · perímetro ${Number(F.perimetroGoogle).toLocaleString('pt-BR')} m` : ''} (traçado em mapa, não medição em campo)${inf > 0 && Math.abs(dif) >= 3 ? ` — ATENÇÃO: ${Math.abs(dif)}% ${dif < 0 ? 'menor' : 'maior'} que os ${inf.toLocaleString('pt-BR')} m² informados; a ${brl(m2)}/m² a diferença vale ${brl(Math.round(Math.abs(g - inf) * m2))}. Confirmar a área na matrícula antes de fechar preço` : ''}.`);
+        }
         if (F.padrao) linhas.push(`Padrão ${F.padrao}${F.padraoJustificativa ? ` — ${F.padraoJustificativa}` : ''}.`);
         if (F.conservacao) linhas.push(`Conservação ${F.conservacao}${F.idadeAparente ? ` · ${F.idadeAparente}` : ''}.`);
         const car = [F.esquina === true ? 'esquina' : null, F.topografia, F.formato ? `formato ${F.formato}` : null, F.murado === true ? 'murado' : null, F.pavimentacao ? `rua de ${F.pavimentacao}` : null, F.entorno ? `entorno ${F.entorno}${F.padraoEntorno ? ' ' + F.padraoEntorno : ''}` : null].filter(Boolean);

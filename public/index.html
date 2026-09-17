@@ -2487,17 +2487,31 @@
     function t_zonaInfo() { /* placeholder p/ futura dica de CA por zona */ }
 
     // ── Avaliar: fotos do imóvel → a IA lê, preenche, o dono confere ──
-    let fLeitura = null, fFotosData = [], fLendo = null, fLeituraErro = null;
+    let fLeitura = null, fFotosData = [], fLendo = null, fLeituraErro = null, fLeituraTipo = null, fFiles = [];
     async function fFotos() {
       const input = document.getElementById('f-fotos'), info = document.getElementById('f-fotos-info'), box = document.getElementById('f-achados');
       const files = Array.from(input.files || []).slice(0, 12);
       if (!files.length) return;
+      fFiles = files;
       fLendo = fFotosLer(files, info, box);
       try { await fLendo; } finally { fLendo = null; }
     }
+    // Trocou o tipo depois de ler (ex.: escolheu as fotos e SÓ DEPOIS marcou
+    // Terreno)? A leitura foi feita com o prompt errado — refaz.
+    document.addEventListener('DOMContentLoaded', () => {
+      const t = document.getElementById('f-tipo');
+      if (t) t.addEventListener('change', () => {
+        const ehT = (v) => /terreno|lote/i.test(v || '');
+        if (fFiles.length && fLeituraTipo != null && ehT(t.value) !== ehT(fLeituraTipo)) {
+          fLendo = fFotosLer(fFiles, document.getElementById('f-fotos-info'), document.getElementById('f-achados'));
+          fLendo.finally(() => { fLendo = null; });
+        }
+      });
+    });
     async function fFotosLer(files, info, box) {
       fLeitura = null; fLeituraErro = null; box.innerHTML = '';
       const btn = document.getElementById('btn-avaliar'); if (btn) btn.disabled = true;
+      fLeituraTipo = document.getElementById('f-tipo').value;
       const tipo = document.getElementById('f-tipo').value;
       info.textContent = 'preparando…';
       try {
