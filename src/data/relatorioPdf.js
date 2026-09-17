@@ -296,6 +296,7 @@ function gerarRelatorioPdf(dados, resultado, opts = {}) {
           ensure(14);
           if (i % 2 === 1) doc.rect(LX, y, W, 13).fill('#f6f8fc');
           const baseCurta = it.chave === 'oficial' ? (it.venal ? `venal R$ ${it.venal}/m² × fator` : 'base oficial')
+            : it.chave === 'fronteira' ? `bairro × ${Number(it.fator).toFixed(3)} (distância medida)`
             : it.chave === 'vizinho' ? `${it.n} anúncio(s) · ${brl(it.m2Bruto)}/m² × ${Number(it.fator).toFixed(2)}`
             : it.chave === 'fechado' ? 'preço que fechou de fato'
             : `${it.n} anúncio(s) · mediana`;
@@ -314,6 +315,7 @@ function gerarRelatorioPdf(dados, resultado, opts = {}) {
           const linhas = R.vizinhos.map((v) => `${v.bairro}: ${v.comps.map((c) => `${c.area ? Math.round(c.area) + ' m² por ' : ''}${brl(c.preco)}`).join(', ')} (mediana ${brl(v.m2)}/m², fator ${v.fator})`).join('. ');
           paragraph(`Anúncios usados nos vizinhos — ${linhas}.`, 7.5);
         }
+        if (R.fronteira) paragraph(`Localização de fronteira (medida por geocodificação em 8 direções): o imóvel está a cerca de ${R.fronteira.distanciaM} m do ${R.fronteira.bairro} (${R.fronteira.direcoes.join('/')}), cuja base oficial de valor é ${Math.round((R.fronteira.razao - 1) * 100)}% maior que a de ${dados.bairro}. Quem compra aqui compra a vizinhança do ${R.fronteira.bairro}: aplicado ajuste de +${Math.round((R.fronteira.fator - 1) * 100)}% ao valor, com peso ${R.fronteira.peso} pela distância (teto de 15%).`, 8.5);
         paragraph(R.leitura, 8.5);
       }
 

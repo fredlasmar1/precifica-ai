@@ -245,6 +245,16 @@ router.post('/avaliar', async (req, res) => {
     // best-effort: o laudo sai mesmo se um vizinho falhar.
     try {
       resultado.referencias = await require('../data/referencias').montarReferencias(dadosImovel, resultado);
+      const fr = resultado.referencias && resultado.referencias.fronteira;
+      if (fr && fr.fator > 1.005 && resultado.precoRecomendado > 0) {
+        resultado.precoSemFronteira = resultado.precoRecomendado;
+        resultado.precoMinimo = Math.round(resultado.precoMinimo * fr.fator);
+        resultado.precoRecomendado = Math.round(resultado.precoRecomendado * fr.fator);
+        resultado.precoMaximo = Math.round(resultado.precoMaximo * fr.fator);
+        if (resultado.precoM2Imovel) resultado.precoM2Imovel = Math.round(resultado.precoM2Imovel * fr.fator);
+        resultado.ajustesAplicados = [...(resultado.ajustesAplicados || []),
+          `Localização de fronteira: a ~${fr.distanciaM} m do ${fr.bairro} (${fr.direcoes.join('/')}), bairro com base oficial ${Math.round((fr.razao - 1) * 100)}% acima — ajuste de +${Math.round((fr.fator - 1) * 100)}% (peso ${fr.peso} pela distância medida).`];
+      }
     } catch (e) { console.warn('[Avaliar] referências:', e.message); }
     let laudo = gerarLaudo(dadosImovel, resultado);
     if (rOutra && !rOutra.erro && rOutra.precoRecomendado > 0) {
@@ -1667,6 +1677,7 @@ if (comparativosEncontrados > 0) {
     laudo += `📚 *Referências de valor para este local (${R.area.toLocaleString('pt-BR')} m²):*\n`;
     R.itens.forEach((i) => { laudo += `• ${i.fonte}: ${formatarReais(i.m2)}/m² → *${formatarReais(i.valor)}*${i.detalhe ? ` — ${i.detalhe}` : ''}\n`; });
     (R.vizinhos || []).forEach((v) => { (v.comps || []).forEach((c) => { laudo += `   – ${v.bairro}: ${c.area ? Math.round(c.area) + ' m² por ' : ''}${formatarReais(c.preco)}${c.precoM2 ? ` (${formatarReais(Math.round(c.precoM2))}/m²)` : ''}${c.fonte ? ` · ${c.fonte}` : ''}\n`; }); });
+    if (R.fronteira) laudo += `• 📍 *Fronteira medida:* o lote está a ~${R.fronteira.distanciaM} m do ${R.fronteira.bairro} (${R.fronteira.direcoes.join('/')}), cuja base oficial é ${Math.round((R.fronteira.razao - 1) * 100)}% maior — ajuste de +${Math.round((R.fronteira.fator - 1) * 100)}% aplicado ao valor (peso ${R.fronteira.peso} pela distância).\n`;
     laudo += `• *Consolidado das referências: ${formatarReais(R.consolidado)}* (de ${formatarReais(R.faixaMin)} a ${formatarReais(R.faixaMax)})\n`;
     if (R.pedidoM2) laudo += `• Pedido do vendedor: ${formatarReais(R.pedidoM2)}/m²\n`;
     laudo += `• ${R.leitura}\n\n`;

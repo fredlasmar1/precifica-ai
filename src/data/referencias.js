@@ -65,6 +65,29 @@ async function montarReferencias(dados, resultado) {
     }
   }
 
+  // 2b. FRONTEIRA — lote encostado num bairro mais valorizado vale pelo vizinho.
+  // Só se mede quando existe vizinho com base oficial acima da do bairro e o
+  // lote tem coordenadas; o peso vem da distância medida, a razão vem das bases
+  // oficiais (não dos anúncios do vizinho, que podem ser 2 e ruidosos).
+  let fronteira = null;
+  const g = resultado.geoInfo || {};
+  const caros = vizinhos.filter((v) => { const a = getAncora(tipo, finalidade, cidade, v); return a && a.m2 > ancoraBairro.m2 * 1.05; });
+  if (g.lat && g.lng && caros.length) {
+    try {
+      const { medirFronteira } = require('./geoValidacao');
+      const m = await medirFronteira({ lat: g.lat, lng: g.lng }, caros);
+      if (m) {
+        const aViz = getAncora(tipo, finalidade, cidade, m.bairro);
+        const peso = m.distanciaM <= 150 ? 0.5 : m.distanciaM <= 300 ? 0.35 : 0.2;
+        const razao = aViz.m2 / ancoraBairro.m2; // ex.: 649/586 = 1,11
+        const fator = Math.min(1.15, 1 + peso * (razao - 1));
+        fronteira = { bairro: cap(m.bairro), distanciaM: m.distanciaM, direcoes: m.direcoes || [m.direcao], peso, razao: Math.round(razao * 100) / 100, fator: Math.round(fator * 1000) / 1000, m2Vizinho: aViz.m2, m2Bairro: ancoraBairro.m2 };
+        const base = m2Bairro > 0 ? m2Bairro : ancoraBairro.m2;
+        itens.push({ chave: 'fronteira', fonte: `Fronteira com ${fronteira.bairro} (a ~${m.distanciaM} m, ${fronteira.direcoes.join('/')})`, detalhe: `bairro × ${fator.toFixed(3)} — peso ${peso} pela distância × razão PGV ${fronteira.razao}`, m2: Math.round(base * fator), fator, peso: 2 });
+      }
+    } catch (e) { console.warn('[Referências] fronteira:', e.message); }
+  }
+
   // 3. base oficial
   if (ancoraBairro && ancoraBairro.m2 > 0) {
     itens.push({ chave: 'oficial', fonte: /PGV/i.test(ancoraBairro.fonte) ? 'Planta Genérica de Valores (Prefeitura)' : 'Base de referência (EBM/Aderni-GO)', detalhe: ancoraBairro.venal ? `venal R$ ${ancoraBairro.venal}/m² × fator de mercado` : ancoraBairro.fonte, m2: ancoraBairro.m2, venal: ancoraBairro.venal || null, peso: 2 });
@@ -84,7 +107,7 @@ async function montarReferencias(dados, resultado) {
   const consolidado = Math.round(mediana(pond) / 1000) * 1000;
   const pedido = Number(dados.valorPedido) || 0;
   return {
-    area, unidade, itens, vizinhos: vizinhosAmostra,
+    area, unidade, itens, vizinhos: vizinhosAmostra, fronteira,
     faixaMin: Math.min(...valores), faixaMax: Math.max(...valores), consolidado,
     pedidoM2: pedido > 0 ? Math.round(pedido / area) : null,
     fontesTotal: itens.length,

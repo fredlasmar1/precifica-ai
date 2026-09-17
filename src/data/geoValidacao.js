@@ -310,4 +310,39 @@ function haversine(lat1, lng1, lat2, lng2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-module.exports = { validarEndereco };
+/**
+ * A que distância o lote está da divisa com um bairro vizinho? Sonda 8
+ * direções a 150/300/500 m por geocodificação reversa e devolve a menor
+ * distância em que aparece um dos bairros-alvo. É MEDIDA, não opinião —
+ * é o que permite dizer "a 150 m do Anápolis City" no parecer.
+ * Custo: até 24 chamadas de geocoding (~US$ 0,12); só roda quando há
+ * vizinho mais valorizado que o bairro (decisão do chamador).
+ */
+async function medirFronteira(location, alvos = []) {
+  const apiKey = process.env.GOOGLE_PLACES_API_KEY || process.env.GOOGLE_MAPS_API_KEY;
+  if (!apiKey || !location || !alvos.length) return null;
+  const norm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+  const alvosN = alvos.map(norm);
+  const dirs = [['norte', 0, 1], ['nordeste', 1, 1], ['leste', 1, 0], ['sudeste', 1, -1], ['sul', 0, -1], ['sudoeste', -1, -1], ['oeste', -1, 0], ['noroeste', -1, 1]];
+  const mLat = 1 / 111320, mLng = 1 / (111320 * Math.cos(location.lat * Math.PI / 180));
+  let melhor = null;
+  for (const raio of [150, 300, 500]) {
+    const sondas = dirs.map(async ([nome, dx, dy]) => {
+      const k = (dx && dy) ? Math.SQRT1_2 : 1;
+      const p = { lat: location.lat + dy * k * raio * mLat, lng: location.lng + dx * k * raio * mLng };
+      try {
+        const res = await client.reverseGeocode({ params: { latlng: p, key: apiKey, language: 'pt-BR', result_type: ['sublocality_level_1', 'neighborhood', 'sublocality'] } });
+        for (const r of (res.data.results || []).slice(0, 2)) {
+          const b = getComponent(r.address_components, 'sublocality_level_1') || getComponent(r.address_components, 'sublocality') || getComponent(r.address_components, 'neighborhood');
+          if (b && alvosN.includes(norm(b))) return { bairro: b, direcao: nome, distanciaM: raio };
+        }
+      } catch { /* ignore */ }
+      return null;
+    });
+    const achados = (await Promise.all(sondas)).filter(Boolean);
+    if (achados.length) { melhor = achados[0]; melhor.direcoes = [...new Set(achados.map((a) => a.direcao))]; break; }
+  }
+  return melhor;
+}
+
+module.exports = { validarEndereco, medirFronteira };

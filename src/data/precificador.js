@@ -858,6 +858,7 @@ async function calcularPreco(dadosImovel) {
     localizacao: null, scoreLocalizacao: null, descLocalizacao: null,
     geoInfo: geoInfo?.valido ? {
       enderecoValidado: geoInfo.enderecoCompleto,
+      lat: geoInfo.lat, lng: geoInfo.lng,
       bairrosVizinhos: geoInfo.bairrosProximos,
       distanciaCentroKm: geoInfo.distanciaCentroKm,
       viasProximas: geoInfo.viasProximas
