@@ -21,7 +21,7 @@ const mediana = (arr) => {
   const m = Math.floor(s.length / 2);
   return s.length % 2 ? s[m] : Math.round((s[m - 1] + s[m]) / 2);
 };
-const cap = (s) => String(s || '').replace(/\b\p{L}/gu, (c) => c.toUpperCase());
+const cap = (s) => String(s || '').toLowerCase().replace(/(^|[\s-])(\p{L})/gu, (m, sep, c) => sep + c.toUpperCase());
 
 async function montarReferencias(dados, resultado) {
   const tipo = String(dados.tipo || '').toLowerCase();
