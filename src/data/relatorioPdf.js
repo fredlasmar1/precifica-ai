@@ -186,25 +186,31 @@ function gerarRelatorioPdf(dados, resultado, opts = {}) {
       const texto = dentro
         ? `${brl(pedido)} (${dif >= 0 ? '+' : ''}${dif}% sobre o valor provável) cabe entre ${brl(resultado.precoMinimo)} e ${brl(resultado.precoMaximo)}. O preço se sustenta diante do que o mercado está pedindo.`
         : acimaDeTodos
-          ? `${brl(pedido)} (${dif >= 0 ? '+' : ''}${dif}% sobre o valor provável) cabe na faixa de ${brl(resultado.precoMinimo)} a ${brl(resultado.precoMaximo)} — mas a faixa foi alargada porque a amostra é pequena. Os concorrentes reais anunciados hoje são: ${compsP.slice(0, 4).map((c) => `${c.area ? Math.round(c.area) + ' m² por ' : ''}${brl(c.preco)}`).join(', ')}. A ${brl(Math.round(pedidoM2))}/m², este seria o lote mais caro do bairro (o mais caro anunciado está a ${brl(Math.round(maisCaroM2))}/m²). Quem pesquisa vê os concorrentes primeiro. Sugestão: anunciar em ${brl(Math.round(pedido / 1000) * 1000)} só se houver diferencial visível; caso contrário, alinhar a ${brl(Math.round(resultado.precoRecomendado / 1000) * 1000)}–${brl(Math.round(Math.max(...compsP.map((c) => Number(c.preco))) / 1000) * 1000)}.`
+          ? `${brl(pedido)} (${dif >= 0 ? '+' : ''}${dif}% sobre o valor provável) cabe na faixa de ${brl(resultado.precoMinimo)} a ${brl(resultado.precoMaximo)} — mas a faixa foi alargada porque a amostra é pequena. Os concorrentes reais anunciados hoje são: ${compsP.slice(0, 4).map((c) => `${c.area ? Math.round(c.area) + ' m² por ' : ''}${brl(c.preco)}`).join(', ')}. A ${brl(Math.round(pedidoM2))}/m², este seria o lote mais caro do bairro (o mais caro anunciado está a ${brl(Math.round(maisCaroM2))}/m²). Quem pesquisa vê os concorrentes primeiro. Sugestão: anunciar em ${brl(Math.round(pedido / 1000) * 1000)} só se houver diferencial visível; caso contrário, alinhar a ${(() => { const a = Math.round(resultado.precoRecomendado / 1000) * 1000, b = Math.round(Math.max(...compsP.map((c) => Number(c.preco))) / 1000) * 1000; return a === b ? brl(a) : `${brl(Math.min(a, b))}–${brl(Math.max(a, b))}`; })()}.`
         : acima
           ? `${brl(pedido)} está ${dif >= 0 ? '+' : ''}${dif}% acima do valor provável (${brl(resultado.precoRecomendado)}) e ${brl(pedido - resultado.precoMaximo)} acima do máximo que a amostra de ${nAmostras} anúncios sustenta. Nesse patamar o imóvel tende a ficar parado: quem pesquisa vê os concorrentes mais baratos. ` +
             (ehTerreno ? 'Só se justifica com algo que a amostra não vê — esquina, frente maior, zoneamento comercial, documentação pronta para escritura.' : 'Só se justifica com algo que a amostra não vê — reforma recente, andar/vista, vaga extra, documentação pronta.') +
             ` Sugestão: anunciar em ${brl(Math.round(resultado.precoMaximo / 1000) * 1000)} e negociar em torno de ${brl(Math.round(resultado.precoRecomendado / 1000) * 1000)}.`
           : `${brl(pedido)} está ${brl(resultado.precoMinimo - pedido)} abaixo do piso da faixa. Preço abaixo do mercado costuma ter motivo: conferir matrícula (ônus, penhora), documentação e estado antes de fechar.`;
-      ensure(70);
-      doc.roundedRect(LX, y, W, 8, 0); // espaçador
-      const boxTop = y;
-      doc.font('Helvetica-Bold').fontSize(9.5).fillColor(cor);
-      const hTit = doc.heightOfString(titulo, { width: W - 32 });
+      ensure(80);
+      const boxTop = y, PAD = 14;
+      doc.font('Helvetica-Bold').fontSize(10);
+      const hTit = doc.heightOfString(titulo, { width: W - 2 * PAD });
       doc.font('Helvetica').fontSize(8.5);
-      const hTxt = doc.heightOfString(clean(texto), { width: W - 32, lineGap: 1.5 });
-      const hBox = 12 + hTit + 4 + hTxt + 12;
-      doc.roundedRect(LX, boxTop, W, hBox, 8).fillAndStroke(fundo, cor);
-      doc.font('Helvetica').fontSize(6.5).fillColor(cor).text('PREÇO PEDIDO × MERCADO', LX + 16, boxTop + 7, { lineBreak: false });
-      doc.font('Helvetica-Bold').fontSize(9.5).fillColor(cor).text(titulo, LX + 16, boxTop + 16, { width: W - 32 });
-      doc.font('Helvetica').fontSize(8.5).fillColor(INK).text(clean(texto), LX + 16, boxTop + 16 + hTit + 4, { width: W - 32, align: 'justify', lineGap: 1.5 });
-      y = boxTop + hBox + 10;
+      const hTxt = doc.heightOfString(clean(texto), { width: W - 2 * PAD, lineGap: 1.5 });
+      // rótulo (8) + respiro (4) + título + respiro (5) + texto, com PAD em cima e embaixo
+      const hBox = PAD + 8 + 4 + hTit + 5 + hTxt + PAD;
+      doc.save();
+      doc.roundedRect(LX, boxTop, W, hBox, 8).fill(fundo);
+      doc.roundedRect(LX + 0.5, boxTop + 0.5, W - 1, hBox - 1, 8).lineWidth(1).strokeColor(cor).stroke();
+      doc.restore();
+      let yy = boxTop + PAD;
+      doc.font('Helvetica-Bold').fontSize(6.5).fillColor(cor).text('PREÇO PEDIDO × MERCADO', LX + PAD, yy, { characterSpacing: 0.6, lineBreak: false });
+      yy += 8 + 4;
+      doc.font('Helvetica-Bold').fontSize(10).fillColor(cor).text(titulo, LX + PAD, yy, { width: W - 2 * PAD });
+      yy += hTit + 5;
+      doc.font('Helvetica').fontSize(8.5).fillColor(INK).text(clean(texto), LX + PAD, yy, { width: W - 2 * PAD, align: 'justify', lineGap: 1.5 });
+      y = boxTop + hBox + 12;
     }
 
     if (versao === 'tecnica') {
